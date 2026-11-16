@@ -5,8 +5,12 @@ import {
   ArrowDown,
   ArrowUp,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Copy,
   Download,
+  Eye,
+  EyeOff,
   ImagePlus,
   Plus,
   Trash2,
@@ -14,7 +18,15 @@ import {
   Wallet,
 } from "lucide-react";
 import { InvoiceDoc } from "@/components/rv/InvoiceDoc";
-import { Btn, F, Glass, Modal, Pill, Sel } from "@/components/rv/ui";
+import {
+  Btn,
+  F,
+  Glass,
+  Modal,
+  Pill,
+  Sel,
+  SlidingTabs,
+} from "@/components/rv/ui";
 import {
   DOCUMENT_TYPES,
   PAY_METHODS,
@@ -143,6 +155,30 @@ function Editor() {
   const [newClient, setNewClient] = useState(false);
   const [followNote, setFollowNote] = useState("");
   const kind = documentKind(draft);
+  type SectionKey =
+    "details" | "signatures" | "items" | "photos" | "totals" | "payments";
+  const [openSections, setOpenSections] = useState<Record<SectionKey, boolean>>(
+    {
+      details: true,
+      signatures: kind === "Agreement" || kind === "Delivery note",
+      items: true,
+      photos: false,
+      totals: true,
+      payments: true,
+    },
+  );
+  const toggleSection = (key: SectionKey) =>
+    setOpenSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  const setAllSections = (open: boolean) =>
+    setOpenSections({
+      details: open,
+      signatures: open,
+      items: open,
+      photos: open,
+      totals: open,
+      payments: open,
+    });
+  const anyClosed = Object.values(openSections).some((x) => !x);
   useEffect(() => {
     if (id === "new") setDraft(makeNew(search));
     else if (stored) setDraft(stored);
@@ -272,657 +308,837 @@ function Editor() {
     nav({ to: "/invoices" });
   };
 
-  const form = (
-    <div className="space-y-4">
-      <Glass>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <F label="Document type">
-            <Sel
-              value={kind}
-              onChange={(x) => {
-                const k = x as DocumentType;
-                if (!isNew) return;
-                up({
-                  kind: k,
-                  no: nextInvoiceNo(draft.issue, db.invoices, k),
-                  showSchedule: k !== "Delivery note",
-                });
-              }}
-              options={isNew ? [...DOCUMENT_TYPES] : [kind]}
-            />
-          </F>
-          <F label="Document no.">
-            <input
-              className="field font-mono"
-              value={draft.no}
-              onChange={(e) => up({ no: e.target.value })}
-            />
-          </F>
-          <F label="Currency">
-            <Sel
-              value={draft.currency}
-              onChange={(x) => {
-                const currency = x as "USD" | "KHR";
-                if (currency === draft.currency) return;
-                up({
-                  currency,
-                  items: draft.items.map((it) => ({
-                    ...it,
-                    price:
-                      currency === "KHR"
-                        ? it.price * db.settings.khrRate
-                        : it.price / db.settings.khrRate,
-                  })),
-                });
-              }}
-              options={["USD", "KHR"]}
-            />
-          </F>
-          <F label="Client">
-            <div className="flex min-w-0 gap-2">
-              <div className="min-w-0 flex-1">
-                <Sel
-                  value={draft.clientId}
-                  onChange={(x) => {
-                    const currentProj = db.projects.find(
-                      (p) => p.id === draft.projectId,
-                    );
-                    up({
-                      clientId: x,
-                      ...(currentProj && currentProj.clientId !== x
-                        ? { projectId: "" }
-                        : {}),
-                    });
-                  }}
-                  placeholder="Choose client"
-                  options={db.clients.map((c) => ({
-                    value: c.id,
-                    label: c.name,
-                  }))}
-                />
-              </div>
-              <button
-                onClick={() => setNewClient(true)}
-                className="shrink-0 rounded-xl border border-border px-3 hover:bg-accent"
-                aria-label="Add client"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-            </div>
-          </F>
-          <F label="Project (auto-created on send if blank)">
-            <Sel
-              value={draft.projectId}
-              onChange={(x) => {
-                const p = db.projects.find((proj) => proj.id === x);
-                const s = db.services.find((svc) => svc.id === p?.serviceId);
-                up({
-                  projectId: x,
-                  ...(p ? { clientId: p.clientId } : {}),
-                  ...(s && !draft.items.some((i) => i.description.trim())
-                    ? {
-                        items: [
-                          {
-                            ...serviceItem(
-                              s,
-                              draft.currency,
-                              db.settings.khrRate,
-                            ),
-                            price: p?.quote
-                              ? draft.currency === "KHR"
-                                ? p.quote * db.settings.khrRate
-                                : p.quote
-                              : serviceItem(
-                                  s,
-                                  draft.currency,
-                                  db.settings.khrRate,
-                                ).price,
-                          },
-                        ],
-                      }
-                    : {}),
-                });
-              }}
-              placeholder="None (auto-create on send)"
-              options={db.projects
-                .filter((p) => !draft.clientId || p.clientId === draft.clientId)
-                .map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))}
-            />
-          </F>
-          <F label="Issue date">
-            <input
-              type="date"
-              className="field"
-              value={draft.issue}
-              onChange={(e) => {
-                const issue = e.target.value;
-                up({
-                  issue,
-                  due: addDays(issue, db.settings.dueDays),
-                  ...(isNew
-                    ? { no: nextInvoiceNo(issue, db.invoices, kind) }
-                    : {}),
-                });
-              }}
-            />
-          </F>
-          <F
-            label={
-              kind === "Quotation"
-                ? "Valid until"
-                : kind === "Delivery note"
-                  ? "Delivery date"
-                  : "Due date"
-            }
+  const SectionToggleHeader = ({
+    section,
+    title,
+    summary,
+    rightExtra,
+  }: {
+    section: SectionKey;
+    title: string;
+    summary: string;
+    rightExtra?: React.ReactNode;
+  }) => {
+    const isOpen = openSections[section];
+    return (
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-between gap-2",
+          isOpen && "mb-3 border-b border-border/60 pb-2.5",
+        )}
+      >
+        <button
+          type="button"
+          onClick={() => toggleSection(section)}
+          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+        >
+          <span className="font-medium text-foreground">{title}</span>
+          {!isOpen && summary && (
+            <span className="truncate font-mono text-xs text-muted-foreground">
+              · {summary}
+            </span>
+          )}
+        </button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {rightExtra}
+          <button
+            type="button"
+            onClick={() => toggleSection(section)}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.7rem] font-medium transition-colors",
+              isOpen
+                ? "border-border bg-muted/60 text-muted-foreground hover:text-foreground"
+                : "border-primary/40 bg-primary/12 text-primary hover:bg-primary/20",
+            )}
           >
-            <input
-              type="date"
-              className="field"
-              value={draft.due}
-              onChange={(e) => up({ due: e.target.value })}
-            />
-          </F>
+            {isOpen ? (
+              <>
+                <ChevronUp className="h-3 w-3" />
+                Hide
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-3 w-3" />
+                Show
+              </>
+            )}
+          </button>
         </div>
-      </Glass>
+      </div>
+    );
+  };
+
+  const form = (
+    <div className="space-y-3.5">
+      {/* Quick Section Show/Hide Controls */}
+      <div className="glass flex flex-wrap items-center justify-between gap-2 rounded-2xl px-3.5 py-2.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {(
+            [
+              ["details", "Details"],
+              ["signatures", "Signature"],
+              ["items", `Items (${draft.items.length})`],
+              ["photos", `Photos (${draft.images.length})`],
+              ["totals", "Totals"],
+              ...(!isNew && isInvoice(draft)
+                ? ([["payments", `Payments (${pays.length})`]] as const)
+                : []),
+            ] as const
+          ).map(([key, label]) => {
+            const active = openSections[key];
+            return (
+              <button
+                key={key}
+                type="button"
+                onClick={() => toggleSection(key)}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.7rem] font-medium transition-colors",
+                  active
+                    ? "border-primary/50 bg-primary/15 text-primary"
+                    : "border-border bg-muted/40 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {active ? (
+                  <Eye className="h-3 w-3" />
+                ) : (
+                  <EyeOff className="h-3 w-3" />
+                )}
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={() => setAllSections(anyClosed)}
+          className="shrink-0 rounded-full border border-border px-2.5 py-1 text-[0.7rem] font-medium text-muted-foreground hover:border-primary/40 hover:text-foreground"
+        >
+          {anyClosed ? "Show all" : "Hide all"}
+        </button>
+      </div>
 
       <Glass>
-        <h3 className="mb-3 font-medium">
-          {kind === "Quotation"
-            ? "Response, follow-up & client signature"
-            : kind === "Agreement"
-              ? "Agreement & signatures"
-              : kind === "Delivery note"
-                ? "Delivery & receipt signatures"
-                : "Client signature & confirmation"}
-        </h3>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {!isInvoice(draft) && (
-            <F label="Client response">
+        <SectionToggleHeader
+          section="details"
+          title="Document details"
+          summary={`${kind} · ${client?.name || "No client"} · Due ${shortDate(draft.due)}`}
+        />
+        {openSections.details && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <F label="Document type">
               <Sel
-                value={draft.response ?? "Pending"}
-                onChange={(x) =>
-                  up({ response: x as "Pending" | "Accepted" | "Declined" })
-                }
-                options={[
-                  { value: "Pending", label: "Awaiting response" },
-                  {
-                    value: "Accepted",
-                    label:
-                      kind === "Agreement"
-                        ? "Signed (recorded)"
-                        : kind === "Delivery note"
-                          ? "Received"
-                          : "Accepted",
-                  },
-                  { value: "Declined", label: "Declined" },
-                ]}
+                value={kind}
+                onChange={(x) => {
+                  const k = x as DocumentType;
+                  if (!isNew) return;
+                  up({
+                    kind: k,
+                    no: nextInvoiceNo(draft.issue, db.invoices, k),
+                    showSchedule: k !== "Delivery note",
+                  });
+                }}
+                options={isNew ? [...DOCUMENT_TYPES] : [kind]}
               />
             </F>
-          )}
-          {kind === "Quotation" && (
-            <F label="Next follow-up">
+            <F label="Document no.">
+              <input
+                className="field font-mono"
+                value={draft.no}
+                onChange={(e) => up({ no: e.target.value })}
+              />
+            </F>
+            <F label="Currency">
+              <Sel
+                value={draft.currency}
+                onChange={(x) => {
+                  const currency = x as "USD" | "KHR";
+                  if (currency === draft.currency) return;
+                  up({
+                    currency,
+                    items: draft.items.map((it) => ({
+                      ...it,
+                      price:
+                        currency === "KHR"
+                          ? it.price * db.settings.khrRate
+                          : it.price / db.settings.khrRate,
+                    })),
+                  });
+                }}
+                options={["USD", "KHR"]}
+              />
+            </F>
+            <F label="Client">
+              <div className="flex min-w-0 gap-2">
+                <div className="min-w-0 flex-1">
+                  <Sel
+                    value={draft.clientId}
+                    onChange={(x) => {
+                      const currentProj = db.projects.find(
+                        (p) => p.id === draft.projectId,
+                      );
+                      up({
+                        clientId: x,
+                        ...(currentProj && currentProj.clientId !== x
+                          ? { projectId: "" }
+                          : {}),
+                      });
+                    }}
+                    placeholder="Choose client"
+                    options={db.clients.map((c) => ({
+                      value: c.id,
+                      label: c.name,
+                    }))}
+                  />
+                </div>
+                <button
+                  onClick={() => setNewClient(true)}
+                  className="shrink-0 rounded-xl border border-border px-3 hover:bg-accent"
+                  aria-label="Add client"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+            </F>
+            <F label="Project (auto-created on send if blank)">
+              <Sel
+                value={draft.projectId}
+                onChange={(x) => {
+                  const p = db.projects.find((proj) => proj.id === x);
+                  const s = db.services.find((svc) => svc.id === p?.serviceId);
+                  up({
+                    projectId: x,
+                    ...(p ? { clientId: p.clientId } : {}),
+                    ...(s && !draft.items.some((i) => i.description.trim())
+                      ? {
+                          items: [
+                            {
+                              ...serviceItem(
+                                s,
+                                draft.currency,
+                                db.settings.khrRate,
+                              ),
+                              price: p?.quote
+                                ? draft.currency === "KHR"
+                                  ? p.quote * db.settings.khrRate
+                                  : p.quote
+                                : serviceItem(
+                                    s,
+                                    draft.currency,
+                                    db.settings.khrRate,
+                                  ).price,
+                            },
+                          ],
+                        }
+                      : {}),
+                  });
+                }}
+                placeholder="None (auto-create on send)"
+                options={db.projects
+                  .filter(
+                    (p) => !draft.clientId || p.clientId === draft.clientId,
+                  )
+                  .map((p) => ({
+                    value: p.id,
+                    label: `${p.code} · ${p.name}`,
+                  }))}
+              />
+            </F>
+            <F label="Issue date">
               <input
                 type="date"
                 className="field"
-                value={draft.followUp ?? ""}
-                onChange={(e) => up({ followUp: e.target.value })}
-              />
-            </F>
-          )}
-          <F
-            label={
-              kind === "Delivery note"
-                ? "Received by (client signatory)"
-                : "Client signatory"
-            }
-          >
-            <input
-              className="field"
-              placeholder={
-                client?.contact || client?.name || "Authorized representative"
-              }
-              value={draft.confirmedBy ?? ""}
-              onChange={(e) => up({ confirmedBy: e.target.value })}
-            />
-          </F>
-          <F
-            label={
-              kind === "Delivery note" ? "Received on" : "Signed / confirmed on"
-            }
-          >
-            <input
-              type="date"
-              className="field"
-              value={draft.confirmedOn ?? ""}
-              onChange={(e) => up({ confirmedOn: e.target.value })}
-            />
-          </F>
-          <F
-            label="Client signature image (optional)"
-            className="sm:col-span-2"
-          >
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="grid h-14 w-32 shrink-0 place-items-center overflow-hidden rounded-xl border border-dashed border-border bg-muted">
-                {draft.clientSignature ? (
-                  <img
-                    src={draft.clientSignature}
-                    alt="Client signature"
-                    className="h-full w-full object-contain"
-                  />
-                ) : (
-                  <Upload className="h-4 w-4 text-muted-foreground" />
-                )}
-              </div>
-              <input
-                ref={sigRef}
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={async (e) => {
-                  const f = e.target.files?.[0];
-                  if (f) {
-                    up({ clientSignature: await fileToDataUrl(f, 500) });
-                    e.target.value = "";
-                  }
+                value={draft.issue}
+                onChange={(e) => {
+                  const issue = e.target.value;
+                  up({
+                    issue,
+                    due: addDays(issue, db.settings.dueDays),
+                    ...(isNew
+                      ? { no: nextInvoiceNo(issue, db.invoices, kind) }
+                      : {}),
+                  });
                 }}
               />
-              <Btn
-                type="button"
-                onClick={() => sigRef.current?.click()}
-                className="text-xs"
-              >
-                Upload signature
-              </Btn>
-              {draft.clientSignature && (
-                <Btn
-                  type="button"
-                  variant="danger"
-                  onClick={() => up({ clientSignature: "" })}
-                  className="text-xs"
-                >
-                  Remove
-                </Btn>
-              )}
-            </div>
-          </F>
-          {kind === "Agreement" && (
-            <F label="Additional agreement clauses" className="sm:col-span-2">
-              <textarea
-                className="field min-h-32"
-                value={draft.agreementText ?? ""}
-                onChange={(e) => up({ agreementText: e.target.value })}
-              />
             </F>
-          )}
-          {kind === "Delivery note" && (
-            <>
-              <F label="Delivery method">
-                <Sel
-                  value={draft.deliveryMethod ?? "Email"}
-                  onChange={(x) => up({ deliveryMethod: x })}
-                  options={[
-                    "Email",
-                    "Telegram",
-                    "Cloud drive",
-                    "Physical handover",
-                    "Other",
-                  ]}
-                />
-              </F>
-              <F label="File link / handover reference">
-                <input
-                  className="field"
-                  value={draft.deliveryLink ?? ""}
-                  onChange={(e) => up({ deliveryLink: e.target.value })}
-                />
-              </F>
-            </>
-          )}
-        </div>
-        {kind === "Quotation" && (
-          <div className="mt-4 space-y-3">
-            <F label="Follow-up note">
-              <input
-                className="field"
-                value={followNote}
-                onChange={(e) => setFollowNote(e.target.value)}
-              />
-            </F>
-            <Btn
-              disabled={!followNote.trim()}
-              onClick={() => {
-                const saved = save({
-                  followUps: [
-                    ...(draft.followUps ?? []),
-                    { date: today(), note: followNote.trim() },
-                  ],
-                });
-                if (saved) {
-                  setFollowNote("");
-                  toast.success("Follow-up recorded");
-                }
-              }}
+            <F
+              label={
+                kind === "Quotation"
+                  ? "Valid until"
+                  : kind === "Delivery note"
+                    ? "Delivery date"
+                    : "Due date"
+              }
             >
-              Log follow-up
-            </Btn>
-            {draft.followUps?.map((f, i) => (
-              <p key={i} className="break-words text-sm text-muted-foreground">
-                {shortDate(f.date)} · {f.note}
-              </p>
-            ))}
+              <input
+                type="date"
+                className="field"
+                value={draft.due}
+                onChange={(e) => up({ due: e.target.value })}
+              />
+            </F>
           </div>
         )}
       </Glass>
 
       <Glass>
-        <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="font-medium">Line items</h3>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
-              <Sel
-                value=""
-                placeholder="+ From services"
-                onChange={(sid) => {
-                  const s = db.services.find((x) => x.id === sid);
-                  if (s)
-                    up({
-                      items: [
-                        ...draft.items.filter((x) => x.description || x.price),
-                        serviceItem(s, draft.currency, db.settings.khrRate),
+        <SectionToggleHeader
+          section="signatures"
+          title={
+            kind === "Quotation"
+              ? "Response, follow-up & signature"
+              : kind === "Agreement"
+                ? "Agreement & signatures"
+                : kind === "Delivery note"
+                  ? "Delivery & receipt signatures"
+                  : "Client signature & confirmation"
+          }
+          summary={
+            draft.confirmedBy
+              ? `Signed by ${draft.confirmedBy}`
+              : draft.response || "Optional"
+          }
+        />
+        {openSections.signatures && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {!isInvoice(draft) && (
+                <F label="Client response">
+                  <Sel
+                    value={draft.response ?? "Pending"}
+                    onChange={(x) =>
+                      up({ response: x as "Pending" | "Accepted" | "Declined" })
+                    }
+                    options={[
+                      { value: "Pending", label: "Awaiting response" },
+                      {
+                        value: "Accepted",
+                        label:
+                          kind === "Agreement"
+                            ? "Signed (recorded)"
+                            : kind === "Delivery note"
+                              ? "Received"
+                              : "Accepted",
+                      },
+                      { value: "Declined", label: "Declined" },
+                    ]}
+                  />
+                </F>
+              )}
+              {kind === "Quotation" && (
+                <F label="Next follow-up">
+                  <input
+                    type="date"
+                    className="field"
+                    value={draft.followUp ?? ""}
+                    onChange={(e) => up({ followUp: e.target.value })}
+                  />
+                </F>
+              )}
+              <F
+                label={
+                  kind === "Delivery note"
+                    ? "Received by (client signatory)"
+                    : "Client signatory"
+                }
+              >
+                <input
+                  className="field"
+                  placeholder={
+                    client?.contact ||
+                    client?.name ||
+                    "Authorized representative"
+                  }
+                  value={draft.confirmedBy ?? ""}
+                  onChange={(e) => up({ confirmedBy: e.target.value })}
+                />
+              </F>
+              <F
+                label={
+                  kind === "Delivery note"
+                    ? "Received on"
+                    : "Signed / confirmed on"
+                }
+              >
+                <input
+                  type="date"
+                  className="field"
+                  value={draft.confirmedOn ?? ""}
+                  onChange={(e) => up({ confirmedOn: e.target.value })}
+                />
+              </F>
+              <F
+                label="Client signature image (optional)"
+                className="sm:col-span-2"
+              >
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="grid h-14 w-32 shrink-0 place-items-center overflow-hidden rounded-xl border border-dashed border-border bg-muted">
+                    {draft.clientSignature ? (
+                      <img
+                        src={draft.clientSignature}
+                        alt="Client signature"
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <Upload className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </div>
+                  <input
+                    ref={sigRef}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        up({ clientSignature: await fileToDataUrl(f, 500) });
+                        e.target.value = "";
+                      }
+                    }}
+                  />
+                  <Btn
+                    type="button"
+                    onClick={() => sigRef.current?.click()}
+                    className="text-xs"
+                  >
+                    Upload signature
+                  </Btn>
+                  {draft.clientSignature && (
+                    <Btn
+                      type="button"
+                      variant="danger"
+                      onClick={() => up({ clientSignature: "" })}
+                      className="text-xs"
+                    >
+                      Remove
+                    </Btn>
+                  )}
+                </div>
+              </F>
+              {kind === "Agreement" && (
+                <F
+                  label="Additional agreement clauses"
+                  className="sm:col-span-2"
+                >
+                  <textarea
+                    className="field min-h-32"
+                    value={draft.agreementText ?? ""}
+                    onChange={(e) => up({ agreementText: e.target.value })}
+                  />
+                </F>
+              )}
+              {kind === "Delivery note" && (
+                <>
+                  <F label="Delivery method">
+                    <Sel
+                      value={draft.deliveryMethod ?? "Email"}
+                      onChange={(x) => up({ deliveryMethod: x })}
+                      options={[
+                        "Email",
+                        "Telegram",
+                        "Cloud drive",
+                        "Physical handover",
+                        "Other",
+                      ]}
+                    />
+                  </F>
+                  <F label="File link / handover reference">
+                    <input
+                      className="field"
+                      value={draft.deliveryLink ?? ""}
+                      onChange={(e) => up({ deliveryLink: e.target.value })}
+                    />
+                  </F>
+                </>
+              )}
+            </div>
+            {kind === "Quotation" && (
+              <div className="mt-4 space-y-3">
+                <F label="Follow-up note">
+                  <input
+                    className="field"
+                    value={followNote}
+                    onChange={(e) => setFollowNote(e.target.value)}
+                  />
+                </F>
+                <Btn
+                  disabled={!followNote.trim()}
+                  onClick={() => {
+                    const saved = save({
+                      followUps: [
+                        ...(draft.followUps ?? []),
+                        { date: today(), note: followNote.trim() },
                       ],
                     });
+                    if (saved) {
+                      setFollowNote("");
+                      toast.success("Follow-up recorded");
+                    }
+                  }}
+                >
+                  Log follow-up
+                </Btn>
+                {draft.followUps?.map((f, i) => (
+                  <p
+                    key={i}
+                    className="break-words text-sm text-muted-foreground"
+                  >
+                    {shortDate(f.date)} · {f.note}
+                  </p>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </Glass>
+
+      <Glass>
+        <SectionToggleHeader
+          section="items"
+          title={`Line items (${draft.items.length})`}
+          summary={`${money(v.subtotal, draft.currency)}`}
+        />
+        {openSections.items && (
+          <>
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="min-w-0 flex-1 sm:w-56 sm:flex-none">
+                  <Sel
+                    value=""
+                    placeholder="+ From services"
+                    onChange={(sid) => {
+                      const s = db.services.find((x) => x.id === sid);
+                      if (s)
+                        up({
+                          items: [
+                            ...draft.items.filter(
+                              (x) => x.description || x.price,
+                            ),
+                            serviceItem(s, draft.currency, db.settings.khrRate),
+                          ],
+                        });
+                    }}
+                    options={db.services.map((s) => ({
+                      value: s.id,
+                      label: `${s.code} · ${s.name}`,
+                    }))}
+                  />
+                </div>
+                <Btn
+                  onClick={() => up({ items: [...draft.items, blankItem()] })}
+                  className="py-2 text-xs"
+                >
+                  <Plus className="h-3 w-3" />
+                  Custom
+                </Btn>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {draft.items.map((it, i) => (
+                <div
+                  key={it.id}
+                  className="rounded-2xl border border-border bg-muted p-3 animate-in fade-in slide-in-from-top-2"
+                >
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="label-mono">Item {i + 1}</span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => up({ items: move(draft.items, i, -1) })}
+                        className="rounded-lg p-1.5 hover:bg-accent"
+                        aria-label="Move up"
+                      >
+                        <ArrowUp className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => up({ items: move(draft.items, i, 1) })}
+                        className="rounded-lg p-1.5 hover:bg-accent"
+                        aria-label="Move down"
+                      >
+                        <ArrowDown className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() =>
+                          up({
+                            items: draft.items.filter((x) => x.id !== it.id),
+                          })
+                        }
+                        className="rounded-lg p-1.5 text-destructive hover:bg-destructive/10"
+                        aria-label="Remove"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <input
+                      className="field font-medium"
+                      placeholder="Description"
+                      value={it.description}
+                      onChange={(e) =>
+                        upItem(it.id, { description: e.target.value })
+                      }
+                    />
+                    <textarea
+                      className="field min-h-20"
+                      placeholder="Scope of work, one per line"
+                      value={it.scope}
+                      onChange={(e) => upItem(it.id, { scope: e.target.value })}
+                    />
+                    <div className="grid grid-cols-3 gap-2">
+                      <input
+                        className="field"
+                        placeholder="Timeline"
+                        value={it.timeline}
+                        onChange={(e) =>
+                          upItem(it.id, { timeline: e.target.value })
+                        }
+                      />
+                      <input
+                        className="field"
+                        type="number"
+                        min={0}
+                        placeholder="Qty"
+                        value={it.qty}
+                        onChange={(e) =>
+                          upItem(it.id, { qty: Number(e.target.value) })
+                        }
+                      />
+                      <input
+                        className="field"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        placeholder="Price"
+                        value={it.price}
+                        onChange={(e) =>
+                          upItem(it.id, { price: Number(e.target.value) })
+                        }
+                      />
+                    </div>
+                    <p className="text-right font-mono text-sm">
+                      {money(it.qty * it.price, draft.currency)}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </Glass>
+
+      <Glass>
+        <SectionToggleHeader
+          section="photos"
+          title={`Reference photos (${draft.images.length}/6)`}
+          summary={
+            draft.images.length > 0 ? `${draft.images.length} attached` : "None"
+          }
+          rightExtra={
+            openSections.photos ? (
+              <Btn
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={draft.images.length >= 6}
+                className="py-1 text-xs"
+              >
+                <ImagePlus className="h-3.5 w-3.5" />
+                Add
+              </Btn>
+            ) : undefined
+          }
+        />
+        {openSections.photos && (
+          <>
+            <div className="mb-2 flex justify-end">
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/*"
+                multiple
+                hidden
+                onChange={(e) => {
+                  addImages(e.target.files);
+                  e.target.value = "";
                 }}
-                options={db.services.map((s) => ({
-                  value: s.id,
-                  label: `${s.code} · ${s.name}`,
-                }))}
               />
             </div>
-            <Btn
-              onClick={() => up({ items: [...draft.items, blankItem()] })}
-              className="py-2 text-xs"
-            >
-              <Plus className="h-3 w-3" />
-              Custom
-            </Btn>
-          </div>
-        </div>
-        <div className="space-y-3">
-          {draft.items.map((it, i) => (
             <div
-              key={it.id}
-              className="rounded-2xl border border-border bg-muted p-3 animate-in fade-in slide-in-from-top-2"
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => {
+                e.preventDefault();
+                addImages(e.dataTransfer.files);
+              }}
+              className="grid min-h-24 grid-cols-3 gap-2 rounded-2xl border border-dashed border-border p-2 sm:grid-cols-6"
             >
-              <div className="mb-2 flex items-center justify-between">
-                <span className="label-mono">Item {i + 1}</span>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => up({ items: move(draft.items, i, -1) })}
-                    className="rounded-lg p-1.5 hover:bg-accent"
-                    aria-label="Move up"
-                  >
-                    <ArrowUp className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() => up({ items: move(draft.items, i, 1) })}
-                    className="rounded-lg p-1.5 hover:bg-accent"
-                    aria-label="Move down"
-                  >
-                    <ArrowDown className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onClick={() =>
-                      up({ items: draft.items.filter((x) => x.id !== it.id) })
-                    }
-                    className="rounded-lg p-1.5 text-destructive hover:bg-destructive/10"
-                    aria-label="Remove"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <input
-                  className="field font-medium"
-                  placeholder="Description"
-                  value={it.description}
-                  onChange={(e) =>
-                    upItem(it.id, { description: e.target.value })
-                  }
-                />
-                <textarea
-                  className="field min-h-20"
-                  placeholder="Scope of work, one per line"
-                  value={it.scope}
-                  onChange={(e) => upItem(it.id, { scope: e.target.value })}
-                />
-                <div className="grid grid-cols-3 gap-2">
-                  <input
-                    className="field"
-                    placeholder="Timeline"
-                    value={it.timeline}
-                    onChange={(e) =>
-                      upItem(it.id, { timeline: e.target.value })
-                    }
-                  />
-                  <input
-                    className="field"
-                    type="number"
-                    min={0}
-                    placeholder="Qty"
-                    value={it.qty}
-                    onChange={(e) =>
-                      upItem(it.id, { qty: Number(e.target.value) })
-                    }
-                  />
-                  <input
-                    className="field"
-                    type="number"
-                    min={0}
-                    step="0.01"
-                    placeholder="Price"
-                    value={it.price}
-                    onChange={(e) =>
-                      upItem(it.id, { price: Number(e.target.value) })
-                    }
-                  />
-                </div>
-                <p className="text-right font-mono text-sm">
-                  {money(it.qty * it.price, draft.currency)}
+              {draft.images.length === 0 && (
+                <p className="col-span-full self-center text-center text-xs text-muted-foreground">
+                  Drop images here
                 </p>
-              </div>
+              )}
+              {draft.images.map((im, i) => (
+                <div key={im.id} className="group relative">
+                  <img
+                    src={im.src}
+                    alt=""
+                    className="h-20 w-full rounded-xl object-cover"
+                  />
+                  <div className="absolute inset-x-1 top-1 flex justify-between opacity-0 transition-opacity group-hover:opacity-100">
+                    <button
+                      onClick={() => up({ images: move(draft.images, i, -1) })}
+                      className="rounded-md bg-background/80 p-1"
+                    >
+                      <ArrowUp className="h-3 w-3 -rotate-90" />
+                    </button>
+                    <button
+                      onClick={() =>
+                        up({
+                          images: draft.images.filter((x) => x.id !== im.id),
+                        })
+                      }
+                      className="rounded-md bg-background/80 p-1 text-destructive"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  </div>
+                  <input
+                    className="mt-1 w-full bg-transparent text-[0.65rem] outline-none"
+                    placeholder="Caption"
+                    value={im.caption}
+                    onChange={(e) =>
+                      up({
+                        images: draft.images.map((x) =>
+                          x.id === im.id
+                            ? { ...x, caption: e.target.value }
+                            : x,
+                        ),
+                      })
+                    }
+                  />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+          </>
+        )}
       </Glass>
 
       <Glass>
-        <div className="mb-3 flex items-center justify-between">
-          <h3 className="font-medium">
-            Reference photos{" "}
-            <span className="text-xs text-muted-foreground">
-              ({draft.images.length}/6)
-            </span>
-          </h3>
-          <Btn
-            onClick={() => fileRef.current?.click()}
-            disabled={draft.images.length >= 6}
-            className="py-1.5 text-xs"
-          >
-            <ImagePlus className="h-3.5 w-3.5" />
-            Add
-          </Btn>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={(e) => {
-              addImages(e.target.files);
-              e.target.value = "";
-            }}
-          />
-        </div>
-        <div
-          onDragOver={(e) => e.preventDefault()}
-          onDrop={(e) => {
-            e.preventDefault();
-            addImages(e.dataTransfer.files);
-          }}
-          className="grid min-h-24 grid-cols-3 gap-2 rounded-2xl border border-dashed border-border p-2 sm:grid-cols-6"
-        >
-          {draft.images.length === 0 && (
-            <p className="col-span-full self-center text-center text-xs text-muted-foreground">
-              Drop images here
-            </p>
-          )}
-          {draft.images.map((im, i) => (
-            <div key={im.id} className="group relative">
-              <img
-                src={im.src}
-                alt=""
-                className="h-20 w-full rounded-xl object-cover"
-              />
-              <div className="absolute inset-x-1 top-1 flex justify-between opacity-0 transition-opacity group-hover:opacity-100">
-                <button
-                  onClick={() => up({ images: move(draft.images, i, -1) })}
-                  className="rounded-md bg-background/80 p-1"
-                >
-                  <ArrowUp className="h-3 w-3 -rotate-90" />
-                </button>
-                <button
-                  onClick={() =>
-                    up({ images: draft.images.filter((x) => x.id !== im.id) })
-                  }
-                  className="rounded-md bg-background/80 p-1 text-destructive"
-                >
-                  <Trash2 className="h-3 w-3" />
-                </button>
-              </div>
-              <input
-                className="mt-1 w-full bg-transparent text-[0.65rem] outline-none"
-                placeholder="Caption"
-                value={im.caption}
-                onChange={(e) =>
-                  up({
-                    images: draft.images.map((x) =>
-                      x.id === im.id ? { ...x, caption: e.target.value } : x,
-                    ),
-                  })
-                }
-              />
+        <SectionToggleHeader
+          section="totals"
+          title="Totals, discount & terms"
+          summary={`Total ${money(v.total, draft.currency)}`}
+        />
+        {openSections.totals && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <F label="Discount (%)">
+                <input
+                  className="field"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={draft.discount}
+                  onChange={(e) => up({ discount: Number(e.target.value) })}
+                />
+              </F>
+              <F label="Notes">
+                <input
+                  className="field"
+                  value={draft.notes}
+                  onChange={(e) => up({ notes: e.target.value })}
+                />
+              </F>
             </div>
-          ))}
-        </div>
-      </Glass>
-
-      <Glass>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <F label="Discount (%)">
-            <input
-              className="field"
-              type="number"
-              min={0}
-              max={100}
-              value={draft.discount}
-              onChange={(e) => up({ discount: Number(e.target.value) })}
-            />
-          </F>
-          <F label="Notes">
-            <input
-              className="field"
-              value={draft.notes}
-              onChange={(e) => up({ notes: e.target.value })}
-            />
-          </F>
-        </div>
-        <div className="mt-4 space-y-1 text-sm">
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Subtotal</span>
-            <span className="font-mono">
-              {money(v.subtotal, draft.currency)}
-            </span>
-          </div>
-          <div className="flex justify-between">
-            <span className="text-muted-foreground">Discount</span>
-            <span className="font-mono">
-              −{money(v.discountAmt, draft.currency)}
-            </span>
-          </div>
-          <div className="flex items-end justify-between border-t border-border pt-2">
-            <span>Grand total</span>
-            <span className="font-display text-2xl font-black">
-              {money(v.total, draft.currency)}
-            </span>
-          </div>
-          {draft.currency === "KHR" && (
-            <p className="text-right text-xs text-muted-foreground">
-              Rate 1 USD = {db.settings.khrRate} KHR
-            </p>
-          )}
-        </div>
-        <div className="mt-4 grid gap-2">
-          {(
-            [
-              ["showSchedule", "Show 50% deposit and 50% balance amounts"],
-              ["includeTerms", "Include Design Terms"],
-              ["includeRates", "Include Extra Service Rates"],
-            ] as const
-          ).map(([k, l]) => (
-            <label
-              key={k}
-              className="flex cursor-pointer items-center gap-3 text-sm"
-            >
-              <input
-                type="checkbox"
-                className="h-4 w-4 accent-[var(--primary)]"
-                checked={draft[k]}
-                onChange={(e) => up({ [k]: e.target.checked })}
-              />
-              {l}
-            </label>
-          ))}
-        </div>
+            <div className="mt-4 space-y-1 text-sm">
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="font-mono">
+                  {money(v.subtotal, draft.currency)}
+                </span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Discount</span>
+                <span className="font-mono">
+                  −{money(v.discountAmt, draft.currency)}
+                </span>
+              </div>
+              <div className="flex items-end justify-between border-t border-border pt-2">
+                <span>Grand total</span>
+                <span className="font-display text-2xl font-black">
+                  {money(v.total, draft.currency)}
+                </span>
+              </div>
+              {draft.currency === "KHR" && (
+                <p className="text-right text-xs text-muted-foreground">
+                  Rate 1 USD = {db.settings.khrRate} KHR
+                </p>
+              )}
+            </div>
+            <div className="mt-4 grid gap-2">
+              {(
+                [
+                  ["showSchedule", "Show 50% deposit and 50% balance amounts"],
+                  ["includeTerms", "Include Design Terms"],
+                  ["includeRates", "Include Extra Service Rates"],
+                ] as const
+              ).map(([k, l]) => (
+                <label
+                  key={k}
+                  className="flex cursor-pointer items-center gap-3 text-sm"
+                >
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 accent-[var(--primary)]"
+                    checked={draft[k]}
+                    onChange={(e) => up({ [k]: e.target.checked })}
+                  />
+                  {l}
+                </label>
+              ))}
+            </div>
+          </>
+        )}
       </Glass>
 
       {!isNew && isInvoice(draft) && (
         <Glass>
-          <div className="mb-2 flex items-center justify-between">
-            <h3 className="font-medium">Payments</h3>
-            <span className="font-mono text-sm">
-              {money(v.paid, draft.currency)} paid ·{" "}
-              {money(v.balance, draft.currency)} left
-            </span>
-          </div>
-          {pays.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No payments yet.</p>
-          ) : (
-            <ul className="divide-y divide-border text-sm">
-              {pays.map((p) => (
-                <li
-                  key={p.id}
-                  className="flex items-center justify-between py-2"
-                >
-                  <span>
-                    {shortDate(p.date)} · {p.method}{" "}
-                    {p.reference && `· ${p.reference}`}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="font-mono text-positive">
-                      +{money(p.amount, p.currency)}
-                    </span>
-                    <button
-                      onClick={() => setDB((d) => deletePayment(d, p.id))}
-                      className="text-muted-foreground hover:text-destructive"
-                      aria-label="Delete payment"
+          <SectionToggleHeader
+            section="payments"
+            title="Payments"
+            summary={`${money(v.paid, draft.currency)} paid · ${money(v.balance, draft.currency)} left`}
+          />
+          {openSections.payments && (
+            <>
+              {pays.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No payments yet.
+                </p>
+              ) : (
+                <ul className="divide-y divide-border text-sm">
+                  {pays.map((p) => (
+                    <li
+                      key={p.id}
+                      className="flex items-center justify-between py-2"
                     >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </span>
-                </li>
-              ))}
-            </ul>
+                      <span>
+                        {shortDate(p.date)} · {p.method}{" "}
+                        {p.reference && `· ${p.reference}`}
+                      </span>
+                      <span className="flex items-center gap-2">
+                        <span className="font-mono text-positive">
+                          +{money(p.amount, p.currency)}
+                        </span>
+                        <button
+                          onClick={() => setDB((d) => deletePayment(d, p.id))}
+                          className="text-muted-foreground hover:text-destructive"
+                          aria-label="Delete payment"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
           )}
         </Glass>
       )}
@@ -1150,19 +1366,17 @@ function Editor() {
           across 2–5 A4 pages. Have local counsel review before signing.
         </p>
       )}
-      <div className="mb-4 flex rounded-full border border-border bg-muted p-1 text-sm lg:hidden">
-        {(["form", "preview"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            className={cn(
-              "flex-1 rounded-full py-1.5 capitalize",
-              tab === t && "bg-primary text-primary-foreground",
-            )}
-          >
-            {t}
-          </button>
-        ))}
+      <div className="mb-4 lg:hidden">
+        <SlidingTabs
+          layoutGroup="invoice-mobile-tab"
+          value={tab}
+          onChange={setTab}
+          className="w-full justify-center"
+          options={[
+            { id: "form", label: "Edit details" },
+            { id: "preview", label: "A4 Preview" },
+          ]}
+        />
       </div>
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className={cn(tab === "preview" && "hidden lg:block")}>{form}</div>

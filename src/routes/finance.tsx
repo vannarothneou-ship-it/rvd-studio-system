@@ -1,30 +1,46 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { useMemo, useState } from "react";
 import { ArrowDownLeft, PiggyBank, Plus, Search, Sparkles } from "lucide-react";
-import { Btn, Empty, Glass, PageHeader, Stat } from "@/components/rv/ui";
+import {
+  Btn,
+  Empty,
+  Glass,
+  PageHeader,
+  SlidingTabs,
+  Stat,
+} from "@/components/rv/ui";
 import { EditModal, upsert, type Field } from "@/components/rv/Crud";
 import {
   AnimatedNumber,
   BudgetShelf,
   CategoryInspectorDrawer,
   GoalRingCard,
+  categoryIcon,
   expenseItemIcon,
+  paymentCardIcon,
 } from "@/components/rv/FinanceVisuals";
 import {
+  BreakdownPieCard,
+  CHART_MODE_OPTIONS,
+  CardSpendingChartCard,
+  PeriodBarPulseCard,
+  SparklineWithDates,
+  TrendChartCanvas,
+  type ChartMode,
+} from "@/components/rv/Charts";
+import {
+  EditLayoutButton,
+  EditableBentoGrid,
+  type BentoWidgetDef,
+} from "@/components/rv/BentoGrid";
+import {
+  CARD_METHODS,
   EXPENSE_CATEGORIES,
   PERSONAL_CATEGORIES,
   cashFlowSeries,
   cashReceived,
   categoryTotals,
+  compactMoney,
   expenseAccount,
   expenseCategoriesFor,
   expenseTotal,
@@ -32,6 +48,8 @@ import {
   invoiceView,
   isInvoice,
   money,
+  personalCategoryTotals,
+  personalSeries,
   setDB,
   shortDate,
   toUSD,
@@ -42,6 +60,7 @@ import {
   type CashRange,
   type Expense,
   type Goal,
+  type PersonalRange,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -69,21 +88,30 @@ export const Route = createFileRoute("/finance")({
 
 type Tab = "Studio" | "Personal" | "Combined";
 
-const RANGE_OPTIONS: { id: CashRange; label: string; desc: string }[] = [
+const STUDIO_RANGES: { id: CashRange; label: string; desc: string }[] = [
   { id: "6m", label: "6 months", desc: "last 6 months" },
   { id: "12m", label: "12 months", desc: "last 12 months" },
   { id: "all", label: "All time", desc: "all time" },
+];
+
+const PERSONAL_RANGES: { id: PersonalRange; label: string; desc: string }[] = [
+  { id: "1m", label: "This month", desc: "this month" },
+  { id: "6m", label: "6 months", desc: "last 6 months" },
+  { id: "12m", label: "12 months", desc: "last 12 months" },
 ];
 
 function Page() {
   const db = useDB((d) => d);
   const r = db.settings.khrRate;
   const [tab, setTab] = useState<Tab>("Studio");
-  const [range, setRange] = useState<CashRange>("all");
+  const [studioRange, setStudioRange] = useState<CashRange>("all");
+  const [personalRange, setPersonalRange] = useState<PersonalRange>("1m");
+  const [chartMode, setChartMode] = useState<ChartMode>("area");
   const [month, setMonth] = useState(() => today().slice(0, 7));
   const [catFilter, setCatFilter] = useState<string>("All");
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(40);
+  const [editingLayout, setEditingLayout] = useState(false);
   const [inspector, setInspector] = useState<{
     account: Account;
     category: string;
@@ -97,39 +125,53 @@ function Page() {
     { month: "long", year: "numeric", timeZone: "UTC" },
   );
 
-  const pts = cashFlowSeries(db, range);
-  const rangeMeta = RANGE_OPTIONS.find((o) => o.id === range)!;
+  const pts = cashFlowSeries(db, studioRange);
+  const pPts = personalSeries(db, personalRange, month);
+  const pAgg = personalCategoryTotals(db, personalRange, month);
+
+  const studioRangeMeta =
+    STUDIO_RANGES.find((o) => o.id === studioRange) ?? STUDIO_RANGES[2]!;
+  const personalRangeMeta =
+    PERSONAL_RANGES.find((o) => o.id === personalRange) ?? PERSONAL_RANGES[0]!;
 
   const studioInRange = pts.reduce((a, x) => a + x.inn, 0);
   const studioOutRange = pts.reduce((a, x) => a + x.out, 0);
-  const personalOutRange = pts.reduce((a, x) => a + x.personalOut, 0);
+  const personalOutCashRange = pts.reduce((a, x) => a + x.personalOut, 0);
   const studioNetRange = studioInRange - studioOutRange;
-  const combinedOutRange = studioOutRange + personalOutRange;
+  const combinedOutRange = studioOutRange + personalOutCashRange;
   const combinedNetRange = studioInRange - combinedOutRange;
+
+  const personalTotalSelectedRange = pPts.reduce(
+    (a, x) => a + x.personalOut,
+    0,
+  );
+  const personalAvgMonth = personalTotalSelectedRange / pAgg.monthsCount;
 
   let runStudio = 0;
   let runCombined = 0;
-  const chartData = pts.map((x) => {
+  const studioChartData = pts.map((x) => {
     runStudio += x.net;
     runCombined += x.combinedNet;
     const totalOut = x.out + x.personalOut;
     return {
       ...x,
       totalOut,
-      sparkValue:
-        tab === "Personal"
-          ? x.personalOut
-          : tab === "Combined"
-            ? runCombined
-            : runStudio,
+      sparkValue: tab === "Combined" ? runCombined : runStudio,
     };
   });
+
+  const personalChartData = pPts.map((x) => ({
+    label: x.label,
+    fullDate: x.fullDate,
+    personalOut: x.personalOut,
+    studioOut: x.studioOut,
+    count: x.count,
+    sparkValue: x.personalOut,
+  }));
 
   const studioInYear = cashReceived(db, year);
   const studioOutYear = expenseTotal(db, "Studio", year);
   const personalOutMonth = expenseTotal(db, "Personal", month);
-  const personalAvgMonth =
-    pts.length > 0 ? personalOutRange / pts.length : personalOutMonth;
 
   const unpaidInvoicesUSD = db.invoices
     .filter(isInvoice)
@@ -143,7 +185,7 @@ function Page() {
     studioCatsMonth.length > 0 ? studioCatsMonth : studioCatsAll;
   const studioShelfScopeLabel =
     studioCatsMonth.length > 0 ? monthLabel : "all time";
-  const personalCats = categoryTotals(db, "Personal", month);
+  const personalCats = pAgg.items;
 
   const studioGoals = db.goals.filter((g) => goalAccount(g) === "Studio");
   const personalGoals = db.goals.filter((g) => goalAccount(g) === "Personal");
@@ -168,8 +210,6 @@ function Page() {
     setCatFilter("All");
     setVisibleCount(40);
     setInspector(null);
-    if (next === "Personal" && range === "all") setRange("6m");
-    if (next !== "Personal" && range === "6m") setRange("all");
   };
 
   const openNewExpense = (account: Account, category?: string) => {
@@ -206,27 +246,45 @@ function Page() {
       {
         k: "account",
         label: "Account",
-        type: "select",
+        type: "chips",
         options: [
           { value: "Studio", label: "RothVan Design (Studio)" },
           { value: "Personal", label: "Personal" },
         ],
       },
       { k: "date", label: "Date", type: "date" },
+      { k: "amount", label: "Amount", type: "number" },
       { k: "description", label: "Description", wide: true },
       {
         k: "category",
-        label: "Category",
-        type: "select",
-        options: expenseCategoriesFor(acc),
+        label: "Category (tap to choose)",
+        type: "chips",
+        options: expenseCategoriesFor(acc).map((c) => ({
+          value: c,
+          label: c,
+          icon: categoryIcon(c),
+        })),
       },
-      {
-        k: "vendor",
-        label:
-          acc === "Personal" ? "Card / Payment method" : "Vendor / Merchant",
-      },
-      ...(acc === "Studio"
+      ...(acc === "Personal"
         ? [
+            {
+              k: "vendor" as const,
+              label: "Card / Payment method",
+              type: "chips" as const,
+              options: CARD_METHODS.map((m) => ({
+                value: m,
+                label: m,
+                icon: paymentCardIcon(m),
+              })),
+              allowCustom: true,
+              customPlaceholder: "Or enter custom card / merchant…",
+            },
+          ]
+        : [
+            {
+              k: "vendor" as const,
+              label: "Vendor / Merchant",
+            },
             {
               k: "projectId" as const,
               label: "Project (optional)",
@@ -236,13 +294,11 @@ function Page() {
                 label: `${p.code} · ${p.name}`,
               })),
             },
-          ]
-        : []),
-      { k: "amount", label: "Amount", type: "number" },
+          ]),
       {
         k: "currency",
         label: "Currency",
-        type: "select",
+        type: "chips",
         options: ["USD", "KHR"],
       },
     ];
@@ -285,7 +341,7 @@ function Page() {
       const acc = expenseAccount(e);
       if (tab === "Studio" && acc !== "Studio") return false;
       if (tab === "Personal" && acc !== "Personal") return false;
-      if (tab === "Personal" && month && !q && !e.date.startsWith(month))
+      if (tab === "Personal" && !q && !pAgg.monthSet.has(e.date.slice(0, 7)))
         return false;
       if (catFilter !== "All" && e.category !== catFilter) return false;
       if (q) {
@@ -303,7 +359,7 @@ function Page() {
 
   const leftHeadline =
     tab === "Personal"
-      ? personalOutRange
+      ? personalTotalSelectedRange
       : tab === "Combined"
         ? combinedNetRange
         : studioNetRange;
@@ -322,48 +378,827 @@ function Page() {
         ? EXPENSE_CATEGORIES
         : Array.from(new Set([...PERSONAL_CATEGORIES, ...EXPENSE_CATEGORIES]));
 
+  const activeChart = tab === "Personal" ? personalChartData : studioChartData;
+
+  const widgets = useMemo<BentoWidgetDef[]>(() => {
+    const list: BentoWidgetDef[] = [
+      {
+        id: "headline",
+        title:
+          tab === "Personal"
+            ? "Personal summary"
+            : tab === "Combined"
+              ? "Combined net retained"
+              : "Studio net profit",
+        defaultSpan: 5,
+        render: () => (
+          <Glass className="flex h-full flex-col justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">
+                {tab === "Personal"
+                  ? `Personal total spend, ${personalRange === "1m" ? monthLabel : personalRangeMeta.desc}`
+                  : tab === "Combined"
+                    ? `Combined net retained, ${studioRangeMeta.desc}`
+                    : `Studio net cash profit, ${studioRangeMeta.desc}`}
+              </p>
+              <p
+                className={cn(
+                  "mt-2 font-display text-4xl font-black tabular-nums",
+                  tab !== "Personal" && leftHeadline < 0 && "text-destructive",
+                )}
+              >
+                <AnimatedNumber key={tab} value={leftHeadline} />
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {tab === "Personal"
+                  ? "Personal monthly living & household ledger"
+                  : tab === "Combined"
+                    ? "Studio cash received minus Studio & Personal expenses"
+                    : "Studio cash received minus RothVan Design expenses"}
+              </p>
+              <SparklineWithDates
+                data={
+                  tab === "Personal"
+                    ? personalChartData.map((x) => ({
+                        label: x.label,
+                        fullDate: x.fullDate,
+                        v: x.personalOut,
+                        out: x.personalOut,
+                        count: x.count,
+                      }))
+                    : studioChartData.map((x) => ({
+                        label: x.label,
+                        fullDate: x.fullDate,
+                        v: x.sparkValue,
+                        inn: x.inn,
+                        out: tab === "Combined" ? x.totalOut : x.out,
+                        count: x.inCount + x.outCount,
+                      }))
+                }
+                gradientId={`fin-sp-${tab}`}
+                valueLabel={tab === "Personal" ? "Spend" : "Cumulative net"}
+              />
+            </div>
+            {tab === "Studio" && (
+              <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
+                <Link to="/invoices">
+                  <Stat
+                    label="Open A/R"
+                    value={compactMoney(unpaidInvoicesUSD)}
+                    fullValue={money(unpaidInvoicesUSD)}
+                  />
+                </Link>
+                <Stat
+                  label={`Cash in (${year})`}
+                  value={compactMoney(studioInYear)}
+                  fullValue={money(studioInYear)}
+                />
+                <Stat
+                  label={`Expenses (${year})`}
+                  value={compactMoney(studioOutYear)}
+                  fullValue={money(studioOutYear)}
+                />
+              </div>
+            )}
+            {tab === "Personal" && (
+              <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
+                <Stat
+                  label="This month"
+                  value={compactMoney(personalOutMonth)}
+                  fullValue={money(personalOutMonth)}
+                  tone="neg"
+                />
+                <Stat
+                  label="Avg / month"
+                  value={compactMoney(personalAvgMonth)}
+                  fullValue={money(personalAvgMonth)}
+                />
+                <Stat
+                  label="Saved goals"
+                  tone="pos"
+                  value={`${compactMoney(personalSavedTotal)} / ${compactMoney(personalTargetTotal)}`}
+                  fullValue={`${money(personalSavedTotal)} / ${money(personalTargetTotal)}`}
+                />
+              </div>
+            )}
+            {tab === "Combined" && (
+              <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
+                <Stat
+                  label="Studio in"
+                  value={compactMoney(studioInRange)}
+                  fullValue={money(studioInRange)}
+                  tone="pos"
+                />
+                <Stat
+                  label="Studio out"
+                  value={compactMoney(studioOutRange)}
+                  fullValue={money(studioOutRange)}
+                />
+                <Stat
+                  label="Personal out"
+                  value={compactMoney(personalOutCashRange)}
+                  fullValue={money(personalOutCashRange)}
+                  tone="neg"
+                />
+              </div>
+            )}
+          </Glass>
+        ),
+      },
+      {
+        id: "trendChart",
+        title:
+          tab === "Personal"
+            ? "Personal spending trend"
+            : tab === "Combined"
+              ? "Combined cash flow"
+              : "Studio cash flow",
+        defaultSpan: 7,
+        render: () => (
+          <Glass delay={80} className="h-full">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-medium">
+                {tab === "Personal"
+                  ? "Personal spending trend"
+                  : tab === "Combined"
+                    ? "Combined cash flow"
+                    : "Studio cash flow"}
+              </h2>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <SlidingTabs
+                  size="xs"
+                  layoutGroup="fin-chart-mode"
+                  value={chartMode}
+                  onChange={setChartMode}
+                  options={CHART_MODE_OPTIONS}
+                />
+                {tab === "Personal" ? (
+                  <SlidingTabs
+                    size="xs"
+                    tone="invert"
+                    layoutGroup="fin-personal-range"
+                    value={personalRange}
+                    onChange={setPersonalRange}
+                    options={PERSONAL_RANGES.map((o) => ({
+                      id: o.id,
+                      label: o.label,
+                    }))}
+                  />
+                ) : (
+                  <SlidingTabs
+                    size="xs"
+                    tone="invert"
+                    layoutGroup="fin-studio-range"
+                    value={studioRange}
+                    onChange={setStudioRange}
+                    options={STUDIO_RANGES.map((o) => ({
+                      id: o.id,
+                      label: o.label,
+                    }))}
+                  />
+                )}
+              </div>
+            </div>
+
+            {tab === "Studio" && (
+              <div className="mb-3 grid grid-cols-3 gap-3">
+                <Stat
+                  label="● Cash in"
+                  value={compactMoney(studioInRange)}
+                  fullValue={money(studioInRange)}
+                />
+                <Stat
+                  label="○ Studio out"
+                  value={compactMoney(studioOutRange)}
+                  fullValue={money(studioOutRange)}
+                />
+                <Stat
+                  label="Net"
+                  value={compactMoney(studioNetRange, "USD", true)}
+                  fullValue={money(studioNetRange, "USD", true)}
+                  tone={studioNetRange >= 0 ? "pos" : "neg"}
+                />
+              </div>
+            )}
+            {tab === "Personal" && (
+              <div className="mb-3 grid grid-cols-3 gap-3">
+                <Stat
+                  label="● Personal out"
+                  value={compactMoney(personalTotalSelectedRange)}
+                  fullValue={money(personalTotalSelectedRange)}
+                />
+                <Stat
+                  label="○ Monthly avg"
+                  value={compactMoney(personalAvgMonth)}
+                  fullValue={money(personalAvgMonth)}
+                />
+                <Stat
+                  label={monthLabel}
+                  value={compactMoney(personalOutMonth)}
+                  fullValue={money(personalOutMonth)}
+                  tone={personalOutMonth > personalAvgMonth ? "neg" : undefined}
+                />
+              </div>
+            )}
+            {tab === "Combined" && (
+              <div className="mb-3 grid grid-cols-3 gap-3">
+                <Stat
+                  label="● Studio in"
+                  value={compactMoney(studioInRange)}
+                  fullValue={money(studioInRange)}
+                />
+                <Stat
+                  label="○ Total out"
+                  value={compactMoney(combinedOutRange)}
+                  fullValue={money(combinedOutRange)}
+                />
+                <Stat
+                  label="Retained"
+                  value={compactMoney(combinedNetRange, "USD", true)}
+                  fullValue={money(combinedNetRange, "USD", true)}
+                  tone={combinedNetRange >= 0 ? "pos" : "neg"}
+                />
+              </div>
+            )}
+
+            <TrendChartCanvas
+              mode={chartMode}
+              data={activeChart}
+              primaryKey={
+                tab === "Personal"
+                  ? "personalOut"
+                  : tab === "Combined"
+                    ? "inn"
+                    : "inn"
+              }
+              primaryName={
+                tab === "Personal"
+                  ? "Personal spend"
+                  : tab === "Combined"
+                    ? "Studio cash in"
+                    : "Cash in"
+              }
+              secondaryKey={
+                tab === "Personal"
+                  ? "studioOut"
+                  : tab === "Combined"
+                    ? "totalOut"
+                    : "out"
+              }
+              secondaryName={
+                tab === "Personal"
+                  ? "Studio expenses"
+                  : tab === "Combined"
+                    ? "All expenses"
+                    : "Studio expenses"
+              }
+              gradientId={`fin-cf-${tab}`}
+              xInterval={tab === "Personal" && personalRange === "1m" ? 3 : 0}
+            />
+          </Glass>
+        ),
+      },
+      {
+        id: "breakdownPie",
+        title: "Category & revenue pie chart",
+        defaultSpan: 6,
+        render: () => (
+          <BreakdownPieCard
+            db={db}
+            account={tab}
+            personalItems={personalCats}
+            studioItems={studioCats}
+            scopeLabel={
+              tab === "Personal" ? pAgg.scopeLabel : studioShelfScopeLabel
+            }
+            onSelectCategory={(acc, category) =>
+              setInspector({ account: acc, category })
+            }
+          />
+        ),
+      },
+      {
+        id: "pulseBars",
+        title:
+          tab === "Personal"
+            ? "Recent spending bar pulse"
+            : "Monthly income pulse",
+        defaultSpan: 6,
+        render: () => {
+          const pulseData =
+            tab === "Personal"
+              ? (() => {
+                  const activeDays =
+                    personalRange === "1m"
+                      ? personalChartData
+                          .filter((d) => d.personalOut > 0)
+                          .slice(-7)
+                      : personalChartData.slice(-6);
+                  return activeDays.length > 0
+                    ? activeDays
+                    : personalChartData.slice(-7);
+                })()
+              : studioChartData.slice(-6);
+          return (
+            <PeriodBarPulseCard
+              title={
+                tab === "Personal"
+                  ? personalRange === "1m"
+                    ? "Active days bar breakdown"
+                    : "Monthly personal bars"
+                  : "Recent monthly studio revenue"
+              }
+              subtitle={
+                tab === "Personal"
+                  ? `Date-by-date comparison (${pAgg.scopeLabel})`
+                  : `Last ${Math.min(6, studioChartData.length)} months cash received`
+              }
+              data={pulseData}
+              valueKey={tab === "Personal" ? "personalOut" : "inn"}
+            />
+          );
+        },
+      },
+      ...(tab !== "Studio"
+        ? [
+            {
+              id: "cardSpend",
+              title: "Debit vs Credit card spending",
+              defaultSpan: 12 as const,
+              render: () => (
+                <CardSpendingChartCard
+                  db={db}
+                  month={month}
+                  defaultRange={personalRange}
+                  layoutIdPrefix={`fin-card-${tab}`}
+                />
+              ),
+            },
+          ]
+        : []),
+      {
+        id: "jarsShelf",
+        title: "Category budget jars",
+        defaultSpan: 12,
+        render: () => (
+          <div>
+            {tab === "Personal" ? (
+              personalCats.length === 0 ? (
+                <Glass>
+                  <Empty>
+                    No personal expenses recorded in {pAgg.scopeLabel}.
+                  </Empty>
+                </Glass>
+              ) : (
+                <BudgetShelf
+                  db={db}
+                  account="Personal"
+                  month={month}
+                  monthLabel={pAgg.scopeLabel}
+                  items={personalCats}
+                  limitScale={pAgg.monthsCount}
+                  selectedCategory={
+                    inspector?.account === "Personal"
+                      ? inspector.category
+                      : null
+                  }
+                  onSelectCategory={(category) =>
+                    setInspector({ account: "Personal", category })
+                  }
+                />
+              )
+            ) : tab === "Studio" ? (
+              studioCats.length === 0 ? (
+                <Glass>
+                  <Empty>No studio expenses recorded yet.</Empty>
+                </Glass>
+              ) : (
+                <BudgetShelf
+                  db={db}
+                  account="Studio"
+                  month={month}
+                  monthLabel={studioShelfScopeLabel}
+                  items={studioCats}
+                  selectedCategory={
+                    inspector?.account === "Studio" ? inspector.category : null
+                  }
+                  onSelectCategory={(category) =>
+                    setInspector({ account: "Studio", category })
+                  }
+                />
+              )
+            ) : (
+              <div className="space-y-4">
+                {personalCats.length > 0 && (
+                  <BudgetShelf
+                    db={db}
+                    account="Personal"
+                    month={month}
+                    monthLabel={pAgg.scopeLabel}
+                    items={personalCats}
+                    limitScale={pAgg.monthsCount}
+                    selectedCategory={
+                      inspector?.account === "Personal"
+                        ? inspector.category
+                        : null
+                    }
+                    onSelectCategory={(category) =>
+                      setInspector({ account: "Personal", category })
+                    }
+                  />
+                )}
+                {studioCats.length > 0 && (
+                  <BudgetShelf
+                    db={db}
+                    account="Studio"
+                    month={month}
+                    monthLabel={studioShelfScopeLabel}
+                    items={studioCats}
+                    selectedCategory={
+                      inspector?.account === "Studio"
+                        ? inspector.category
+                        : null
+                    }
+                    onSelectCategory={(category) =>
+                      setInspector({ account: "Studio", category })
+                    }
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        ),
+      },
+      {
+        id: "goalsGrid",
+        title: "Saving & studio goals",
+        defaultSpan: 12,
+        render: () => (
+          <Glass delay={180}>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                {tab === "Personal" ? (
+                  <PiggyBank className="h-4 w-4 text-primary" />
+                ) : (
+                  <Sparkles className="h-4 w-4 text-primary" />
+                )}
+                <p className="label-mono">
+                  {tab === "Personal"
+                    ? "Personal saving goals"
+                    : tab === "Studio"
+                      ? "RothVan Studio goals"
+                      : "All studio & personal goals"}
+                </p>
+              </div>
+              <Btn
+                onClick={() =>
+                  openNewGoal(tab === "Personal" ? "Personal" : "Studio")
+                }
+                className="px-3 py-1 text-xs"
+              >
+                <Plus className="h-3 w-3" />
+                Add goal
+              </Btn>
+            </div>
+
+            {activeGoals.length === 0 ? (
+              <Empty>No saving goals yet.</Empty>
+            ) : (
+              <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+                {activeGoals.map((g, idx) => (
+                  <GoalRingCard
+                    key={g.id}
+                    goal={g}
+                    current={goalNow(g)}
+                    accountLabel={
+                      tab === "Combined" ? goalAccount(g) : undefined
+                    }
+                    delay={idx * 60}
+                    onEdit={() => setGoal(g)}
+                    onQuickAdd={
+                      g.kind === "manual"
+                        ? (amt) =>
+                            setDB((d) => ({
+                              ...d,
+                              goals: d.goals.map((x) =>
+                                x.id === g.id
+                                  ? { ...x, current: x.current + amt }
+                                  : x,
+                              ),
+                            }))
+                        : undefined
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </Glass>
+        ),
+      },
+    ];
+
+    if (tab !== "Personal") {
+      list.push({
+        id: "studioIncome",
+        title: "Recent studio income",
+        defaultSpan: 12,
+        render: () => (
+          <Glass delay={240}>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="label-mono">
+                Recent Studio Income ({db.payments.length} recorded payments)
+              </p>
+              <Link
+                to="/invoices"
+                className="text-xs text-primary hover:underline"
+              >
+                Invoices →
+              </Link>
+            </div>
+            {recentPayments.length === 0 ? (
+              <Empty>No invoice payments recorded yet.</Empty>
+            ) : (
+              <ul className="divide-y divide-border">
+                {recentPayments.map((p) => {
+                  const inv = db.invoices.find((i) => i.id === p.invoiceId);
+                  const client = db.clients.find((c) => c.id === inv?.clientId);
+                  return (
+                    <li key={p.id}>
+                      <Link
+                        to="/invoices/$id"
+                        params={{ id: p.invoiceId }}
+                        className="flex items-center justify-between gap-3 rounded-xl px-2 py-2.5 hover:bg-muted"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-positive">
+                            <ArrowDownLeft className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
+                              {client?.name ?? "Client"} ·{" "}
+                              {inv?.no ?? "Invoice"}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {shortDate(p.date)} · {p.method}
+                              {p.reference ? ` · ${p.reference}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="shrink-0 font-mono text-sm tabular-nums text-positive">
+                          +{money(toUSD(p.amount, p.currency, r))}
+                        </span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </Glass>
+        ),
+      });
+    }
+
+    list.push({
+      id: "expensesLedger",
+      title: "Expenses ledger",
+      defaultSpan: 12,
+      render: () => (
+        <Glass delay={280}>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="label-mono">
+                {tab === "Personal"
+                  ? q
+                    ? `Personal expenses · all dates matching "${query}"`
+                    : `Personal expenses · ${pAgg.scopeLabel}`
+                  : tab === "Studio"
+                    ? "RothVan Design expenses"
+                    : "All studio & personal expenses"}
+                {catFilter !== "All" ? ` · ${catFilter}` : ""}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {filteredExpenses.length}{" "}
+                {filteredExpenses.length === 1 ? "entry" : "entries"}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => {
+                    setQuery(e.target.value);
+                    setVisibleCount(40);
+                  }}
+                  placeholder="Search item or card..."
+                  className="field w-44 py-1.5 pl-8 text-xs sm:w-56"
+                />
+              </div>
+              <Btn
+                onClick={() =>
+                  openNewExpense(tab === "Personal" ? "Personal" : "Studio")
+                }
+                className="px-3 py-1.5 text-xs"
+              >
+                <Plus className="h-3 w-3" />
+                Add {tab === "Personal" ? "personal" : "studio"}
+              </Btn>
+            </div>
+          </div>
+
+          <div className="mb-3 flex flex-wrap gap-1.5">
+            <button
+              type="button"
+              onClick={() => setCatFilter("All")}
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-[0.7rem] transition-colors",
+                catFilter === "All"
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border text-muted-foreground hover:text-foreground",
+              )}
+            >
+              All
+            </button>
+            {activeCategoriesForFilter.map((c) => {
+              const CatIcon = categoryIcon(c);
+              return (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setCatFilter(catFilter === c ? "All" : c)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.7rem] transition-colors",
+                    catFilter === c
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <CatIcon className="h-3 w-3 shrink-0" />
+                  <span>{c}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {visibleExpenses.length === 0 ? (
+            <Empty>No expenses match this filter.</Empty>
+          ) : (
+            <>
+              <ul className="divide-y divide-border">
+                {visibleExpenses.map((e) => {
+                  const acc = expenseAccount(e);
+                  const proj = e.projectId
+                    ? db.projects.find((p) => p.id === e.projectId)
+                    : undefined;
+                  const ItemIcon = expenseItemIcon(e);
+                  return (
+                    <li key={e.id}>
+                      <button
+                        onClick={() => setEdit(e)}
+                        className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-muted"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-primary">
+                            <ItemIcon className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">
+                              {e.description || e.vendor || "Expense"}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {shortDate(e.date)} · {e.category}
+                              {e.vendor ? ` · ${e.vendor}` : ""}
+                              {proj ? ` · ${proj.code}` : ""}
+                              {tab === "Combined" ? ` · ${acc}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                        <p className="font-mono text-sm tabular-nums text-destructive">
+                          {money(-e.amount, e.currency)}
+                        </p>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+              {filteredExpenses.length > visibleExpenses.length && (
+                <div className="mt-3 flex justify-center gap-2">
+                  <Btn
+                    onClick={() => setVisibleCount((n) => n + 60)}
+                    className="px-4 py-1.5 text-xs"
+                  >
+                    Show more (
+                    {filteredExpenses.length - visibleExpenses.length}{" "}
+                    remaining)
+                  </Btn>
+                  <Btn
+                    onClick={() => setVisibleCount(filteredExpenses.length)}
+                    className="px-4 py-1.5 text-xs"
+                  >
+                    Show all ({filteredExpenses.length})
+                  </Btn>
+                </div>
+              )}
+              {visibleCount > 40 && filteredExpenses.length > 40 && (
+                <div className="mt-2 flex justify-center">
+                  <Btn
+                    onClick={() => setVisibleCount(40)}
+                    className="px-4 py-1.5 text-xs"
+                  >
+                    Hide extra rows
+                  </Btn>
+                </div>
+              )}
+            </>
+          )}
+        </Glass>
+      ),
+    });
+
+    return list;
+  }, [
+    tab,
+    chartMode,
+    personalRange,
+    personalRangeMeta,
+    studioRange,
+    studioRangeMeta,
+    monthLabel,
+    leftHeadline,
+    activeChart,
+    personalChartData,
+    studioChartData,
+    unpaidInvoicesUSD,
+    year,
+    studioInYear,
+    studioOutYear,
+    personalOutMonth,
+    personalAvgMonth,
+    personalSavedTotal,
+    personalTargetTotal,
+    studioInRange,
+    studioOutRange,
+    personalOutCashRange,
+    studioNetRange,
+    personalTotalSelectedRange,
+    combinedOutRange,
+    combinedNetRange,
+    personalCats,
+    studioCats,
+    studioShelfScopeLabel,
+    pAgg,
+    db,
+    month,
+    inspector,
+    activeGoals,
+    recentPayments,
+    r,
+    q,
+    query,
+    catFilter,
+    filteredExpenses,
+    activeCategoriesForFilter,
+    visibleExpenses,
+    visibleCount,
+  ]);
+
   return (
     <>
       <PageHeader
         title="Finance"
         owner={db.settings.ownerName}
         action={
-          <Btn
-            variant="gold"
-            onClick={() =>
-              openNewExpense(tab === "Personal" ? "Personal" : "Studio")
-            }
-          >
-            <Plus className="h-4 w-4" />
-            Add {tab === "Personal" ? "personal" : "studio"} expense
-          </Btn>
+          <div className="flex flex-wrap items-center gap-2">
+            <EditLayoutButton
+              editing={editingLayout}
+              onToggle={() => setEditingLayout((e) => !e)}
+            />
+            <Btn
+              variant="gold"
+              onClick={() =>
+                openNewExpense(tab === "Personal" ? "Personal" : "Studio")
+              }
+            >
+              <Plus className="h-4 w-4" />
+              Add {tab === "Personal" ? "personal" : "studio"} expense
+            </Btn>
+          </div>
         }
       />
 
       {/* Account Tabs + Month Filter */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="inline-flex rounded-full border border-border bg-muted p-1 text-xs">
-          {(
-            [
-              { id: "Studio", label: "RothVan Design" },
-              { id: "Personal", label: "Personal" },
-              { id: "Combined", label: "Combined" },
-            ] as const
-          ).map((t) => (
-            <button
-              key={t.id}
-              onClick={() => switchTab(t.id)}
-              className={cn(
-                "rounded-full px-3.5 py-1.5 font-medium transition-all duration-200",
-                tab === t.id
-                  ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <SlidingTabs
+          layoutGroup="finance-account-tabs"
+          value={tab}
+          onChange={switchTab}
+          options={[
+            { id: "Studio", label: "RothVan Design" },
+            { id: "Personal", label: "Personal" },
+            { id: "Combined", label: "Combined" },
+          ]}
+        />
         <div className="flex items-center gap-2">
           <span className="label-mono">Month</span>
           <input
@@ -378,602 +1213,12 @@ function Page() {
         </div>
       </div>
 
-      {/* Overview-Style Dashboard Grid */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,8fr)]">
-        <Glass className="flex flex-col">
-          <p className="text-sm text-muted-foreground">
-            {tab === "Personal"
-              ? `Personal total spend, ${rangeMeta.desc}`
-              : tab === "Combined"
-                ? `Combined net retained, ${rangeMeta.desc}`
-                : `Studio net cash profit, ${rangeMeta.desc}`}
-          </p>
-          <p
-            className={cn(
-              "mt-2 font-display text-4xl font-black",
-              tab !== "Personal" && leftHeadline < 0 && "text-destructive",
-            )}
-          >
-            <AnimatedNumber value={leftHeadline} />
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {tab === "Personal"
-              ? "Personal monthly living & household ledger"
-              : tab === "Combined"
-                ? "Studio cash received minus Studio & Personal expenses"
-                : "Studio cash received minus RothVan Design expenses"}
-          </p>
-          <div className="my-4 h-24 flex-1">
-            <ResponsiveContainer>
-              <AreaChart data={chartData}>
-                <defs>
-                  <linearGradient id="fin-sp" x1="0" y1="0" x2="0" y2="1">
-                    <stop
-                      offset="0"
-                      stopColor="var(--primary)"
-                      stopOpacity={0.4}
-                    />
-                    <stop
-                      offset="1"
-                      stopColor="var(--primary)"
-                      stopOpacity={0}
-                    />
-                  </linearGradient>
-                </defs>
-                <Area
-                  dataKey="sparkValue"
-                  stroke="var(--primary)"
-                  strokeWidth={2}
-                  fill="url(#fin-sp)"
-                  type="monotone"
-                  animationDuration={750}
-                  animationEasing="ease-out"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-          {tab === "Studio" && (
-            <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
-              <Link to="/invoices">
-                <Stat label="Open A/R" value={money(unpaidInvoicesUSD)} />
-              </Link>
-              <Stat label={`Cash in (${year})`} value={money(studioInYear)} />
-              <Stat label={`Expenses (${year})`} value={money(studioOutYear)} />
-            </div>
-          )}
-          {tab === "Personal" && (
-            <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
-              <Stat
-                label="This month"
-                value={money(personalOutMonth)}
-                tone="neg"
-              />
-              <Stat label="Avg / month" value={money(personalAvgMonth)} />
-              <Stat
-                label="Saved goals"
-                tone="pos"
-                value={`${money(personalSavedTotal)} / ${money(personalTargetTotal)}`}
-              />
-            </div>
-          )}
-          {tab === "Combined" && (
-            <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
-              <Stat label="Studio in" value={money(studioInRange)} tone="pos" />
-              <Stat label="Studio out" value={money(studioOutRange)} />
-              <Stat
-                label="Personal out"
-                value={money(personalOutRange)}
-                tone="neg"
-              />
-            </div>
-          )}
-        </Glass>
-
-        <Glass delay={80}>
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-medium">
-              {tab === "Personal"
-                ? "Personal spending trend"
-                : tab === "Combined"
-                  ? "Combined cash flow"
-                  : "Studio cash flow"}
-            </h2>
-            <div className="flex rounded-full border border-border bg-muted p-1 text-xs">
-              {RANGE_OPTIONS.map((o) => (
-                <button
-                  key={o.id}
-                  onClick={() => setRange(o.id)}
-                  className={cn(
-                    "rounded-full px-3 py-1 transition-colors",
-                    range === o.id
-                      ? "bg-foreground text-background"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {tab === "Studio" && (
-            <div className="mb-3 grid grid-cols-3 gap-3">
-              <Stat label="● Cash in" value={money(studioInRange)} />
-              <Stat label="○ Studio out" value={money(studioOutRange)} />
-              <Stat
-                label="Net"
-                value={money(studioNetRange, "USD", true)}
-                tone={studioNetRange >= 0 ? "pos" : "neg"}
-              />
-            </div>
-          )}
-          {tab === "Personal" && (
-            <div className="mb-3 grid grid-cols-3 gap-3">
-              <Stat label="● Personal out" value={money(personalOutRange)} />
-              <Stat label="○ Monthly avg" value={money(personalAvgMonth)} />
-              <Stat
-                label={monthLabel}
-                value={money(personalOutMonth)}
-                tone={personalOutMonth > personalAvgMonth ? "neg" : undefined}
-              />
-            </div>
-          )}
-          {tab === "Combined" && (
-            <div className="mb-3 grid grid-cols-3 gap-3">
-              <Stat label="● Studio in" value={money(studioInRange)} />
-              <Stat label="○ Total out" value={money(combinedOutRange)} />
-              <Stat
-                label="Retained"
-                value={money(combinedNetRange, "USD", true)}
-                tone={combinedNetRange >= 0 ? "pos" : "neg"}
-              />
-            </div>
-          )}
-
-          <div className="h-56">
-            <ResponsiveContainer>
-              <AreaChart
-                data={chartData}
-                margin={{ left: -18, right: 4, top: 8 }}
-              >
-                <defs>
-                  <linearGradient id="fin-cf" x1="0" y1="0" x2="0" y2="1">
-                    <stop
-                      offset="0"
-                      stopColor="var(--primary)"
-                      stopOpacity={0.35}
-                    />
-                    <stop
-                      offset="1"
-                      stopColor="var(--primary)"
-                      stopOpacity={0}
-                    />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid
-                  stroke="var(--border)"
-                  strokeDasharray="3 6"
-                  vertical={false}
-                />
-                <XAxis
-                  dataKey="label"
-                  tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <YAxis
-                  tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-                  axisLine={false}
-                  tickLine={false}
-                  tickFormatter={(v) => `$${v}`}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "var(--popover)",
-                    border: "1px solid var(--border)",
-                    borderRadius: 12,
-                    color: "var(--foreground)",
-                  }}
-                  formatter={(v: number) => money(v)}
-                />
-                {tab === "Personal" ? (
-                  <>
-                    <Area
-                      name="Personal spend"
-                      dataKey="personalOut"
-                      type="monotone"
-                      stroke="var(--primary)"
-                      strokeWidth={2}
-                      fill="url(#fin-cf)"
-                      animationDuration={750}
-                      animationEasing="ease-out"
-                    />
-                    <Area
-                      name="Studio expenses"
-                      dataKey="out"
-                      type="monotone"
-                      stroke="var(--muted-foreground)"
-                      strokeDasharray="5 5"
-                      fill="transparent"
-                      animationDuration={750}
-                      animationEasing="ease-out"
-                    />
-                  </>
-                ) : tab === "Combined" ? (
-                  <>
-                    <Area
-                      name="Studio cash in"
-                      dataKey="inn"
-                      type="monotone"
-                      stroke="var(--primary)"
-                      strokeWidth={2}
-                      fill="url(#fin-cf)"
-                      animationDuration={750}
-                      animationEasing="ease-out"
-                    />
-                    <Area
-                      name="All expenses (Studio + Personal)"
-                      dataKey="totalOut"
-                      type="monotone"
-                      stroke="var(--muted-foreground)"
-                      strokeDasharray="5 5"
-                      fill="transparent"
-                      animationDuration={750}
-                      animationEasing="ease-out"
-                    />
-                  </>
-                ) : (
-                  <>
-                    <Area
-                      name="Cash in"
-                      dataKey="inn"
-                      type="monotone"
-                      stroke="var(--primary)"
-                      strokeWidth={2}
-                      fill="url(#fin-cf)"
-                      animationDuration={750}
-                      animationEasing="ease-out"
-                    />
-                    <Area
-                      name="Studio expenses"
-                      dataKey="out"
-                      type="monotone"
-                      stroke="var(--muted-foreground)"
-                      strokeDasharray="5 5"
-                      fill="transparent"
-                      animationDuration={750}
-                      animationEasing="ease-out"
-                    />
-                  </>
-                )}
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </Glass>
-      </div>
-
-      {/* Category Budget Jars Shelf + Spending Fast Card */}
-      <div className="mt-4">
-        {tab === "Personal" ? (
-          personalCats.length === 0 ? (
-            <Glass>
-              <Empty>No personal expenses recorded in {monthLabel}.</Empty>
-            </Glass>
-          ) : (
-            <BudgetShelf
-              db={db}
-              account="Personal"
-              month={month}
-              monthLabel={monthLabel}
-              items={personalCats}
-              selectedCategory={
-                inspector?.account === "Personal" ? inspector.category : null
-              }
-              onSelectCategory={(category) =>
-                setInspector({ account: "Personal", category })
-              }
-            />
-          )
-        ) : tab === "Studio" ? (
-          studioCats.length === 0 ? (
-            <Glass>
-              <Empty>No studio expenses recorded yet.</Empty>
-            </Glass>
-          ) : (
-            <BudgetShelf
-              db={db}
-              account="Studio"
-              month={month}
-              monthLabel={studioShelfScopeLabel}
-              items={studioCats}
-              selectedCategory={
-                inspector?.account === "Studio" ? inspector.category : null
-              }
-              onSelectCategory={(category) =>
-                setInspector({ account: "Studio", category })
-              }
-            />
-          )
-        ) : (
-          <div className="space-y-4">
-            {personalCats.length > 0 && (
-              <BudgetShelf
-                db={db}
-                account="Personal"
-                month={month}
-                monthLabel={monthLabel}
-                items={personalCats}
-                selectedCategory={
-                  inspector?.account === "Personal" ? inspector.category : null
-                }
-                onSelectCategory={(category) =>
-                  setInspector({ account: "Personal", category })
-                }
-              />
-            )}
-            {studioCats.length > 0 && (
-              <BudgetShelf
-                db={db}
-                account="Studio"
-                month={month}
-                monthLabel={studioShelfScopeLabel}
-                items={studioCats}
-                selectedCategory={
-                  inspector?.account === "Studio" ? inspector.category : null
-                }
-                onSelectCategory={(category) =>
-                  setInspector({ account: "Studio", category })
-                }
-              />
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Circular Ring Goals Grid */}
-      <Glass delay={180} className="mt-4">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            {tab === "Personal" ? (
-              <PiggyBank className="h-4 w-4 text-primary" />
-            ) : (
-              <Sparkles className="h-4 w-4 text-primary" />
-            )}
-            <p className="label-mono">
-              {tab === "Personal"
-                ? "Personal saving goals"
-                : tab === "Studio"
-                  ? "RothVan Studio goals"
-                  : "All studio & personal goals"}
-            </p>
-          </div>
-          <Btn
-            onClick={() =>
-              openNewGoal(tab === "Personal" ? "Personal" : "Studio")
-            }
-            className="px-3 py-1 text-xs"
-          >
-            <Plus className="h-3 w-3" />
-            Add goal
-          </Btn>
-        </div>
-
-        {activeGoals.length === 0 ? (
-          <Empty>No saving goals yet.</Empty>
-        ) : (
-          <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-            {activeGoals.map((g, idx) => (
-              <GoalRingCard
-                key={g.id}
-                goal={g}
-                current={goalNow(g)}
-                accountLabel={tab === "Combined" ? goalAccount(g) : undefined}
-                delay={idx * 60}
-                onEdit={() => setGoal(g)}
-                onQuickAdd={
-                  g.kind === "manual"
-                    ? (amt) =>
-                        setDB((d) => ({
-                          ...d,
-                          goals: d.goals.map((x) =>
-                            x.id === g.id
-                              ? { ...x, current: x.current + amt }
-                              : x,
-                          ),
-                        }))
-                    : undefined
-                }
-              />
-            ))}
-          </div>
-        )}
-      </Glass>
-
-      {/* Studio Auto-Synced Income (from Invoice Payments) */}
-      {tab !== "Personal" && (
-        <Glass delay={240} className="mt-4">
-          <div className="mb-3 flex items-center justify-between">
-            <p className="label-mono">
-              Recent Studio Income ({db.payments.length} recorded payments)
-            </p>
-            <Link
-              to="/invoices"
-              className="text-xs text-primary hover:underline"
-            >
-              Invoices →
-            </Link>
-          </div>
-          {recentPayments.length === 0 ? (
-            <Empty>No invoice payments recorded yet.</Empty>
-          ) : (
-            <ul className="divide-y divide-border">
-              {recentPayments.map((p) => {
-                const inv = db.invoices.find((i) => i.id === p.invoiceId);
-                const client = db.clients.find((c) => c.id === inv?.clientId);
-                return (
-                  <li key={p.id}>
-                    <Link
-                      to="/invoices/$id"
-                      params={{ id: p.invoiceId }}
-                      className="flex items-center justify-between gap-3 rounded-xl px-2 py-2.5 hover:bg-muted"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-positive">
-                          <ArrowDownLeft className="h-4 w-4" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">
-                            {client?.name ?? "Client"} · {inv?.no ?? "Invoice"}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {shortDate(p.date)} · {p.method}
-                            {p.reference ? ` · ${p.reference}` : ""}
-                          </p>
-                        </div>
-                      </div>
-                      <span className="shrink-0 font-mono text-sm text-positive">
-                        +{money(toUSD(p.amount, p.currency, r))}
-                      </span>
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </Glass>
-      )}
-
-      {/* Expenses Ledger with Category Pills, Search & Item Icons */}
-      <Glass delay={280} className="mt-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p className="label-mono">
-              {tab === "Personal"
-                ? q
-                  ? `Personal expenses · all dates matching "${query}"`
-                  : `Personal expenses · ${monthLabel}`
-                : tab === "Studio"
-                  ? "RothVan Design expenses"
-                  : "All studio & personal expenses"}
-              {catFilter !== "All" ? ` · ${catFilter}` : ""}
-            </p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {filteredExpenses.length}{" "}
-              {filteredExpenses.length === 1 ? "entry" : "entries"}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => {
-                  setQuery(e.target.value);
-                  setVisibleCount(40);
-                }}
-                placeholder="Search item or card..."
-                className="field w-44 py-1.5 pl-8 text-xs sm:w-56"
-              />
-            </div>
-            <Btn
-              onClick={() =>
-                openNewExpense(tab === "Personal" ? "Personal" : "Studio")
-              }
-              className="px-3 py-1.5 text-xs"
-            >
-              <Plus className="h-3 w-3" />
-              Add {tab === "Personal" ? "personal" : "studio"}
-            </Btn>
-          </div>
-        </div>
-
-        {/* Category Filter Strip */}
-        <div className="mb-3 flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            onClick={() => setCatFilter("All")}
-            className={cn(
-              "rounded-full border px-2.5 py-1 text-[0.7rem] transition-colors",
-              catFilter === "All"
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border text-muted-foreground hover:text-foreground",
-            )}
-          >
-            All
-          </button>
-          {activeCategoriesForFilter.map((c) => (
-            <button
-              key={c}
-              type="button"
-              onClick={() => setCatFilter(catFilter === c ? "All" : c)}
-              className={cn(
-                "rounded-full border px-2.5 py-1 text-[0.7rem] transition-colors",
-                catFilter === c
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {c}
-            </button>
-          ))}
-        </div>
-
-        {visibleExpenses.length === 0 ? (
-          <Empty>No expenses match this filter.</Empty>
-        ) : (
-          <>
-            <ul className="divide-y divide-border">
-              {visibleExpenses.map((e) => {
-                const acc = expenseAccount(e);
-                const proj = e.projectId
-                  ? db.projects.find((p) => p.id === e.projectId)
-                  : undefined;
-                const ItemIcon = expenseItemIcon(e);
-                return (
-                  <li key={e.id}>
-                    <button
-                      onClick={() => setEdit(e)}
-                      className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-muted"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-primary">
-                          <ItemIcon className="h-4 w-4" />
-                        </span>
-                        <div className="min-w-0">
-                          <p className="truncate text-sm font-medium">
-                            {e.description || e.vendor || "Expense"}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {shortDate(e.date)} · {e.category}
-                            {e.vendor ? ` · ${e.vendor}` : ""}
-                            {proj ? ` · ${proj.code}` : ""}
-                            {tab === "Combined" ? ` · ${acc}` : ""}
-                          </p>
-                        </div>
-                      </div>
-                      <p className="font-mono text-sm text-destructive">
-                        {money(-e.amount, e.currency)}
-                      </p>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            {filteredExpenses.length > visibleExpenses.length && (
-              <div className="mt-3 flex justify-center">
-                <Btn
-                  onClick={() => setVisibleCount((n) => n + 60)}
-                  className="px-4 py-1.5 text-xs"
-                >
-                  Show more ({filteredExpenses.length - visibleExpenses.length}{" "}
-                  remaining)
-                </Btn>
-              </div>
-            )}
-          </>
-        )}
-      </Glass>
+      <EditableBentoGrid
+        pageKey={`finance:${tab}`}
+        widgets={widgets}
+        editing={editingLayout}
+        onDoneEditing={() => setEditingLayout(false)}
+      />
 
       {/* Right-Side Pop-Up Inspector Drawer */}
       <CategoryInspectorDrawer
@@ -986,9 +1231,17 @@ function Page() {
         onEditExpense={(exp) => setEdit(exp)}
       />
 
+      {/* Right-Side Slide-Over Drawer for Adding / Editing Expenses */}
       <EditModal
+        presentation="drawer"
+        side="right"
         item={edit}
         fields={expenseFields}
+        subtitle={
+          edit && expenseAccount(edit) === "Personal"
+            ? "Personal Ledger"
+            : "Studio Ledger"
+        }
         title={
           edit && expenseAccount(edit) === "Personal"
             ? "Personal Expense"
@@ -1026,9 +1279,13 @@ function Page() {
         }
       />
 
+      {/* Right-Side Slide-Over Drawer for Saving / Studio Goals */}
       <EditModal
+        presentation="drawer"
+        side="right"
         item={goal}
         fields={goalFields}
+        subtitle={goal ? `${goalAccount(goal)} Goal` : "Goal"}
         title="Saving / Studio Goal"
         onClose={() => setGoal(null)}
         onFieldChange={(next, key) => {

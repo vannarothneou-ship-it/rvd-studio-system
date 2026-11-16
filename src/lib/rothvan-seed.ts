@@ -606,7 +606,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-2",
     code: "CA-01",
-    pillar: "Creative Assets",
+    pillar: "Creative & Digital",
     name: "Promo Post / Cover",
     unit: "Fixed fee",
     rate: 25,
@@ -618,7 +618,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-3",
     code: "WA-01",
-    pillar: "Web & App Design",
+    pillar: "Creative & Digital",
     name: "Homepage",
     unit: "Fixed fee",
     rate: 300,
@@ -642,7 +642,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-5",
     code: "MC-01",
-    pillar: "Marketing Collateral",
+    pillar: "Marketing & Packaging",
     name: "Business Card",
     unit: "Fixed fee",
     rate: 25,
@@ -666,7 +666,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-7",
     code: "MC-02",
-    pillar: "Marketing Collateral",
+    pillar: "Marketing & Packaging",
     name: "Brochure / Documents / Anual Report",
     unit: "Fixed fee",
     rate: 150,
@@ -678,7 +678,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-8",
     code: "MC-03",
-    pillar: "Marketing Collateral",
+    pillar: "Marketing & Packaging",
     name: "Backdrop",
     unit: "Fixed fee",
     rate: 150,
@@ -690,7 +690,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-9",
     code: "MC-04",
-    pillar: "Marketing Collateral",
+    pillar: "Marketing & Packaging",
     name: "Photo Booth",
     unit: "Fixed fee",
     rate: 120,
@@ -714,7 +714,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-11",
     code: "MC-05",
-    pillar: "Marketing Collateral",
+    pillar: "Marketing & Packaging",
     name: "Eco Bag / Tote Bag",
     unit: "Fixed fee",
     rate: 60,
@@ -786,7 +786,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-17",
     code: "MC-06",
-    pillar: "Marketing Collateral",
+    pillar: "Marketing & Packaging",
     name: "Die-Cut Foam Board / Props",
     unit: "Fixed fee",
     rate: 50,
@@ -798,7 +798,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-18",
     code: "MC-07",
-    pillar: "Marketing Collateral",
+    pillar: "Marketing & Packaging",
     name: "Business Letterhead",
     unit: "Fixed fee",
     rate: 25,
@@ -810,7 +810,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-19",
     code: "MC-08",
-    pillar: "Marketing Collateral",
+    pillar: "Marketing & Packaging",
     name: "Business Folder",
     unit: "Fixed fee",
     rate: 45,
@@ -822,7 +822,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-20",
     code: "MC-09",
-    pillar: "Marketing Collateral",
+    pillar: "Marketing & Packaging",
     name: "Pitch Decks / Company Profile",
     unit: "Fixed fee",
     rate: 300,
@@ -834,7 +834,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-21",
     code: "PP-01",
-    pillar: "Product Packaging",
+    pillar: "Marketing & Packaging",
     name: "Packaging",
     unit: "Fixed fee",
     rate: 150,
@@ -846,7 +846,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-22",
     code: "MC-10",
-    pillar: "Marketing Collateral",
+    pillar: "Marketing & Packaging",
     name: "Polo Shirt",
     unit: "Fixed fee",
     rate: 35,
@@ -858,7 +858,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-23",
     code: "MC-11",
-    pillar: "Marketing Collateral",
+    pillar: "Marketing & Packaging",
     name: "Promo Flyer A5",
     unit: "Fixed fee",
     rate: 20,
@@ -870,7 +870,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-24",
     code: "CA-02",
-    pillar: "Creative Assets",
+    pillar: "Creative & Digital",
     name: "Grand / Soft Opening Post",
     unit: "Fixed fee",
     rate: 100,
@@ -882,7 +882,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-25",
     code: "CA-03",
-    pillar: "Creative Assets",
+    pillar: "Creative & Digital",
     name: "Digital Invitation",
     unit: "Fixed fee",
     rate: 35,
@@ -894,7 +894,7 @@ export const rothvanServices: Service[] = [
   {
     id: "srv-26",
     code: "MC-12",
-    pillar: "Marketing Collateral",
+    pillar: "Marketing & Packaging",
     name: "Rolling-Up Stand Design",
     unit: "Fixed fee",
     rate: 65,

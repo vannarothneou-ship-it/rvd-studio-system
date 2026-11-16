@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
 import { agreementPages } from "@/components/rv/AgreementDoc";
+import { packBentoItems } from "@/components/rv/BentoGrid";
 import {
   PILLARS,
+  cardSpendSeries,
   cashFlowSeries,
   cashReceived,
   categoryLimit,
   categoryTotals,
+  compactMoney,
   convertDocument,
   deletePayment,
+  effectiveServiceTags,
   expenseAccount,
   expenseCategoriesFor,
   expenseTotal,
@@ -19,8 +23,12 @@ import {
   isInvoice,
   needsFollowUp,
   nextInvoiceNo,
+  normalizeServicePillar,
   parseTimelineDays,
+  personalCategoryTotals,
+  personalSeries,
   recordPayment,
+  revenueByPillar,
   saveDocument,
   serviceItem,
   setCategoryLimit,
@@ -299,20 +307,47 @@ describe("agreement pagination and studio/personal finance", () => {
     expect(categoryLimit(getDB(), "Personal", "Food")).toBe(320);
   });
 
+  it("formats compact k/M amounts and computes 1m/6m/12m personal series", () => {
+    expect(compactMoney(1000)).toBe("$1k");
+    expect(compactMoney(1410)).toBe("$1.4k");
+    expect(compactMoney(13880.1)).toBe("$13.9k");
+    expect(compactMoney(6000)).toBe("$6k");
+    expect(compactMoney(-500)).toBe("−$500");
+    expect(compactMoney(1250000)).toBe("$1.3M");
+
+    const db = getDB();
+    const s1m = personalSeries(db, "1m", "2026-11");
+    expect(s1m).toHaveLength(30);
+    expect(s1m.reduce((s, x) => s + x.personalOut, 0)).toBeCloseTo(770.59, 2);
+    expect(personalSeries(db, "6m", "2026-11")).toHaveLength(6);
+    expect(personalSeries(db, "12m", "2026-11")).toHaveLength(12);
+    expect(personalCategoryTotals(db, "6m", "2026-11").monthsCount).toBe(6);
+    expect(personalCategoryTotals(db, "12m", "2026-11").monthsCount).toBe(12);
+  });
+
   it("integrates real RothVan CSV data with exact paid and unpaid totals", () => {
     const db = getDB();
     expect(db.clients).toHaveLength(36);
     expect(db.services).toHaveLength(28);
     expect(db.projects).toHaveLength(105);
-    expect(PILLARS).toEqual(
-      expect.arrayContaining([
-        "Branding Design",
-        "Creative Assets",
-        "Web & App Design",
-        "Marketing Collateral",
-        "Spatial Design",
-        "Product Packaging",
-      ]),
+    expect(PILLARS).toEqual([
+      "Branding Design",
+      "Creative & Digital",
+      "Marketing & Packaging",
+      "Spatial Design",
+    ]);
+    expect(db.services.every((s) => PILLARS.includes(s.pillar))).toBe(true);
+    expect(normalizeServicePillar("Creative Assets")).toBe(
+      "Creative & Digital",
+    );
+    expect(normalizeServicePillar("Web & App Design")).toBe(
+      "Creative & Digital",
+    );
+    expect(normalizeServicePillar("Marketing Collateral")).toBe(
+      "Marketing & Packaging",
+    );
+    expect(normalizeServicePillar("Product Packaging")).toBe(
+      "Marketing & Packaging",
     );
     const totalPaid = db.payments.reduce((s, p) => s + p.amount, 0);
     expect(totalPaid).toBeCloseTo(13880.1, 2);
@@ -324,5 +359,82 @@ describe("agreement pagination and studio/personal finance", () => {
     expect(s12).toHaveLength(12);
     expect(sAll.length).toBeGreaterThan(12);
     expect(sAll.reduce((sum, x) => sum + x.inn, 0)).toBeCloseTo(13880.1, 2);
+    expect(s6.every((p) => p.fullDate.length > 0)).toBe(true);
+    expect(
+      personalSeries(db, "1m", "2026-11").every((p) => p.fullDate.length > 0),
+    ).toBe(true);
+
+    const pillars = revenueByPillar(db);
+    expect(pillars.length).toBeGreaterThan(0);
+    expect(pillars.reduce((sum, p) => sum + p.totalUSD, 0)).toBeGreaterThan(
+      13000,
+    );
+  });
+});
+
+describe("bento dense packing and service tags", () => {
+  it("dense-packs smaller cards up into gaps and auto-fills leftover row space", () => {
+    const packed = packBentoItems(
+      [
+        { id: "a", span: 12 },
+        { id: "b", span: 4 },
+        { id: "c", span: 6 },
+        { id: "d", span: 8 },
+        { id: "e", span: 4 },
+      ],
+      true,
+    );
+    // e (4) flows up into row 3 with d (8); b (4) + c (6) expands c -> 8 to eliminate 2-col gap
+    expect(packed.map((x) => [x.config.id, x.effectiveSpan])).toEqual([
+      ["a", 12],
+      ["b", 4],
+      ["c", 8],
+      ["d", 8],
+      ["e", 4],
+    ]);
+
+    const strict = packBentoItems(
+      [
+        { id: "b", span: 4 },
+        { id: "c", span: 6 },
+      ],
+      false,
+    );
+    expect(strict.map((x) => [x.config.id, x.effectiveSpan])).toEqual([
+      ["b", 4],
+      ["c", 6],
+    ]);
+  });
+
+  it("derives clean 1-2 tags per service and respects custom service tags", () => {
+    const db = getDB();
+    const logoSvc = db.services.find((s) => s.code === "BD-01")!;
+    const derived = effectiveServiceTags(logoSvc);
+    expect(derived.length).toBeGreaterThanOrEqual(1);
+    expect(derived.length).toBeLessThanOrEqual(2);
+    expect(derived).toContain("Logo");
+    expect(
+      effectiveServiceTags({ ...logoSvc, tags: ["Retainer", "VIP"] }),
+    ).toEqual(["Retainer", "VIP"]);
+  });
+
+  it("aggregates Debit vs Credit card spending daily and monthly", () => {
+    const db = getDB();
+    const daily = cardSpendSeries(db, "1m", "2026-11");
+    expect(daily.points).toHaveLength(30);
+    expect(daily.debitUSD + daily.creditUSD + daily.otherUSD).toBeCloseTo(
+      daily.totalUSD,
+      2,
+    );
+    expect(daily.totalUSD).toBeCloseTo(770.59, 2);
+    expect(daily.debitCount + daily.creditCount).toBeGreaterThan(0);
+
+    const sixMonths = cardSpendSeries(db, "6m", "2026-11");
+    expect(sixMonths.points).toHaveLength(6);
+    expect(sixMonths.debitUSD).toBeGreaterThan(0);
+
+    const year = cardSpendSeries(db, "12m", "2026-11");
+    expect(year.points).toHaveLength(12);
+    expect(year.creditUSD).toBeGreaterThan(0);
   });
 });

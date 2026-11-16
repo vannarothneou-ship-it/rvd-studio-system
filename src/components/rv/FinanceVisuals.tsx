@@ -8,9 +8,11 @@ import {
   CheckCircle2,
   Coffee,
   Coins,
+  CreditCard,
   Fuel,
   Hammer,
   HeartPulse,
+  Landmark,
   Laptop,
   Megaphone,
   Monitor,
@@ -21,11 +23,13 @@ import {
   Printer,
   ShoppingBag,
   ShoppingCart,
+  Smartphone,
   Stethoscope,
   Type,
   Users,
   Utensils,
   UtensilsCrossed,
+  Wallet,
   Wifi,
   Wrench,
   X,
@@ -34,6 +38,7 @@ import {
 } from "lucide-react";
 import {
   categoryLimit,
+  compactMoney,
   expenseAccount,
   money,
   previousMonth,
@@ -77,6 +82,16 @@ const CATEGORY_ICON_MAP: Record<string, LucideIcon> = {
 
 export function categoryIcon(category: string): LucideIcon {
   return CATEGORY_ICON_MAP[category] ?? Briefcase;
+}
+
+export function paymentCardIcon(method: string): LucideIcon {
+  const m = method.trim().toLowerCase();
+  if (m.includes("credit")) return CreditCard;
+  if (m.includes("debit")) return Landmark;
+  if (m.includes("khqr") || m.includes("wing") || m.includes("aba"))
+    return Smartphone;
+  if (m.includes("cash")) return Wallet;
+  return CreditCard;
 }
 
 export function expenseItemIcon(
@@ -318,6 +333,7 @@ export function BudgetShelf({
   selectedCategory,
   onSelectCategory,
   compact = false,
+  limitScale = 1,
 }: {
   db: DB;
   account: Account;
@@ -327,12 +343,13 @@ export function BudgetShelf({
   selectedCategory?: string | null;
   onSelectCategory: (category: string) => void;
   compact?: boolean;
+  limitScale?: number | undefined;
 }) {
-  const pacePct = monthPacePercent(month);
+  const pacePct = limitScale > 1 ? 100 : monthPacePercent(month);
 
   const jars = useMemo(() => {
     return items.map((it) => {
-      const limit = categoryLimit(db, account, it.category);
+      const limit = categoryLimit(db, account, it.category) * limitScale;
       const pct = limit > 0 ? Math.round((it.totalUSD / limit) * 100) : 100;
       const isOver = pct > 100;
       const isFast = !isOver && pct > Math.min(95, pacePct + 12);
@@ -344,7 +361,7 @@ export function BudgetShelf({
         isFast,
       };
     });
-  }, [db, account, items, pacePct]);
+  }, [db, account, items, pacePct, limitScale]);
 
   const fastList = useMemo(
     () =>
@@ -366,6 +383,7 @@ export function BudgetShelf({
             type="button"
             onClick={() => onSelectCategory(j.category)}
             style={{ animationDelay: `${idx * 45}ms` }}
+            title={`${j.category}: ${money(j.totalUSD)} / ${money(j.limit)}`}
             className="group rise flex flex-col items-center rounded-2xl border border-border/60 bg-muted/25 p-2.5 text-center transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/60 hover:bg-muted/50"
           >
             <LiquidJar
@@ -376,11 +394,15 @@ export function BudgetShelf({
               size="sm"
               selected={selectedCategory === j.category}
             />
-            <span className="mt-2 line-clamp-1 text-xs font-medium">
-              {j.category}
+            <span className="mt-2 inline-flex max-w-full items-center gap-1 text-xs font-medium">
+              {(() => {
+                const CatIcon = categoryIcon(j.category);
+                return <CatIcon className="h-3 w-3 shrink-0 text-primary" />;
+              })()}
+              <span className="truncate">{j.category}</span>
             </span>
-            <span className="font-mono text-[0.68rem] text-muted-foreground">
-              {money(j.totalUSD)}
+            <span className="font-mono text-[0.68rem] tabular-nums text-muted-foreground">
+              {compactMoney(j.totalUSD)}
             </span>
             {(j.isOver || j.isFast) && (
               <span className="mt-0.5 text-[0.62rem] font-medium text-destructive">
@@ -405,8 +427,9 @@ export function BudgetShelf({
                 : "Studio expense jars"}
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Dashed line marks even {monthLabel} pace ({pacePct}%). Click any
-              jar to adjust limit or view receipts.
+              {limitScale > 1
+                ? `${limitScale}-month combined target for ${monthLabel}. Click any jar to adjust monthly limit.`
+                : `Dashed line marks even ${monthLabel} pace (${pacePct}%). Click any jar to adjust limit or view receipts.`}
             </p>
           </div>
           <span className="label-mono">{jars.length} categories</span>
@@ -419,6 +442,7 @@ export function BudgetShelf({
               type="button"
               onClick={() => onSelectCategory(j.category)}
               style={{ animationDelay: `${idx * 40}ms` }}
+              title={`${j.category}: ${money(j.totalUSD)} of ${money(j.limit)}`}
               className={cn(
                 "group rise flex flex-col items-center rounded-2xl border p-3 text-center transition-all duration-200 hover:-translate-y-0.5",
                 selectedCategory === j.category
@@ -433,11 +457,17 @@ export function BudgetShelf({
                 pacePct={pacePct}
                 selected={selectedCategory === j.category}
               />
-              <span className="mt-2.5 line-clamp-1 text-xs font-semibold">
-                {j.category}
+              <span className="mt-2.5 inline-flex max-w-full items-center gap-1 text-xs font-semibold">
+                {(() => {
+                  const CatIcon = categoryIcon(j.category);
+                  return (
+                    <CatIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  );
+                })()}
+                <span className="truncate">{j.category}</span>
               </span>
-              <span className="mt-0.5 font-mono text-[0.68rem] text-muted-foreground">
-                {money(j.totalUSD)} of {money(j.limit)}
+              <span className="mt-0.5 font-mono text-[0.68rem] tabular-nums text-muted-foreground">
+                {compactMoney(j.totalUSD)} of {compactMoney(j.limit)}
               </span>
               {j.isOver ? (
                 <span className="mt-1 text-[0.65rem] font-medium text-destructive">
@@ -887,16 +917,23 @@ export function GoalRingCard({
             className="transition-[stroke-dashoffset] duration-1000 ease-[cubic-bezier(0.22,1,0.36,1)]"
           />
         </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center px-3 text-center">
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center px-3 text-center"
+          title={
+            isMoney
+              ? `${money(current)} of ${money(goal.target)}`
+              : `${current} of ${goal.target}`
+          }
+        >
           <AnimatedNumber
             value={current}
             format={(n) =>
-              isMoney ? money(Math.round(n)) : String(Math.round(n))
+              isMoney ? compactMoney(Math.round(n)) : String(Math.round(n))
             }
-            className="font-display text-lg font-black leading-tight"
+            className="font-display text-lg font-black leading-tight tabular-nums"
           />
-          <span className="mt-0.5 font-mono text-[0.64rem] text-muted-foreground">
-            of {isMoney ? money(goal.target) : goal.target}
+          <span className="mt-0.5 font-mono text-[0.64rem] tabular-nums text-muted-foreground">
+            of {isMoney ? compactMoney(goal.target) : goal.target}
           </span>
         </div>
       </button>
