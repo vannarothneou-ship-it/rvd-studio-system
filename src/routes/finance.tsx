@@ -1,23 +1,36 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
-  ArrowDownLeft,
-  ArrowUpRight,
-  PiggyBank,
-  Plus,
-  Sparkles,
-} from "lucide-react";
+  Area,
+  AreaChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import { ArrowDownLeft, PiggyBank, Plus, Search, Sparkles } from "lucide-react";
 import { Btn, Empty, Glass, PageHeader, Stat } from "@/components/rv/ui";
 import { EditModal, upsert, type Field } from "@/components/rv/Crud";
 import {
+  AnimatedNumber,
+  BudgetShelf,
+  CategoryInspectorDrawer,
+  GoalRingCard,
+  expenseItemIcon,
+} from "@/components/rv/FinanceVisuals";
+import {
   EXPENSE_CATEGORIES,
   PERSONAL_CATEGORIES,
+  cashFlowSeries,
   cashReceived,
   categoryTotals,
   expenseAccount,
   expenseCategoriesFor,
   expenseTotal,
   goalAccount,
+  invoiceView,
+  isInvoice,
   money,
   setDB,
   shortDate,
@@ -26,6 +39,7 @@ import {
   uid,
   useDB,
   type Account,
+  type CashRange,
   type Expense,
   type Goal,
 } from "@/lib/store";
@@ -55,43 +69,80 @@ export const Route = createFileRoute("/finance")({
 
 type Tab = "Studio" | "Personal" | "Combined";
 
+const RANGE_OPTIONS: { id: CashRange; label: string; desc: string }[] = [
+  { id: "6m", label: "6 months", desc: "last 6 months" },
+  { id: "12m", label: "12 months", desc: "last 12 months" },
+  { id: "all", label: "All time", desc: "all time" },
+];
+
 function Page() {
   const db = useDB((d) => d);
   const r = db.settings.khrRate;
   const [tab, setTab] = useState<Tab>("Studio");
+  const [range, setRange] = useState<CashRange>("all");
   const [month, setMonth] = useState(() => today().slice(0, 7));
   const [catFilter, setCatFilter] = useState<string>("All");
+  const [query, setQuery] = useState("");
+  const [visibleCount, setVisibleCount] = useState(40);
+  const [inspector, setInspector] = useState<{
+    account: Account;
+    category: string;
+  } | null>(null);
   const [edit, setEdit] = useState<Expense | null>(null);
   const [goal, setGoal] = useState<Goal | null>(null);
 
   const year = month.slice(0, 4) || today().slice(0, 4);
-  const monthLabel = new Date(month + "-01T00:00:00").toLocaleDateString(
+  const monthLabel = new Date(month + "-01T00:00:00Z").toLocaleDateString(
     "en-US",
-    { month: "long", year: "numeric" },
+    { month: "long", year: "numeric", timeZone: "UTC" },
   );
-  const months = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - 5 + i, 1);
-    return d.toISOString().slice(0, 7);
+
+  const pts = cashFlowSeries(db, range);
+  const rangeMeta = RANGE_OPTIONS.find((o) => o.id === range)!;
+
+  const studioInRange = pts.reduce((a, x) => a + x.inn, 0);
+  const studioOutRange = pts.reduce((a, x) => a + x.out, 0);
+  const personalOutRange = pts.reduce((a, x) => a + x.personalOut, 0);
+  const studioNetRange = studioInRange - studioOutRange;
+  const combinedOutRange = studioOutRange + personalOutRange;
+  const combinedNetRange = studioInRange - combinedOutRange;
+
+  let runStudio = 0;
+  let runCombined = 0;
+  const chartData = pts.map((x) => {
+    runStudio += x.net;
+    runCombined += x.combinedNet;
+    const totalOut = x.out + x.personalOut;
+    return {
+      ...x,
+      totalOut,
+      sparkValue:
+        tab === "Personal"
+          ? x.personalOut
+          : tab === "Combined"
+            ? runCombined
+            : runStudio,
+    };
   });
 
   const studioInYear = cashReceived(db, year);
   const studioOutYear = expenseTotal(db, "Studio", year);
-  const personalOutYear = expenseTotal(db, "Personal", year);
-
-  const studioInMonth = cashReceived(db, month);
-  const studioOutMonth = expenseTotal(db, "Studio", month);
   const personalOutMonth = expenseTotal(db, "Personal", month);
+  const personalAvgMonth =
+    pts.length > 0 ? personalOutRange / pts.length : personalOutMonth;
 
-  const series = months.map((m) => ({
-    m,
-    i: cashReceived(db, m),
-    sOut: expenseTotal(db, "Studio", m),
-    pOut: expenseTotal(db, "Personal", m),
-  }));
-  const maxBar = Math.max(1, ...series.flatMap((s) => [s.i, s.sOut, s.pOut]));
+  const unpaidInvoicesUSD = db.invoices
+    .filter(isInvoice)
+    .map((i) => invoiceView(i, db))
+    .filter((v) => v.status !== "Draft")
+    .reduce((a, v) => a + v.balanceUSD, 0);
 
-  const studioCats = categoryTotals(db, "Studio", month);
+  const studioCatsMonth = categoryTotals(db, "Studio", month);
+  const studioCatsAll = categoryTotals(db, "Studio", "");
+  const studioCats =
+    studioCatsMonth.length > 0 ? studioCatsMonth : studioCatsAll;
+  const studioShelfScopeLabel =
+    studioCatsMonth.length > 0 ? monthLabel : "all time";
   const personalCats = categoryTotals(db, "Personal", month);
 
   const studioGoals = db.goals.filter((g) => goalAccount(g) === "Studio");
@@ -112,16 +163,24 @@ function Page() {
     return g.current;
   };
 
-  const openNewExpense = (account: Account) => {
+  const switchTab = (next: Tab) => {
+    setTab(next);
+    setCatFilter("All");
+    setVisibleCount(40);
+    setInspector(null);
+    if (next === "Personal" && range === "all") setRange("6m");
+    if (next !== "Personal" && range === "6m") setRange("all");
+  };
+
+  const openNewExpense = (account: Account, category?: string) => {
+    const cats = expenseCategoriesFor(account);
     setEdit({
       id: uid(),
-      date: today(),
+      date: today().startsWith(month) ? today() : `${month}-01`,
       projectId: "",
       category:
-        account === "Personal"
-          ? PERSONAL_CATEGORIES[0]!
-          : EXPENSE_CATEGORIES[0]!,
-      vendor: "",
+        category && cats.includes(category) ? category : (cats[0] ?? "Other"),
+      vendor: account === "Personal" ? "Debit" : "",
       description: "",
       amount: 0,
       currency: "USD",
@@ -143,7 +202,7 @@ function Page() {
 
   const expenseFields = (v: Expense): Field<Expense>[] => {
     const acc = expenseAccount(v);
-    const base: Field<Expense>[] = [
+    return [
       {
         k: "account",
         label: "Account",
@@ -161,7 +220,11 @@ function Page() {
         type: "select",
         options: expenseCategoriesFor(acc),
       },
-      { k: "vendor", label: "Vendor / Merchant" },
+      {
+        k: "vendor",
+        label:
+          acc === "Personal" ? "Card / Payment method" : "Vendor / Merchant",
+      },
       ...(acc === "Studio"
         ? [
             {
@@ -183,7 +246,6 @@ function Page() {
         options: ["USD", "KHR"],
       },
     ];
-    return base;
   };
 
   const goalFields = (v: Goal): Field<Goal>[] => {
@@ -217,21 +279,48 @@ function Page() {
     ];
   };
 
+  const q = query.trim().toLowerCase();
   const filteredExpenses = [...db.expenses]
     .filter((e) => {
       const acc = expenseAccount(e);
       if (tab === "Studio" && acc !== "Studio") return false;
       if (tab === "Personal" && acc !== "Personal") return false;
-      if (tab === "Personal" && month && !e.date.startsWith(month))
+      if (tab === "Personal" && month && !q && !e.date.startsWith(month))
         return false;
       if (catFilter !== "All" && e.category !== catFilter) return false;
+      if (q) {
+        const hay = `${e.description} ${e.vendor} ${e.category}`.toLowerCase();
+        if (!hay.includes(q)) return false;
+      }
       return true;
     })
     .sort((a, b) => b.date.localeCompare(a.date));
 
+  const visibleExpenses = filteredExpenses.slice(0, visibleCount);
   const recentPayments = [...db.payments]
     .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 8);
+    .slice(0, 10);
+
+  const leftHeadline =
+    tab === "Personal"
+      ? personalOutRange
+      : tab === "Combined"
+        ? combinedNetRange
+        : studioNetRange;
+
+  const activeGoals =
+    tab === "Personal"
+      ? personalGoals
+      : tab === "Studio"
+        ? studioGoals
+        : db.goals;
+
+  const activeCategoriesForFilter =
+    tab === "Personal"
+      ? PERSONAL_CATEGORIES
+      : tab === "Studio"
+        ? EXPENSE_CATEGORIES
+        : Array.from(new Set([...PERSONAL_CATEGORIES, ...EXPENSE_CATEGORIES]));
 
   return (
     <>
@@ -251,7 +340,7 @@ function Page() {
         }
       />
 
-      {/* Account Tabs + Month Selector */}
+      {/* Account Tabs + Month Filter */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="inline-flex rounded-full border border-border bg-muted p-1 text-xs">
           {(
@@ -263,12 +352,9 @@ function Page() {
           ).map((t) => (
             <button
               key={t.id}
-              onClick={() => {
-                setTab(t.id);
-                setCatFilter("All");
-              }}
+              onClick={() => switchTab(t.id)}
               className={cn(
-                "rounded-full px-3.5 py-1.5 font-medium transition-colors",
+                "rounded-full px-3.5 py-1.5 font-medium transition-all duration-200",
                 tab === t.id
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground",
@@ -284,363 +370,431 @@ function Page() {
             type="month"
             className="field w-auto py-1.5 text-xs"
             value={month}
-            onChange={(e) => setMonth(e.target.value || today().slice(0, 7))}
+            onChange={(e) => {
+              setMonth(e.target.value || today().slice(0, 7));
+              setVisibleCount(40);
+            }}
           />
         </div>
       </div>
 
-      {/* KPI Row */}
-      {tab === "Studio" && (
-        <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
-          <Glass>
-            <Stat
-              label={`Studio Cash In (${year})`}
-              tone="pos"
-              value={money(studioInYear)}
-            />
-          </Glass>
-          <Glass delay={60}>
-            <Stat
-              label={`RothVan Expenses (${year})`}
-              tone="neg"
-              value={money(studioOutYear)}
-            />
-          </Glass>
-          <Glass delay={120} className="col-span-2 sm:col-span-1">
-            <Stat
-              label={`Studio Profit (${year})`}
-              tone={studioInYear - studioOutYear >= 0 ? "pos" : "neg"}
-              value={money(studioInYear - studioOutYear)}
-            />
-          </Glass>
-        </div>
-      )}
-
-      {tab === "Personal" && (
-        <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
-          <Glass>
-            <Stat
-              label={`Personal Spent (${monthLabel})`}
-              tone="neg"
-              value={money(personalOutMonth)}
-            />
-          </Glass>
-          <Glass delay={60}>
-            <Stat
-              label={`Personal Spent (${year})`}
-              value={money(personalOutYear)}
-            />
-          </Glass>
-          <Glass delay={120} className="col-span-2 sm:col-span-1">
-            <Stat
-              label="Personal Saving Goals"
-              tone="pos"
-              value={`${money(personalSavedTotal)} / ${money(personalTargetTotal)}`}
-            />
-          </Glass>
-        </div>
-      )}
-
-      {tab === "Combined" && (
-        <div className="mb-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-          <Glass>
-            <Stat
-              label={`Studio Income (${month})`}
-              tone="pos"
-              value={money(studioInMonth)}
-            />
-          </Glass>
-          <Glass delay={60}>
-            <Stat
-              label={`Studio Expenses (${month})`}
-              value={money(studioOutMonth)}
-            />
-          </Glass>
-          <Glass delay={120}>
-            <Stat
-              label={`Personal (${month})`}
-              tone="neg"
-              value={money(personalOutMonth)}
-            />
-          </Glass>
-          <Glass delay={180}>
-            <Stat
-              label="Net Retained"
-              tone={
-                studioInMonth - studioOutMonth - personalOutMonth >= 0
-                  ? "pos"
-                  : "neg"
-              }
-              value={money(
-                studioInMonth - studioOutMonth - personalOutMonth,
-                "USD",
-                true,
-              )}
-            />
-          </Glass>
-        </div>
-      )}
-
-      {/* Charts / Category Breakdown + Goals */}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
-        {tab === "Personal" ? (
-          <Glass delay={180}>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="label-mono">
-                  Personal monthly categories · {monthLabel}
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Click a category to filter expenses below
-                </p>
-              </div>
-              {catFilter !== "All" && (
-                <button
-                  onClick={() => setCatFilter("All")}
-                  className="rounded-full border border-border px-3 py-1 text-xs hover:bg-accent"
-                >
-                  Clear filter ({catFilter})
-                </button>
-              )}
-            </div>
-            {personalCats.length === 0 ? (
-              <Empty>No personal expenses recorded in {monthLabel}.</Empty>
-            ) : (
-              <div className="space-y-3">
-                {personalCats.map((item) => {
-                  const pct =
-                    personalOutMonth > 0
-                      ? Math.round((item.totalUSD / personalOutMonth) * 100)
-                      : 0;
-                  const active = catFilter === item.category;
-                  return (
-                    <button
-                      key={item.category}
-                      onClick={() =>
-                        setCatFilter(active ? "All" : item.category)
-                      }
-                      className={cn(
-                        "block w-full rounded-2xl border p-3 text-left transition-colors",
-                        active
-                          ? "border-primary bg-primary/10"
-                          : "border-border/70 bg-muted/40 hover:bg-muted",
-                      )}
-                    >
-                      <div className="mb-1.5 flex items-center justify-between gap-2 text-sm">
-                        <span className="font-medium">
-                          {item.category}{" "}
-                          <span className="text-xs text-muted-foreground">
-                            ({item.count})
-                          </span>
-                        </span>
-                        <span className="font-mono text-xs">
-                          {money(item.totalUSD)} · {pct}%
-                        </span>
-                      </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-primary transition-all duration-700"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
+      {/* Overview-Style Dashboard Grid */}
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,8fr)]">
+        <Glass className="flex flex-col">
+          <p className="text-sm text-muted-foreground">
+            {tab === "Personal"
+              ? `Personal total spend, ${rangeMeta.desc}`
+              : tab === "Combined"
+                ? `Combined net retained, ${rangeMeta.desc}`
+                : `Studio net cash profit, ${rangeMeta.desc}`}
+          </p>
+          <p
+            className={cn(
+              "mt-2 font-display text-4xl font-black",
+              tab !== "Personal" && leftHeadline < 0 && "text-destructive",
             )}
-          </Glass>
-        ) : (
-          <Glass delay={180}>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <p className="label-mono">
-                {tab === "Studio"
-                  ? "Last 6 months · Studio Cash In vs RothVan Expenses"
-                  : "Last 6 months · Studio vs Personal"}
-              </p>
+          >
+            <AnimatedNumber value={leftHeadline} />
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {tab === "Personal"
+              ? "Personal monthly living & household ledger"
+              : tab === "Combined"
+                ? "Studio cash received minus Studio & Personal expenses"
+                : "Studio cash received minus RothVan Design expenses"}
+          </p>
+          <div className="my-4 h-24 flex-1">
+            <ResponsiveContainer>
+              <AreaChart data={chartData}>
+                <defs>
+                  <linearGradient id="fin-sp" x1="0" y1="0" x2="0" y2="1">
+                    <stop
+                      offset="0"
+                      stopColor="var(--primary)"
+                      stopOpacity={0.4}
+                    />
+                    <stop
+                      offset="1"
+                      stopColor="var(--primary)"
+                      stopOpacity={0}
+                    />
+                  </linearGradient>
+                </defs>
+                <Area
+                  dataKey="sparkValue"
+                  stroke="var(--primary)"
+                  strokeWidth={2}
+                  fill="url(#fin-sp)"
+                  type="monotone"
+                  animationDuration={750}
+                  animationEasing="ease-out"
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          {tab === "Studio" && (
+            <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
+              <Link to="/invoices">
+                <Stat label="Open A/R" value={money(unpaidInvoicesUSD)} />
+              </Link>
+              <Stat label={`Cash in (${year})`} value={money(studioInYear)} />
+              <Stat label={`Expenses (${year})`} value={money(studioOutYear)} />
             </div>
-            <div className="flex h-44 items-end gap-3">
-              {series.map((s) => (
-                <div
-                  key={s.m}
-                  className="flex flex-1 flex-col items-center gap-1"
+          )}
+          {tab === "Personal" && (
+            <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
+              <Stat
+                label="This month"
+                value={money(personalOutMonth)}
+                tone="neg"
+              />
+              <Stat label="Avg / month" value={money(personalAvgMonth)} />
+              <Stat
+                label="Saved goals"
+                tone="pos"
+                value={`${money(personalSavedTotal)} / ${money(personalTargetTotal)}`}
+              />
+            </div>
+          )}
+          {tab === "Combined" && (
+            <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
+              <Stat label="Studio in" value={money(studioInRange)} tone="pos" />
+              <Stat label="Studio out" value={money(studioOutRange)} />
+              <Stat
+                label="Personal out"
+                value={money(personalOutRange)}
+                tone="neg"
+              />
+            </div>
+          )}
+        </Glass>
+
+        <Glass delay={80}>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-medium">
+              {tab === "Personal"
+                ? "Personal spending trend"
+                : tab === "Combined"
+                  ? "Combined cash flow"
+                  : "Studio cash flow"}
+            </h2>
+            <div className="flex rounded-full border border-border bg-muted p-1 text-xs">
+              {RANGE_OPTIONS.map((o) => (
+                <button
+                  key={o.id}
+                  onClick={() => setRange(o.id)}
+                  className={cn(
+                    "rounded-full px-3 py-1 transition-colors",
+                    range === o.id
+                      ? "bg-foreground text-background"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
                 >
-                  <div className="flex h-36 w-full items-end justify-center gap-1">
-                    <div
-                      title={`Studio In: ${money(s.i)}`}
-                      className="w-1/3 rounded-t-md bg-primary transition-all duration-700"
-                      style={{ height: `${(s.i / maxBar) * 100}%` }}
-                    />
-                    <div
-                      title={`Studio Out: ${money(s.sOut)}`}
-                      className="w-1/3 rounded-t-md bg-destructive/75 transition-all duration-700"
-                      style={{ height: `${(s.sOut / maxBar) * 100}%` }}
-                    />
-                    {tab === "Combined" && (
-                      <div
-                        title={`Personal Out: ${money(s.pOut)}`}
-                        className="w-1/3 rounded-t-md bg-muted-foreground/65 transition-all duration-700"
-                        style={{ height: `${(s.pOut / maxBar) * 100}%` }}
-                      />
-                    )}
-                  </div>
-                  <span className="font-mono text-[0.65rem] text-muted-foreground">
-                    {new Date(s.m + "-01").toLocaleDateString("en-US", {
-                      month: "short",
-                    })}
-                  </span>
-                </div>
+                  {o.label}
+                </button>
               ))}
             </div>
-            {studioCats.length > 0 && (
-              <div className="mt-4 border-t border-border pt-3">
-                <p className="label-mono mb-2">
-                  Studio categories ({monthLabel})
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {studioCats.map((c) => (
-                    <button
-                      key={c.category}
-                      onClick={() =>
-                        setCatFilter(
-                          catFilter === c.category ? "All" : c.category,
-                        )
-                      }
-                      className={cn(
-                        "rounded-full border px-3 py-1 text-xs",
-                        catFilter === c.category
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-muted/50 hover:bg-accent",
-                      )}
-                    >
-                      {c.category} · {money(c.totalUSD)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </Glass>
-        )}
-
-        {/* Goals Panel */}
-        <Glass delay={240}>
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {tab === "Personal" ? (
-                <PiggyBank className="h-4 w-4 text-primary" />
-              ) : (
-                <Sparkles className="h-4 w-4 text-primary" />
-              )}
-              <p className="label-mono">
-                {tab === "Personal"
-                  ? "Personal saving goals"
-                  : tab === "Studio"
-                    ? "RothVan Studio goals"
-                    : "All goals"}
-              </p>
-            </div>
-            <Btn
-              onClick={() =>
-                openNewGoal(tab === "Personal" ? "Personal" : "Studio")
-              }
-              className="px-3 py-1 text-xs"
-            >
-              <Plus className="h-3 w-3" />
-              Add goal
-            </Btn>
           </div>
-          {(tab === "Personal"
-            ? personalGoals
-            : tab === "Studio"
-              ? studioGoals
-              : db.goals
-          ).length === 0 ? (
-            <Empty>No saving goals yet.</Empty>
-          ) : (
-            <ul className="space-y-4">
-              {(tab === "Personal"
-                ? personalGoals
-                : tab === "Studio"
-                  ? studioGoals
-                  : db.goals
-              ).map((g) => {
-                const n = goalNow(g);
-                const pct = Math.min(
-                  100,
-                  Math.round((n / (g.target || 1)) * 100),
-                );
-                const acc = goalAccount(g);
-                return (
-                  <li
-                    key={g.id}
-                    className="rounded-2xl border border-border/70 bg-muted/30 p-3"
-                  >
-                    <button
-                      onClick={() => setGoal(g)}
-                      className="w-full text-left"
-                    >
-                      <div className="flex items-center justify-between gap-2 text-sm">
-                        <span className="truncate font-medium">
-                          {g.name}
-                          {tab === "Combined" && (
-                            <span className="ml-2 font-mono text-[0.65rem] text-muted-foreground">
-                              ({acc})
-                            </span>
-                          )}
-                        </span>
-                        <span className="font-mono text-xs">
-                          {g.kind === "clients"
-                            ? `${n} / ${g.target}`
-                            : `${money(n)} / ${money(g.target)}`}
-                        </span>
-                      </div>
-                      <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full bg-primary transition-all duration-700"
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </button>
-                    {g.kind === "manual" && (
-                      <div className="mt-2.5 flex items-center justify-between">
-                        <span className="font-mono text-[0.68rem] text-muted-foreground">
-                          {pct}% saved
-                        </span>
-                        <div className="flex gap-1.5">
-                          {[50, 100].map((amt) => (
-                            <button
-                              key={amt}
-                              onClick={() =>
-                                setDB((d) => ({
-                                  ...d,
-                                  goals: d.goals.map((x) =>
-                                    x.id === g.id
-                                      ? { ...x, current: x.current + amt }
-                                      : x,
-                                  ),
-                                }))
-                              }
-                              className="rounded-full border border-border px-2.5 py-0.5 text-[0.7rem] hover:border-primary hover:bg-accent"
-                            >
-                              +${amt}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </li>
-                );
-              })}
-            </ul>
+
+          {tab === "Studio" && (
+            <div className="mb-3 grid grid-cols-3 gap-3">
+              <Stat label="● Cash in" value={money(studioInRange)} />
+              <Stat label="○ Studio out" value={money(studioOutRange)} />
+              <Stat
+                label="Net"
+                value={money(studioNetRange, "USD", true)}
+                tone={studioNetRange >= 0 ? "pos" : "neg"}
+              />
+            </div>
           )}
+          {tab === "Personal" && (
+            <div className="mb-3 grid grid-cols-3 gap-3">
+              <Stat label="● Personal out" value={money(personalOutRange)} />
+              <Stat label="○ Monthly avg" value={money(personalAvgMonth)} />
+              <Stat
+                label={monthLabel}
+                value={money(personalOutMonth)}
+                tone={personalOutMonth > personalAvgMonth ? "neg" : undefined}
+              />
+            </div>
+          )}
+          {tab === "Combined" && (
+            <div className="mb-3 grid grid-cols-3 gap-3">
+              <Stat label="● Studio in" value={money(studioInRange)} />
+              <Stat label="○ Total out" value={money(combinedOutRange)} />
+              <Stat
+                label="Retained"
+                value={money(combinedNetRange, "USD", true)}
+                tone={combinedNetRange >= 0 ? "pos" : "neg"}
+              />
+            </div>
+          )}
+
+          <div className="h-56">
+            <ResponsiveContainer>
+              <AreaChart
+                data={chartData}
+                margin={{ left: -18, right: 4, top: 8 }}
+              >
+                <defs>
+                  <linearGradient id="fin-cf" x1="0" y1="0" x2="0" y2="1">
+                    <stop
+                      offset="0"
+                      stopColor="var(--primary)"
+                      stopOpacity={0.35}
+                    />
+                    <stop
+                      offset="1"
+                      stopColor="var(--primary)"
+                      stopOpacity={0}
+                    />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid
+                  stroke="var(--border)"
+                  strokeDasharray="3 6"
+                  vertical={false}
+                />
+                <XAxis
+                  dataKey="label"
+                  tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+                  axisLine={false}
+                  tickLine={false}
+                  tickFormatter={(v) => `$${v}`}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "var(--popover)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    color: "var(--foreground)",
+                  }}
+                  formatter={(v: number) => money(v)}
+                />
+                {tab === "Personal" ? (
+                  <>
+                    <Area
+                      name="Personal spend"
+                      dataKey="personalOut"
+                      type="monotone"
+                      stroke="var(--primary)"
+                      strokeWidth={2}
+                      fill="url(#fin-cf)"
+                      animationDuration={750}
+                      animationEasing="ease-out"
+                    />
+                    <Area
+                      name="Studio expenses"
+                      dataKey="out"
+                      type="monotone"
+                      stroke="var(--muted-foreground)"
+                      strokeDasharray="5 5"
+                      fill="transparent"
+                      animationDuration={750}
+                      animationEasing="ease-out"
+                    />
+                  </>
+                ) : tab === "Combined" ? (
+                  <>
+                    <Area
+                      name="Studio cash in"
+                      dataKey="inn"
+                      type="monotone"
+                      stroke="var(--primary)"
+                      strokeWidth={2}
+                      fill="url(#fin-cf)"
+                      animationDuration={750}
+                      animationEasing="ease-out"
+                    />
+                    <Area
+                      name="All expenses (Studio + Personal)"
+                      dataKey="totalOut"
+                      type="monotone"
+                      stroke="var(--muted-foreground)"
+                      strokeDasharray="5 5"
+                      fill="transparent"
+                      animationDuration={750}
+                      animationEasing="ease-out"
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Area
+                      name="Cash in"
+                      dataKey="inn"
+                      type="monotone"
+                      stroke="var(--primary)"
+                      strokeWidth={2}
+                      fill="url(#fin-cf)"
+                      animationDuration={750}
+                      animationEasing="ease-out"
+                    />
+                    <Area
+                      name="Studio expenses"
+                      dataKey="out"
+                      type="monotone"
+                      stroke="var(--muted-foreground)"
+                      strokeDasharray="5 5"
+                      fill="transparent"
+                      animationDuration={750}
+                      animationEasing="ease-out"
+                    />
+                  </>
+                )}
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
         </Glass>
       </div>
 
+      {/* Category Budget Jars Shelf + Spending Fast Card */}
+      <div className="mt-4">
+        {tab === "Personal" ? (
+          personalCats.length === 0 ? (
+            <Glass>
+              <Empty>No personal expenses recorded in {monthLabel}.</Empty>
+            </Glass>
+          ) : (
+            <BudgetShelf
+              db={db}
+              account="Personal"
+              month={month}
+              monthLabel={monthLabel}
+              items={personalCats}
+              selectedCategory={
+                inspector?.account === "Personal" ? inspector.category : null
+              }
+              onSelectCategory={(category) =>
+                setInspector({ account: "Personal", category })
+              }
+            />
+          )
+        ) : tab === "Studio" ? (
+          studioCats.length === 0 ? (
+            <Glass>
+              <Empty>No studio expenses recorded yet.</Empty>
+            </Glass>
+          ) : (
+            <BudgetShelf
+              db={db}
+              account="Studio"
+              month={month}
+              monthLabel={studioShelfScopeLabel}
+              items={studioCats}
+              selectedCategory={
+                inspector?.account === "Studio" ? inspector.category : null
+              }
+              onSelectCategory={(category) =>
+                setInspector({ account: "Studio", category })
+              }
+            />
+          )
+        ) : (
+          <div className="space-y-4">
+            {personalCats.length > 0 && (
+              <BudgetShelf
+                db={db}
+                account="Personal"
+                month={month}
+                monthLabel={monthLabel}
+                items={personalCats}
+                selectedCategory={
+                  inspector?.account === "Personal" ? inspector.category : null
+                }
+                onSelectCategory={(category) =>
+                  setInspector({ account: "Personal", category })
+                }
+              />
+            )}
+            {studioCats.length > 0 && (
+              <BudgetShelf
+                db={db}
+                account="Studio"
+                month={month}
+                monthLabel={studioShelfScopeLabel}
+                items={studioCats}
+                selectedCategory={
+                  inspector?.account === "Studio" ? inspector.category : null
+                }
+                onSelectCategory={(category) =>
+                  setInspector({ account: "Studio", category })
+                }
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Circular Ring Goals Grid */}
+      <Glass delay={180} className="mt-4">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            {tab === "Personal" ? (
+              <PiggyBank className="h-4 w-4 text-primary" />
+            ) : (
+              <Sparkles className="h-4 w-4 text-primary" />
+            )}
+            <p className="label-mono">
+              {tab === "Personal"
+                ? "Personal saving goals"
+                : tab === "Studio"
+                  ? "RothVan Studio goals"
+                  : "All studio & personal goals"}
+            </p>
+          </div>
+          <Btn
+            onClick={() =>
+              openNewGoal(tab === "Personal" ? "Personal" : "Studio")
+            }
+            className="px-3 py-1 text-xs"
+          >
+            <Plus className="h-3 w-3" />
+            Add goal
+          </Btn>
+        </div>
+
+        {activeGoals.length === 0 ? (
+          <Empty>No saving goals yet.</Empty>
+        ) : (
+          <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+            {activeGoals.map((g, idx) => (
+              <GoalRingCard
+                key={g.id}
+                goal={g}
+                current={goalNow(g)}
+                accountLabel={tab === "Combined" ? goalAccount(g) : undefined}
+                delay={idx * 60}
+                onEdit={() => setGoal(g)}
+                onQuickAdd={
+                  g.kind === "manual"
+                    ? (amt) =>
+                        setDB((d) => ({
+                          ...d,
+                          goals: d.goals.map((x) =>
+                            x.id === g.id
+                              ? { ...x, current: x.current + amt }
+                              : x,
+                          ),
+                        }))
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+        )}
+      </Glass>
+
       {/* Studio Auto-Synced Income (from Invoice Payments) */}
       {tab !== "Personal" && (
-        <Glass delay={270} className="mt-4">
+        <Glass delay={240} className="mt-4">
           <div className="mb-3 flex items-center justify-between">
             <p className="label-mono">
-              Recent Studio Income (auto-synced from invoice payments)
+              Recent Studio Income ({db.payments.length} recorded payments)
             </p>
             <Link
               to="/invoices"
@@ -689,68 +843,148 @@ function Page() {
         </Glass>
       )}
 
-      {/* Expenses Ledger */}
-      <Glass delay={300} className="mt-4">
+      {/* Expenses Ledger with Category Pills, Search & Item Icons */}
+      <Glass delay={280} className="mt-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <p className="label-mono">
-            {tab === "Personal"
-              ? `Personal expenses · ${monthLabel}`
-              : tab === "Studio"
-                ? "RothVan Design expenses"
-                : "All studio & personal expenses"}
-            {catFilter !== "All" ? ` · ${catFilter}` : ""}
-          </p>
-          <Btn
-            onClick={() =>
-              openNewExpense(tab === "Personal" ? "Personal" : "Studio")
-            }
-            className="px-3 py-1 text-xs"
-          >
-            <Plus className="h-3 w-3" />
-            Add {tab === "Personal" ? "personal" : "studio"}
-          </Btn>
+          <div>
+            <p className="label-mono">
+              {tab === "Personal"
+                ? q
+                  ? `Personal expenses · all dates matching "${query}"`
+                  : `Personal expenses · ${monthLabel}`
+                : tab === "Studio"
+                  ? "RothVan Design expenses"
+                  : "All studio & personal expenses"}
+              {catFilter !== "All" ? ` · ${catFilter}` : ""}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {filteredExpenses.length}{" "}
+              {filteredExpenses.length === 1 ? "entry" : "entries"}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                type="search"
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setVisibleCount(40);
+                }}
+                placeholder="Search item or card..."
+                className="field w-44 py-1.5 pl-8 text-xs sm:w-56"
+              />
+            </div>
+            <Btn
+              onClick={() =>
+                openNewExpense(tab === "Personal" ? "Personal" : "Studio")
+              }
+              className="px-3 py-1.5 text-xs"
+            >
+              <Plus className="h-3 w-3" />
+              Add {tab === "Personal" ? "personal" : "studio"}
+            </Btn>
+          </div>
         </div>
-        {filteredExpenses.length === 0 ? (
+
+        {/* Category Filter Strip */}
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => setCatFilter("All")}
+            className={cn(
+              "rounded-full border px-2.5 py-1 text-[0.7rem] transition-colors",
+              catFilter === "All"
+                ? "border-primary bg-primary text-primary-foreground"
+                : "border-border text-muted-foreground hover:text-foreground",
+            )}
+          >
+            All
+          </button>
+          {activeCategoriesForFilter.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setCatFilter(catFilter === c ? "All" : c)}
+              className={cn(
+                "rounded-full border px-2.5 py-1 text-[0.7rem] transition-colors",
+                catFilter === c
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+
+        {visibleExpenses.length === 0 ? (
           <Empty>No expenses match this filter.</Empty>
         ) : (
-          <ul className="divide-y divide-border">
-            {filteredExpenses.map((e) => {
-              const acc = expenseAccount(e);
-              const proj = e.projectId
-                ? db.projects.find((p) => p.id === e.projectId)
-                : undefined;
-              return (
-                <li key={e.id}>
-                  <button
-                    onClick={() => setEdit(e)}
-                    className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left hover:bg-muted"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-destructive">
-                        <ArrowUpRight className="h-4 w-4" />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">
-                          {e.description || e.vendor || "Expense"}
-                        </p>
-                        <p className="truncate text-xs text-muted-foreground">
-                          {shortDate(e.date)} · {e.category}
-                          {e.vendor ? ` · ${e.vendor}` : ""}
-                          {proj ? ` · ${proj.code}` : ""}
-                          {tab === "Combined" ? ` · ${acc}` : ""}
-                        </p>
+          <>
+            <ul className="divide-y divide-border">
+              {visibleExpenses.map((e) => {
+                const acc = expenseAccount(e);
+                const proj = e.projectId
+                  ? db.projects.find((p) => p.id === e.projectId)
+                  : undefined;
+                const ItemIcon = expenseItemIcon(e);
+                return (
+                  <li key={e.id}>
+                    <button
+                      onClick={() => setEdit(e)}
+                      className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-muted"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-primary">
+                          <ItemIcon className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {e.description || e.vendor || "Expense"}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {shortDate(e.date)} · {e.category}
+                            {e.vendor ? ` · ${e.vendor}` : ""}
+                            {proj ? ` · ${proj.code}` : ""}
+                            {tab === "Combined" ? ` · ${acc}` : ""}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <p className="font-mono text-sm text-destructive">
-                      {money(-e.amount, e.currency)}
-                    </p>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                      <p className="font-mono text-sm text-destructive">
+                        {money(-e.amount, e.currency)}
+                      </p>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {filteredExpenses.length > visibleExpenses.length && (
+              <div className="mt-3 flex justify-center">
+                <Btn
+                  onClick={() => setVisibleCount((n) => n + 60)}
+                  className="px-4 py-1.5 text-xs"
+                >
+                  Show more ({filteredExpenses.length - visibleExpenses.length}{" "}
+                  remaining)
+                </Btn>
+              </div>
+            )}
+          </>
         )}
       </Glass>
+
+      {/* Right-Side Pop-Up Inspector Drawer */}
+      <CategoryInspectorDrawer
+        db={db}
+        account={inspector?.account ?? "Personal"}
+        category={inspector?.category ?? null}
+        month={month}
+        onClose={() => setInspector(null)}
+        onAddExpense={(acc, cat) => openNewExpense(acc, cat)}
+        onEditExpense={(exp) => setEdit(exp)}
+      />
 
       <EditModal
         item={edit}

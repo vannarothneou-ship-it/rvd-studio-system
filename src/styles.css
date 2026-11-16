@@ -273,6 +273,44 @@
   transform-origin: left;
   animation: grow 1s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+@keyframes drawerIn {
+  from {
+    opacity: 0;
+    transform: translateX(32px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes backdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes jarSheen {
+  0%,
+  100% {
+    opacity: 0.22;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 0.42;
+    transform: translateY(-2px);
+  }
+}
+@utility drawer-in {
+  animation: drawerIn 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@utility backdrop-in {
+  animation: backdropIn 0.25s ease-out both;
+}
+@utility jar-sheen {
+  animation: jarSheen 3.2s ease-in-out infinite;
+}
 
 /* Invoice paper */
 :root {

@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { agreementPages } from "@/components/rv/AgreementDoc";
 import {
+  PILLARS,
+  cashFlowSeries,
   cashReceived,
+  categoryLimit,
   categoryTotals,
   convertDocument,
   deletePayment,
@@ -20,6 +23,7 @@ import {
   recordPayment,
   saveDocument,
   serviceItem,
+  setCategoryLimit,
   type Invoice,
 } from "./store";
 
@@ -187,7 +191,7 @@ describe("connected studio lifecycle automation", () => {
     proj = db.projects.find((p) => p.id === savedQuote.projectId)!;
     expect(proj.status).toBe("In production");
     expect(proj.start).toBe("2026-11-16");
-    expect(proj.due).toBe("2026-11-23"); // 5 - 7 Days timeline parsed!
+    expect(proj.due).toBe("2026-11-21"); // 5 Days timeline parsed from Logo Branding I!
 
     // 3. Issue linked Invoice and record partial payment
     const invoice = {
@@ -253,9 +257,11 @@ describe("agreement pagination and studio/personal finance", () => {
       id: "ag-1",
       kind: "Agreement",
       no: "RVAG-26111501",
-      clientId: "c1",
-      projectId: "p1",
-      items: db.services.map((s) => serviceItem(s, "USD", db.settings.khrRate)),
+      clientId: db.clients[0]!.id,
+      projectId: db.projects[0]!.id,
+      items: db.services
+        .slice(0, 3)
+        .map((s) => serviceItem(s, "USD", db.settings.khrRate)),
     });
     const pages = agreementPages(doc, db);
     expect(pages.length).toBeGreaterThanOrEqual(2);
@@ -265,15 +271,58 @@ describe("agreement pagination and studio/personal finance", () => {
 
   it("separates Studio and Personal expenses, categories, and saving goals", () => {
     const db = getDB();
-    const period = db.expenses
-      .find((e) => expenseAccount(e) === "Personal")!
-      .date.slice(0, 7);
-    expect(expenseTotal(db, "Personal", period)).toBeGreaterThan(0);
-    expect(categoryTotals(db, "Personal", period).length).toBeGreaterThan(0);
+    const personal = db.expenses.filter(
+      (e) => expenseAccount(e) === "Personal",
+    );
+    expect(personal).toHaveLength(1590);
+    expect(expenseTotal(db, "Personal", "2026-11")).toBeCloseTo(770.59, 2);
+    expect(expenseTotal(db, "Personal", "2026-10")).toBeCloseTo(870.9, 2);
+    expect(categoryTotals(db, "Personal", "2026-11").length).toBe(6);
     expect(db.goals.some((g) => goalAccount(g) === "Personal")).toBe(true);
-    expect(expenseCategoriesFor("Personal")).toContain("Food and groceries");
+    expect(expenseCategoriesFor("Personal")).toEqual(
+      expect.arrayContaining([
+        "Food",
+        "Transportation",
+        "Kid",
+        "Personal Spending",
+        "Utilities",
+        "Medical & Healthcare",
+        "Saving & Investing",
+        "Prius 2012",
+      ]),
+    );
     expect(expenseCategoriesFor("Studio")).toContain(
       "Software and subscriptions",
     );
+    expect(categoryLimit(db, "Personal", "Food")).toBe(250);
+    setCategoryLimit("Personal", "Food", 320);
+    expect(categoryLimit(getDB(), "Personal", "Food")).toBe(320);
+  });
+
+  it("integrates real RothVan CSV data with exact paid and unpaid totals", () => {
+    const db = getDB();
+    expect(db.clients).toHaveLength(36);
+    expect(db.services).toHaveLength(28);
+    expect(db.projects).toHaveLength(105);
+    expect(PILLARS).toEqual(
+      expect.arrayContaining([
+        "Branding Design",
+        "Creative Assets",
+        "Web & App Design",
+        "Marketing Collateral",
+        "Spatial Design",
+        "Product Packaging",
+      ]),
+    );
+    const totalPaid = db.payments.reduce((s, p) => s + p.amount, 0);
+    expect(totalPaid).toBeCloseTo(13880.1, 2);
+
+    const s6 = cashFlowSeries(db, "6m");
+    const s12 = cashFlowSeries(db, "12m");
+    const sAll = cashFlowSeries(db, "all");
+    expect(s6).toHaveLength(6);
+    expect(s12).toHaveLength(12);
+    expect(sAll.length).toBeGreaterThan(12);
+    expect(sAll.reduce((sum, x) => sum + x.inn, 0)).toBeCloseTo(13880.1, 2);
   });
 });

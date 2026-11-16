@@ -89,7 +89,7 @@ function Page() {
   const blank = (): Client => ({
     id: uid(),
     code: nextCode(
-      "CL-",
+      "RVD-",
       db.clients.map((c) => c.code),
     ),
     name: "",

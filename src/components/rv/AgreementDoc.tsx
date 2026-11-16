@@ -50,11 +50,11 @@ export function buildAgreementClauses(inv: Invoice, db: DB): Clause[] {
       const scopeDetail = item.scope?.trim()
         ? item.scope
             .split("\n")
+            .map((line) => line.replace(/^[•·-]\s*/, "").trim())
             .filter(Boolean)
-            .map((line) => `  - ${line}`)
-            .join("\n")
-        : "  - Deliverables and specifications as confirmed in writing.";
-      return `${idx + 1}. ${item.description || "Design deliverable"} (Qty: ${item.qty} × ${unitPrice} = ${lineTotal} · Est. timeline: ${item.timeline || "As agreed"})\n${scopeDetail}`;
+            .join(" · ")
+        : "Deliverables and specifications as confirmed in writing.";
+      return `${idx + 1}. ${item.description || "Design deliverable"} (Qty: ${item.qty} × ${unitPrice} = ${lineTotal} · Est. timeline: ${item.timeline || "As agreed"})\n   Scope & Deliverables: ${scopeDetail}`;
     })
     .join("\n\n");
 
@@ -187,18 +187,18 @@ export function agreementPages(inv: Invoice, db: DB): Clause[][] {
   }
 
   // Estimate A4 content line budget carefully:
-  // ~82 chars per line at 9.5pt on 182mm printable width; ~44 lines fit per A4 page above footer,
+  // ~94 chars per line at 9.5pt on 182mm printable width; ~46 lines fit per A4 page above footer,
   // and final page needs ~11 lines reserved for the side-by-side DocumentSignatures block.
-  const MAX_LINES_PER_PAGE = 42;
-  const SIGNATURE_RESERVE_LINES = 12;
+  const MAX_LINES_PER_PAGE = 46;
+  const SIGNATURE_RESERVE_LINES = 11;
 
   const estimateLines = (clause: Clause) => {
     const paragraphs = clause.text.split("\n");
     const textLines = paragraphs.reduce(
-      (sum, line) => sum + Math.max(1, Math.ceil(line.length / 84)),
+      (sum, line) => sum + Math.max(1, Math.ceil(line.length / 94)),
       0,
     );
-    return textLines + (clause.kind === "summary" ? 4.5 : 3);
+    return textLines + (clause.kind === "summary" ? 4 : 2.8);
   };
 
   const pages: Clause[][] = [];

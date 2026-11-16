@@ -13,12 +13,21 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   FileText,
+  PiggyBank,
   Plus,
-  Target,
 } from "lucide-react";
 import { Btn, Glass, PageHeader, Stat } from "@/components/rv/ui";
 import {
+  AnimatedNumber,
+  BudgetShelf,
+  CategoryInspectorDrawer,
+  GoalRingCard,
+  expenseItemIcon,
+} from "@/components/rv/FinanceVisuals";
+import {
   PROJECT_STATUSES,
+  cashFlowSeries,
+  categoryTotals,
   documentKind,
   expenseAccount,
   expenseTotal,
@@ -32,6 +41,7 @@ import {
   toUSD,
   today,
   useDB,
+  type CashRange,
   type DB,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -45,62 +55,37 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Cash profit, cash flow, goals and project pipeline for RothVan Design.",
+          "Cash profit, cash flow, personal monthly expenses, goals and project pipeline for RothVan Design.",
       },
       { property: "og:title", content: "Overview · RothVan Studio" },
       {
         property: "og:description",
         content:
-          "Cash profit, cash flow, goals and project pipeline for RothVan Design.",
+          "Cash profit, cash flow, personal monthly expenses, goals and project pipeline for RothVan Design.",
       },
     ],
   }),
   component: Overview,
 });
 
-function monthKey(d: string) {
-  return d.slice(0, 7);
-}
-function lastMonths(n: number) {
-  const out: string[] = [];
-  const d = new Date();
-  d.setDate(1);
-  for (let i = n - 1; i >= 0; i--) {
-    const x = new Date(d);
-    x.setMonth(d.getMonth() - i);
-    out.push(x.toISOString().slice(0, 7));
-  }
-  return out;
-}
-function series(db: DB, n: number) {
-  const r = db.settings.khrRate;
-  return lastMonths(n).map((m) => {
-    const inn = db.payments
-      .filter((p) => monthKey(p.date) === m)
-      .reduce((s, p) => s + toUSD(p.amount, p.currency, r), 0);
-    const out = db.expenses
-      .filter((e) => expenseAccount(e) === "Studio" && monthKey(e.date) === m)
-      .reduce((s, e) => s + toUSD(e.amount, e.currency, r), 0);
-    return {
-      m,
-      label: new Date(m + "-01T00:00:00").toLocaleDateString("en-US", {
-        month: "short",
-      }),
-      inn,
-      out,
-      net: inn - out,
-    };
-  });
-}
+const RANGE_OPTIONS: { id: CashRange; label: string; desc: string }[] = [
+  { id: "6m", label: "6 months", desc: "last 6 months" },
+  { id: "12m", label: "12 months", desc: "last 12 months" },
+  { id: "all", label: "All time", desc: "all time" },
+];
 
 function Overview() {
   const db = useDB((d) => d);
-  const [range, setRange] = useState<6 | 12>(12);
-  const s12 = series(db, 12);
-  const s = range === 6 ? s12.slice(6) : s12;
-  const net12 = s12.reduce((a, x) => a + x.net, 0);
+  const [range, setRange] = useState<CashRange>("all");
+  const [inspectedCategory, setInspectedCategory] = useState<string | null>(
+    null,
+  );
+  const s = cashFlowSeries(db, range);
+  const rangeMeta = RANGE_OPTIONS.find((o) => o.id === range)!;
+  const netRange = s.reduce((a, x) => a + x.net, 0);
   let run = 0;
-  const spark = s12.map((x) => ({ v: (run += x.net) }));
+  const spark = s.map((x) => ({ v: (run += x.net) }));
+
   const views = db.invoices.map((i) => ({ i, v: invoiceView(i, db) }));
   const followUps = db.invoices
     .filter((i) => needsFollowUp(i))
@@ -115,7 +100,24 @@ function Overview() {
     cashOut = s.reduce((a, x) => a + x.out, 0);
   const r = db.settings.khrRate;
   const thisMonth = today().slice(0, 7);
+  const thisMonthLabel = new Date(
+    thisMonth + "-01T00:00:00Z",
+  ).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
   const personalMonth = expenseTotal(db, "Personal", thisMonth);
+  const personalCats = categoryTotals(db, "Personal", thisMonth);
+  const personalItemsMonth = [...db.expenses]
+    .filter(
+      (e) => expenseAccount(e) === "Personal" && e.date.startsWith(thisMonth),
+    )
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .slice(0, 4);
+  const s6 = cashFlowSeries(db, "6m");
+  const personal6Avg =
+    s6.reduce((a, x) => a + x.personalOut, 0) / (s6.length || 1);
 
   const activity = [
     ...db.payments.map((p) => {
@@ -127,14 +129,16 @@ function Overview() {
         sub: `Income · ${p.method}`,
         amt: toUSD(p.amount, p.currency, r),
         kind: "in" as const,
+        expense: null as DB["expenses"][number] | null,
       };
     }),
     ...db.expenses.map((e) => ({
       date: e.date,
-      title: e.vendor || e.description,
+      title: e.description || e.vendor,
       sub: `${expenseAccount(e)} · ${e.category}`,
       amt: -toUSD(e.amount, e.currency, r),
       kind: "out" as const,
+      expense: e,
     })),
     ...db.invoices.filter(isInvoice).map((i) => ({
       date: i.issue,
@@ -142,6 +146,7 @@ function Overview() {
       sub: `Issued · ${db.clients.find((c) => c.id === i.clientId)?.name ?? ""}`,
       amt: invoiceView(i, db).totalUSD,
       kind: "inv" as const,
+      expense: null as DB["expenses"][number] | null,
     })),
   ]
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -154,11 +159,7 @@ function Overview() {
           .filter((p) => p.date.startsWith(year))
           .reduce((a, p) => a + toUSD(p.amount, p.currency, r), 0)
       : g.kind === "clients"
-        ? new Set(
-            db.invoices
-              .filter((i) => isInvoice(i) && i.issue.startsWith(year))
-              .map((i) => i.clientId),
-          ).size
+        ? db.clients.filter((c) => c.status !== "Lead").length
         : g.current;
   const readyToClose = db.projects.filter(
     (p) =>
@@ -245,15 +246,15 @@ function Overview() {
       <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,8fr)]">
         <Glass className="flex flex-col">
           <p className="text-sm text-muted-foreground">
-            Studio net cash profit, last 12 months
+            Studio net cash profit, {rangeMeta.desc}
           </p>
           <p
             className={cn(
               "mt-2 font-display text-4xl font-black",
-              net12 < 0 && "text-destructive",
+              netRange < 0 && "text-destructive",
             )}
           >
-            {money(net12)}
+            <AnimatedNumber value={netRange} />
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Studio cash received minus RothVan Design expenses
@@ -281,6 +282,8 @@ function Overview() {
                   strokeWidth={2}
                   fill="url(#sp)"
                   type="monotone"
+                  animationDuration={750}
+                  animationEasing="ease-out"
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -302,21 +305,21 @@ function Overview() {
           </div>
         </Glass>
         <Glass delay={80}>
-          <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h2 className="font-medium">Studio cash flow</h2>
             <div className="flex rounded-full border border-border bg-muted p-1 text-xs">
-              {[6, 12].map((n) => (
+              {RANGE_OPTIONS.map((o) => (
                 <button
-                  key={n}
-                  onClick={() => setRange(n as 6 | 12)}
+                  key={o.id}
+                  onClick={() => setRange(o.id)}
                   className={cn(
                     "rounded-full px-3 py-1 transition-colors",
-                    range === n
+                    range === o.id
                       ? "bg-foreground text-background"
-                      : "text-muted-foreground",
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {n} months
+                  {o.label}
                 </button>
               ))}
             </div>
@@ -380,6 +383,8 @@ function Overview() {
                   stroke="var(--primary)"
                   strokeWidth={2}
                   fill="url(#cf)"
+                  animationDuration={750}
+                  animationEasing="ease-out"
                 />
                 <Area
                   name="Studio expenses"
@@ -388,6 +393,8 @@ function Overview() {
                   stroke="var(--muted-foreground)"
                   strokeDasharray="5 5"
                   fill="transparent"
+                  animationDuration={750}
+                  animationEasing="ease-out"
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -395,19 +402,131 @@ function Overview() {
         </Glass>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)]">
-        <Glass delay={140}>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-medium">Recent activity</h2>
+      {/* Personal Monthly Expenses + Goals & Savings */}
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <Glass delay={120}>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <PiggyBank className="h-4 w-4 text-primary" />
+              <h2 className="font-medium">
+                Personal expenses · {thisMonthLabel}
+              </h2>
+            </div>
             <Link
               to="/finance"
-              className="text-sm text-muted-foreground hover:text-foreground"
+              className="text-sm text-primary hover:underline"
             >
-              View all →
+              Finance →
             </Link>
           </div>
-          <ul className="divide-y divide-border">
-            {activity.map((a, k) => (
+          <div className="mb-4 grid grid-cols-3 gap-3 border-b border-border pb-4">
+            <Stat label="Spent (mo)" value={money(personalMonth)} tone="neg" />
+            <Stat label="6m avg / mo" value={money(personal6Avg)} />
+            <Stat label="Categories" value={String(personalCats.length)} />
+          </div>
+          {personalCats.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No personal expenses recorded this month.
+            </p>
+          ) : (
+            <BudgetShelf
+              db={db}
+              account="Personal"
+              month={thisMonth}
+              monthLabel={thisMonthLabel}
+              items={personalCats}
+              selectedCategory={inspectedCategory}
+              onSelectCategory={(cat) => setInspectedCategory(cat)}
+              compact
+            />
+          )}
+          {personalItemsMonth.length > 0 && (
+            <ul className="mt-4 divide-y divide-border border-t border-border pt-2">
+              {personalItemsMonth.map((e) => {
+                const ItemIcon = expenseItemIcon(e);
+                return (
+                  <li
+                    key={e.id}
+                    className="flex items-center justify-between gap-3 py-2 text-xs"
+                  >
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-border bg-muted text-primary">
+                        <ItemIcon className="h-3.5 w-3.5" />
+                      </span>
+                      <span className="truncate text-muted-foreground">
+                        <b className="font-medium text-foreground">
+                          {e.description || e.vendor}
+                        </b>{" "}
+                        · {e.category} · {shortDate(e.date)}
+                      </span>
+                    </div>
+                    <span className="shrink-0 font-mono text-destructive">
+                      {money(-toUSD(e.amount, e.currency, r))}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Glass>
+
+        <Glass delay={160}>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-medium">Goals & savings</h2>
+            <span className="text-sm text-muted-foreground">
+              {db.goals.length} active
+            </span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {db.goals.slice(0, 4).map((g, idx) => (
+              <GoalRingCard
+                key={g.id}
+                goal={g}
+                current={goalValue(g)}
+                accountLabel={goalAccount(g)}
+                delay={idx * 60}
+                onEdit={() => {}}
+                onQuickAdd={
+                  g.kind === "manual"
+                    ? (amt) =>
+                        setDB((d) => ({
+                          ...d,
+                          goals: d.goals.map((x) =>
+                            x.id === g.id
+                              ? { ...x, current: x.current + amt }
+                              : x,
+                          ),
+                        }))
+                    : undefined
+                }
+              />
+            ))}
+          </div>
+          <Link
+            to="/finance"
+            className="mt-4 block text-xs text-muted-foreground hover:text-foreground"
+          >
+            Manage all {db.goals.length} studio & personal goals in Finance →
+          </Link>
+        </Glass>
+      </div>
+
+      <Glass delay={200} className="mt-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-medium">Recent activity</h2>
+          <Link
+            to="/finance"
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            View all →
+          </Link>
+        </div>
+        <ul className="divide-y divide-border">
+          {activity.map((a, k) => {
+            const OutIcon = a.expense
+              ? expenseItemIcon(a.expense)
+              : ArrowUpRight;
+            return (
               <li
                 key={k}
                 className="flex items-center gap-3 py-3 rise"
@@ -417,12 +536,13 @@ function Overview() {
                   className={cn(
                     "grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border bg-muted",
                     a.kind === "in" && "text-positive",
+                    a.kind === "out" && "text-primary",
                   )}
                 >
                   {a.kind === "in" ? (
                     <ArrowDownLeft className="h-4 w-4" />
                   ) : a.kind === "out" ? (
-                    <ArrowUpRight className="h-4 w-4" />
+                    <OutIcon className="h-4 w-4" />
                   ) : (
                     <FileText className="h-4 w-4" />
                   )}
@@ -444,78 +564,18 @@ function Overview() {
                   {a.kind === "inv" ? money(a.amt) : money(a.amt, "USD", true)}
                 </span>
               </li>
-            ))}
-          </ul>
-        </Glass>
-        <Glass delay={200}>
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="font-medium">Goals & savings</h2>
-            <span className="text-sm text-muted-foreground">
-              {db.goals.length} active
-            </span>
-          </div>
-          <div className="space-y-5">
-            {db.goals.map((g) => {
-              const v = goalValue(g);
-              const pct = Math.min(
-                100,
-                Math.round((v / (g.target || 1)) * 100),
-              );
-              const isMoney = g.kind !== "clients";
-              return (
-                <div key={g.id}>
-                  <div className="mb-2 flex items-center gap-3">
-                    <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border">
-                      <Target className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                      {g.name}{" "}
-                      <span className="font-mono text-[0.65rem] text-muted-foreground">
-                        ({goalAccount(g)})
-                      </span>
-                    </span>
-                    <span className="font-mono text-xs">{pct}%</span>
-                  </div>
-                  <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="grow-bar h-full rounded-full bg-primary"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <div className="mt-1 flex justify-between text-xs text-muted-foreground">
-                    <span>{isMoney ? money(v) : v}</span>
-                    <span>of {isMoney ? money(g.target) : g.target}</span>
-                  </div>
-                  {g.kind === "manual" && (
-                    <button
-                      onClick={() =>
-                        setDB((d) => ({
-                          ...d,
-                          goals: d.goals.map((x) =>
-                            x.id === g.id
-                              ? { ...x, current: x.current + 100 }
-                              : x,
-                          ),
-                        }))
-                      }
-                      className="mt-2 inline-flex items-center gap-1 rounded-full border border-border px-3 py-1 text-xs hover:bg-accent"
-                    >
-                      <Plus className="h-3 w-3" />
-                      Add $100
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <Link
-            to="/finance"
-            className="mt-4 block text-xs text-muted-foreground hover:text-foreground"
-          >
-            Manage studio & personal goals in Finance →
-          </Link>
-        </Glass>
-      </div>
+            );
+          })}
+        </ul>
+      </Glass>
+
+      <CategoryInspectorDrawer
+        db={db}
+        account="Personal"
+        category={inspectedCategory}
+        month={thisMonth}
+        onClose={() => setInspectedCategory(null)}
+      />
 
       <Glass delay={260} className="mt-4">
         <div className="mb-4 flex items-center justify-between">

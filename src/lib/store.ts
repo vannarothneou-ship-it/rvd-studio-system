@@ -24,10 +24,23 @@ export const CLIENT_SOURCES = [
   "Returning client",
   "Other",
 ];
+import {
+  buildSampleExpenses,
+  rothvanClients,
+  rothvanGoals,
+  rothvanInvoices,
+  rothvanPayments,
+  rothvanProjects,
+  rothvanServices,
+} from "./rothvan-seed";
+
 export const PILLARS = [
   "Branding Design",
+  "Creative Assets",
+  "Web & App Design",
   "Marketing Collateral",
   "Spatial Design",
+  "Product Packaging",
 ];
 export const PRICING_UNITS = ["Fixed fee", "Per item", "Per hour", "Per sqm"];
 export const PAY_METHODS = ["Bank transfer", "KHQR", "Wing", "Cash", "Other"];
@@ -44,18 +57,42 @@ export const EXPENSE_CATEGORIES = [
   "Other",
 ];
 export const PERSONAL_CATEGORIES = [
-  "Food and groceries",
-  "Housing",
+  "Food",
+  "Transportation",
+  "Kid",
+  "Personal Spending",
   "Utilities",
-  "Transport",
-  "Health",
-  "Family",
-  "Entertainment",
-  "Education",
-  "Shopping",
+  "Medical & Healthcare",
+  "Saving & Investing",
+  "Prius 2012",
   "Other",
 ];
 export type Account = "Studio" | "Personal";
+
+export const DEFAULT_PERSONAL_LIMITS: Record<string, number> = {
+  Food: 250,
+  Transportation: 120,
+  Kid: 150,
+  "Personal Spending": 200,
+  Utilities: 80,
+  "Medical & Healthcare": 100,
+  "Saving & Investing": 300,
+  "Prius 2012": 200,
+  Other: 50,
+};
+
+export const DEFAULT_STUDIO_LIMITS: Record<string, number> = {
+  "Software and subscriptions": 100,
+  "Fonts and licenses": 80,
+  "Printing and production": 150,
+  "Fabrication and vendors": 250,
+  Freelancers: 200,
+  Transport: 60,
+  Marketing: 80,
+  Equipment: 200,
+  "Office and utilities": 100,
+  Other: 100,
+};
 
 export type Currency = "USD" | "KHR";
 export interface Client {
@@ -209,6 +246,7 @@ export interface DB {
   expenses: Expense[];
   goals: Goal[];
   settings: Settings;
+  categoryLimits?: Record<string, number>;
 }
 
 export const uid = () =>
@@ -286,336 +324,33 @@ const defaultSettings: Settings = {
 };
 
 function seed(): DB {
-  const t = today();
   const m = (n: number, day = 10) => {
-    const d = new Date();
-    d.setMonth(d.getMonth() - n, day);
+    const now = new Date();
+    const d = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - n, day),
+    );
     return d.toISOString().slice(0, 10);
   };
-  const clients: Client[] = [
-    {
-      id: "c1",
-      code: "CL-01",
-      name: "Doughtelier",
-      type: "Owner-operated",
-      industry: "Bakery",
-      contact: "Ly Andy",
-      email: "",
-      telegram: "@lyandy",
-      phone: "",
-      source: "Referral",
-      status: "Active",
-      notes: "",
-    },
-    {
-      id: "c2",
-      code: "CL-02",
-      name: "Elite Mart",
-      type: "SME",
-      industry: "Retail",
-      contact: "Sok Dara",
-      email: "dara@elitemart.com",
-      telegram: "",
-      phone: "",
-      source: "Social media",
-      status: "Active",
-      notes: "",
-    },
-    {
-      id: "c3",
-      code: "CL-03",
-      name: "Mekong Habitat",
-      type: "NGO",
-      industry: "Housing",
-      contact: "Chan Sreymom",
-      email: "hello@mekonghabitat.org",
-      telegram: "",
-      phone: "",
-      source: "Website",
-      status: "Lead",
-      notes: "",
-    },
-  ];
-  const services: Service[] = [
-    {
-      id: "s1",
-      code: "BD-01",
-      pillar: "Branding Design",
-      name: "Logo and brand identity",
-      unit: "Fixed fee",
-      rate: 100,
-      scope:
-        "2 x Unique Logo Concepts\nFinal logo in AI, EPS, PDF, PNG, JPG\nBasic Brand GuideStyle\nVisual Mockups",
-      timeline: "5 - 7 Days",
-      overage: 25,
-    },
-    {
-      id: "s2",
-      code: "MC-01",
-      pillar: "Marketing Collateral",
-      name: "Social media post set",
-      unit: "Per item",
-      rate: 15,
-      scope:
-        "1 x Post design\n2 revision rounds\nExport for Facebook and Instagram",
-      timeline: "2 - 3 Days",
-      overage: 10,
-    },
-  ];
-  const projects: Project[] = [
-    {
-      id: "p1",
-      code: "RVD-101",
-      clientId: "c1",
-      serviceId: "s1",
-      name: "Elite Mart logo",
-      status: "Delivered",
-      start: "2026-02-07",
-      due: "2026-02-14",
-      delivered: "2026-02-14",
-      quote: 100,
-    },
-    {
-      id: "p2",
-      code: "RVD-102",
-      clientId: "c2",
-      serviceId: "s2",
-      name: "Opening campaign posts",
-      status: "In production",
-      start: m(1),
-      due: addDays(t, 6),
-      delivered: "",
-      quote: 180,
-    },
-    {
-      id: "p3",
-      code: "RVD-103",
-      clientId: "c3",
-      serviceId: "s1",
-      name: "Habitat rebrand",
-      status: "Quoted",
-      start: "",
-      due: addDays(t, 30),
-      delivered: "",
-      quote: 650,
-    },
-    {
-      id: "p4",
-      code: "RVD-104",
-      clientId: "c2",
-      serviceId: "s2",
-      name: "Menu board refresh",
-      status: "Inquiry",
-      start: "",
-      due: "",
-      delivered: "",
-      quote: 120,
-    },
-  ];
-  const invoices: Invoice[] = [
-    {
-      id: "i1",
-      no: "RVIN-26020701",
-      clientId: "c1",
-      projectId: "p1",
-      issue: "2026-02-07",
-      due: "2026-03-07",
-      currency: "USD",
-      discount: 0,
-      sent: true,
-      showSchedule: true,
-      includeTerms: true,
-      includeRates: true,
-      notes: "",
-      items: [
-        {
-          id: "it1",
-          description: 'Design Logo Branding for "Elite Mart"',
-          scope: services[0]?.scope ?? "",
-          timeline: "5 - 7 Days",
-          qty: 1,
-          price: 100,
-        },
-      ],
-      images: [],
-    },
-    {
-      id: "i2",
-      no: "RVIN-" + m(1, 3).slice(2).replace(/-/g, "") + "01",
-      clientId: "c2",
-      projectId: "p2",
-      issue: m(1, 3),
-      due: addDays(m(1, 3), 28),
-      currency: "USD",
-      discount: 0,
-      sent: true,
-      showSchedule: true,
-      includeTerms: true,
-      includeRates: true,
-      notes: "",
-      items: [
-        {
-          id: "it2",
-          description: "Opening campaign social posts",
-          scope: services[1]?.scope ?? "",
-          timeline: "2 - 3 Days",
-          qty: 12,
-          price: 15,
-        },
-      ],
-      images: [],
-    },
-  ];
-  const payments: Payment[] = [
-    {
-      id: "pay1",
-      invoiceId: "i1",
-      date: "2026-02-08",
-      amount: 50,
-      currency: "USD",
-      method: "KHQR",
-      reference: "Deposit",
-    },
-    {
-      id: "pay2",
-      invoiceId: "i1",
-      date: "2026-02-15",
-      amount: 50,
-      currency: "USD",
-      method: "KHQR",
-      reference: "Balance",
-    },
-    {
-      id: "pay3",
-      invoiceId: "i2",
-      date: m(1, 5),
-      amount: 90,
-      currency: "USD",
-      method: "Bank transfer",
-      reference: "Deposit 50%",
-    },
-  ];
-  const expenses: Expense[] = [
-    {
-      id: "e1",
-      date: m(0, 2),
-      projectId: "",
-      category: "Software and subscriptions",
-      vendor: "Adobe",
-      description: "Creative Cloud",
-      amount: 59.99,
-      currency: "USD",
-      receipt: "",
-      account: "Studio",
-    },
-    {
-      id: "e2",
-      date: m(1, 12),
-      projectId: "p2",
-      category: "Fonts and licenses",
-      vendor: "Type foundry",
-      description: "Display typeface",
-      amount: 45,
-      currency: "USD",
-      receipt: "",
-      account: "Studio",
-    },
-    {
-      id: "e3",
-      date: m(2, 20),
-      projectId: "",
-      category: "Office and utilities",
-      vendor: "Internet",
-      description: "Monthly fibre",
-      amount: 25,
-      currency: "USD",
-      receipt: "",
-      account: "Studio",
-    },
-    {
-      id: "e4",
-      date: m(0, 4),
-      projectId: "",
-      category: "Housing",
-      vendor: "Apartment",
-      description: "Monthly rent",
-      amount: 280,
-      currency: "USD",
-      receipt: "",
-      account: "Personal",
-    },
-    {
-      id: "e5",
-      date: m(0, 6),
-      projectId: "",
-      category: "Food and groceries",
-      vendor: "Local market & cafe",
-      description: "Weekly groceries & coffee",
-      amount: 64.5,
-      currency: "USD",
-      receipt: "",
-      account: "Personal",
-    },
-    {
-      id: "e6",
-      date: m(0, 9),
-      projectId: "",
-      category: "Transport",
-      vendor: "PassApp",
-      description: "City rides & fuel",
-      amount: 24,
-      currency: "USD",
-      receipt: "",
-      account: "Personal",
-    },
-  ];
-  const goals: Goal[] = [
-    {
-      id: "g1",
-      name: "Cash received this year",
-      kind: "cash",
-      target: 12000,
-      current: 0,
-      account: "Studio",
-    },
-    {
-      id: "g2",
-      name: "New clients this year",
-      kind: "clients",
-      target: 10,
-      current: 0,
-      account: "Studio",
-    },
-    {
-      id: "g3",
-      name: "Equipment fund",
-      kind: "manual",
-      target: 1500,
-      current: 400,
-      account: "Studio",
-    },
-    {
-      id: "g4",
-      name: "Personal emergency savings",
-      kind: "manual",
-      target: 5000,
-      current: 1200,
-      account: "Personal",
-    },
-  ];
   return {
-    clients,
-    services,
-    projects,
-    invoices,
-    payments,
-    expenses,
-    goals,
-    settings: defaultSettings,
+    clients: rothvanClients.map((c) => ({ ...c })),
+    services: rothvanServices.map((s) => ({ ...s })),
+    projects: rothvanProjects.map((p) => ({ ...p })),
+    invoices: rothvanInvoices.map((i) => ({
+      ...i,
+      items: i.items.map((it) => ({ ...it })),
+      images: i.images.map((im) => ({ ...im })),
+    })),
+    payments: rothvanPayments.map((p) => ({ ...p })),
+    expenses: buildSampleExpenses(m),
+    goals: rothvanGoals.map((g) => ({ ...g })),
+    settings: { ...defaultSettings },
+    categoryLimits: {},
   };
 }
 
-const KEY = "rothvan-studio-v1";
+const KEY = "rothvan-studio-v3";
+const PREV_KEY = "rothvan-studio-v2";
+const LEGACY_KEY = "rothvan-studio-v1";
 let state: DB = seed();
 let loaded = false;
 const listeners = new Set<() => void>();
@@ -631,7 +366,20 @@ function load() {
         ...seed(),
         ...p,
         settings: { ...defaultSettings, ...p.settings },
+        categoryLimits: { ...(p.categoryLimits ?? {}) },
       };
+      return;
+    }
+    const prevRaw =
+      localStorage.getItem(PREV_KEY) ?? localStorage.getItem(LEGACY_KEY);
+    if (prevRaw) {
+      const lp = JSON.parse(prevRaw);
+      if (lp?.settings) {
+        state = {
+          ...seed(),
+          settings: { ...defaultSettings, ...lp.settings },
+        };
+      }
     }
   } catch {
     /* ignore */
@@ -839,6 +587,116 @@ export function categoryTotals(db: DB, account: Account, period: string) {
     map.set(e.category, prev);
   }
   return Array.from(map.values()).sort((a, b) => b.totalUSD - a.totalUSD);
+}
+export function categoryLimit(db: DB, account: Account, category: string) {
+  const key = `${account}:${category}`;
+  const custom = db.categoryLimits?.[key];
+  if (typeof custom === "number" && Number.isFinite(custom) && custom >= 0) {
+    return custom;
+  }
+  const defaults =
+    account === "Personal" ? DEFAULT_PERSONAL_LIMITS : DEFAULT_STUDIO_LIMITS;
+  return defaults[category] ?? 100;
+}
+export function setCategoryLimit(
+  account: Account,
+  category: string,
+  limit: number,
+) {
+  const clean = Math.max(0, Math.round(limit * 100) / 100);
+  setDB((d) => ({
+    ...d,
+    categoryLimits: {
+      ...(d.categoryLimits ?? {}),
+      [`${account}:${category}`]: clean,
+    },
+  }));
+}
+export function previousMonth(ym: string) {
+  const [y, m] = ym.split("-").map(Number);
+  if (!y || !m) return ym;
+  const d = new Date(Date.UTC(y, m - 2, 1));
+  return d.toISOString().slice(0, 7);
+}
+export type CashRange = "6m" | "12m" | "all";
+export interface CashFlowPoint {
+  m: string;
+  label: string;
+  inn: number;
+  out: number;
+  personalOut: number;
+  net: number;
+  combinedNet: number;
+}
+function trailingMonths(n: number) {
+  const out: string[] = [];
+  const now = new Date();
+  const baseY = now.getUTCFullYear();
+  const baseM = now.getUTCMonth();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(baseY, baseM - i, 1));
+    out.push(d.toISOString().slice(0, 7));
+  }
+  return out;
+}
+export function cashFlowSeries(db: DB, range: CashRange): CashFlowPoint[] {
+  const r = db.settings.khrRate;
+  const invIds = new Set(db.invoices.filter(isInvoice).map((i) => i.id));
+  let months: string[];
+  if (range === "all") {
+    const allDates = [
+      ...db.payments.filter((p) => invIds.has(p.invoiceId)).map((p) => p.date),
+      ...db.expenses.map((e) => e.date),
+    ]
+      .filter((d) => /^\d{4}-\d{2}/.test(d))
+      .sort();
+    const first = allDates[0]?.slice(0, 7) ?? today().slice(0, 7);
+    const last = today().slice(0, 7);
+    const [fy, fm] = first.split("-").map(Number);
+    const [ly, lm] = last.split("-").map(Number);
+    months = [];
+    if (fy && fm && ly && lm) {
+      let y = fy;
+      let m = fm;
+      while (y < ly || (y === ly && m <= lm)) {
+        months.push(`${y}-${String(m).padStart(2, "0")}`);
+        m += 1;
+        if (m > 12) {
+          m = 1;
+          y += 1;
+        }
+      }
+    }
+  } else {
+    months = trailingMonths(range === "6m" ? 6 : 12);
+  }
+  const showYear = range === "all";
+  return months.map((m) => {
+    const inn = db.payments
+      .filter((p) => invIds.has(p.invoiceId) && p.date.startsWith(m))
+      .reduce((s, p) => s + toUSD(p.amount, p.currency, r), 0);
+    const out = db.expenses
+      .filter((e) => expenseAccount(e) === "Studio" && e.date.startsWith(m))
+      .reduce((s, e) => s + toUSD(e.amount, e.currency, r), 0);
+    const personalOut = db.expenses
+      .filter((e) => expenseAccount(e) === "Personal" && e.date.startsWith(m))
+      .reduce((s, e) => s + toUSD(e.amount, e.currency, r), 0);
+    const dt = new Date(m + "-01T00:00:00Z");
+    const label = dt.toLocaleDateString("en-US", {
+      month: "short",
+      ...(showYear ? { year: "2-digit" } : {}),
+      timeZone: "UTC",
+    });
+    return {
+      m,
+      label,
+      inn,
+      out,
+      personalOut,
+      net: inn - out,
+      combinedNet: inn - out - personalOut,
+    };
+  });
 }
 export function serviceItem(
   service: Service,
