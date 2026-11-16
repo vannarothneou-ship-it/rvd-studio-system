@@ -1,0 +1,6 @@
+{
+  "name": "RothVan Studio",
+  "description": "Projects, invoices, documents, and finance ledger for RothVan Design.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

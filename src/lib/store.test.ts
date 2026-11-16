@@ -1,0 +1,279 @@
+import { describe, expect, it } from "vitest";
+import { agreementPages } from "@/components/rv/AgreementDoc";
+import {
+  cashReceived,
+  categoryTotals,
+  convertDocument,
+  deletePayment,
+  expenseAccount,
+  expenseCategoriesFor,
+  expenseTotal,
+  getDB,
+  goalAccount,
+  invoiceStatus,
+  invoiceTotals,
+  invoiceView,
+  isInvoice,
+  needsFollowUp,
+  nextInvoiceNo,
+  parseTimelineDays,
+  recordPayment,
+  saveDocument,
+  serviceItem,
+  type Invoice,
+} from "./store";
+
+const inv = (p: Partial<Invoice>): Invoice => ({
+  id: "x",
+  no: "",
+  clientId: "",
+  projectId: "",
+  issue: "2026-02-07",
+  due: "2026-03-07",
+  currency: "USD",
+  discount: 0,
+  sent: true,
+  showSchedule: true,
+  includeTerms: true,
+  includeRates: true,
+  notes: "",
+  items: [
+    { id: "a", description: "", scope: "", timeline: "", qty: 1, price: 100 },
+  ],
+  images: [],
+  ...p,
+});
+
+describe("invoice rules", () => {
+  it("numbers invoices RVIN-YYMMDDNN per issue day", () => {
+    expect(nextInvoiceNo("2026-02-07", [])).toBe("RVIN-26020701");
+    expect(nextInvoiceNo("2026-02-07", [{ no: "RVIN-26020701" }])).toBe(
+      "RVIN-26020702",
+    );
+  });
+  it("applies discount percent to subtotal", () => {
+    expect(invoiceTotals(inv({ discount: 10 })).total).toBe(90);
+  });
+  it("is overdue when unpaid and past due", () => {
+    expect(invoiceStatus(inv({}), 0, "2026-03-08")).toBe("Overdue");
+  });
+  it("is partial then paid from payments", () => {
+    expect(invoiceStatus(inv({}), 50, "2026-02-10")).toBe("Partial");
+    expect(invoiceStatus(inv({}), 100, "2026-04-10")).toBe("Paid");
+  });
+  it("stays draft until sent", () => {
+    expect(invoiceStatus(inv({ sent: false }), 0, "2026-04-10")).toBe("Draft");
+  });
+});
+
+describe("commercial document workflow", () => {
+  it("keeps a silent client's quotation separate from invoiced revenue", () => {
+    const q = inv({
+      kind: "Quotation",
+      followUp: "2026-11-14",
+      response: "Pending",
+    });
+    expect(isInvoice(q)).toBe(false);
+    expect(invoiceView(q, getDB()).totalUSD).toBe(0);
+    expect(invoiceView(q, getDB()).balanceUSD).toBe(0);
+    expect(needsFollowUp(q, "2026-11-14")).toBe(true);
+    expect(needsFollowUp(q, "2026-11-13")).toBe(false);
+  });
+  it("stops follow-up reminders once a quotation receives a response", () => {
+    expect(
+      needsFollowUp(
+        inv({
+          kind: "Quotation",
+          followUp: "2026-11-14",
+          response: "Accepted",
+        }),
+        "2026-11-15",
+      ),
+    ).toBe(false);
+    expect(
+      needsFollowUp(
+        inv({
+          kind: "Quotation",
+          followUp: "2026-11-14",
+          response: "Declined",
+        }),
+        "2026-11-15",
+      ),
+    ).toBe(false);
+    expect(
+      needsFollowUp(
+        inv({ kind: "Quotation", followUp: "2026-11-14", sent: false }),
+        "2026-11-15",
+      ),
+    ).toBe(false);
+  });
+  it("creates a linked invoice without changing the quotation or copying paid status", () => {
+    const q = inv({ id: "quote", kind: "Quotation", response: "Accepted" });
+    const copy = convertDocument(q, "Invoice", [], "2026-11-14");
+    expect(copy.sourceId).toBe("quote");
+    expect(copy.kind).toBe("Invoice");
+    expect(copy.no).toBe("RVIN-26111401");
+    expect(copy.sent).toBe(false);
+    expect(invoiceStatus(copy, 0)).toBe("Draft");
+    expect(q.response).toBe("Accepted");
+    expect(copy.items[0]?.id).not.toBe(q.items[0]?.id);
+    expect(invoiceView(copy, getDB()).totalUSD).toBe(100);
+  });
+  it("does not treat agreements as payment requests", () => {
+    const agreement = inv({ kind: "Agreement", response: "Accepted" });
+    expect(invoiceStatus(agreement, 0)).toBe("Signed");
+    expect(invoiceView(agreement, getDB()).balanceUSD).toBe(0);
+  });
+  it("does not treat delivery notes as payment requests", () => {
+    const delivery = inv({ kind: "Delivery note", response: "Accepted" });
+    expect(invoiceStatus(delivery, 0)).toBe("Received");
+    expect(invoiceView(delivery, getDB()).totalUSD).toBe(0);
+  });
+  it("preserves legacy invoices and allocates separate quotation numbers", () => {
+    expect(isInvoice(inv({}))).toBe(true);
+    expect(nextInvoiceNo("2026-11-14", [], "Quotation")).toBe("RVQT-26111401");
+    expect(
+      nextInvoiceNo("2026-11-14", [{ no: "RVQT-26111403" }], "Quotation"),
+    ).toBe("RVQT-26111404");
+  });
+});
+
+describe("connected studio lifecycle automation", () => {
+  it("automates Lead -> Active, Service -> Quotation -> Agreement -> Invoice -> Delivery -> Paid -> Closed", () => {
+    let db = getDB();
+    const svc = db.services[0]!;
+    const leadClient = db.clients.find((c) => c.status === "Lead")!;
+
+    // 1. Create and send Quotation from a service
+    const quote = inv({
+      id: "q-flow",
+      kind: "Quotation",
+      no: "RVQT-26111501",
+      clientId: leadClient.id,
+      projectId: "",
+      issue: "2026-11-15",
+      due: "2026-12-13",
+      sent: true,
+      response: "Pending",
+      items: [serviceItem(svc, "USD", db.settings.khrRate)],
+    });
+    db = saveDocument(db, quote);
+    const savedQuote = db.invoices.find((i) => i.id === "q-flow")!;
+    expect(savedQuote.projectId).toBeTruthy();
+    let proj = db.projects.find((p) => p.id === savedQuote.projectId)!;
+    expect(proj.status).toBe("Quoted");
+    expect(proj.serviceId).toBe(svc.id);
+
+    // 2. Client accepts quotation -> client becomes Active, convert to Agreement & sign
+    const acceptedQuote: Invoice = {
+      ...savedQuote,
+      response: "Accepted",
+      confirmedBy: leadClient.contact,
+      confirmedOn: "2026-11-16",
+    };
+    db = saveDocument(db, acceptedQuote);
+    expect(db.clients.find((c) => c.id === leadClient.id)?.status).toBe(
+      "Active",
+    );
+
+    const agreement = {
+      ...convertDocument(acceptedQuote, "Agreement", db.invoices, "2026-11-16"),
+      sent: true,
+      response: "Accepted" as const,
+      confirmedBy: leadClient.contact,
+      confirmedOn: "2026-11-16",
+    };
+    db = saveDocument(db, agreement);
+    proj = db.projects.find((p) => p.id === savedQuote.projectId)!;
+    expect(proj.status).toBe("In production");
+    expect(proj.start).toBe("2026-11-16");
+    expect(proj.due).toBe("2026-11-23"); // 5 - 7 Days timeline parsed!
+
+    // 3. Issue linked Invoice and record partial payment
+    const invoice = {
+      ...convertDocument(agreement, "Invoice", db.invoices, "2026-11-16"),
+      sent: true,
+    };
+    db = saveDocument(db, invoice);
+    const beforeCash = cashReceived(db, "2026-11");
+    db = recordPayment(db, {
+      id: "p-half",
+      invoiceId: invoice.id,
+      date: "2026-11-16",
+      amount: 50,
+      currency: "USD",
+      method: "KHQR",
+      reference: "Deposit",
+    });
+    expect(cashReceived(db, "2026-11")).toBeCloseTo(beforeCash + 50, 2);
+    expect(invoiceView(invoice, db).status).toBe("Partial");
+
+    // 4. Deliver project via Delivery Note
+    const dn = {
+      ...convertDocument(invoice, "Delivery note", db.invoices, "2026-11-20"),
+      sent: true,
+      response: "Accepted" as const,
+      confirmedOn: "2026-11-20",
+    };
+    db = saveDocument(db, dn);
+    proj = db.projects.find((p) => p.id === savedQuote.projectId)!;
+    expect(proj.status).toBe("Delivered");
+
+    // 5. Final payment closes project and updates finance automatically
+    db = recordPayment(db, {
+      id: "p-final",
+      invoiceId: invoice.id,
+      date: "2026-11-21",
+      amount: 50,
+      currency: "USD",
+      method: "KHQR",
+      reference: "Balance",
+    });
+    proj = db.projects.find((p) => p.id === savedQuote.projectId)!;
+    expect(proj.status).toBe("Closed");
+    expect(cashReceived(db, "2026-11")).toBeCloseTo(beforeCash + 100, 2);
+
+    // 6. Deleting final payment reverts Closed -> Delivered
+    db = deletePayment(db, "p-final");
+    expect(db.projects.find((p) => p.id === savedQuote.projectId)?.status).toBe(
+      "Delivered",
+    );
+  });
+
+  it("parses service timelines cleanly", () => {
+    expect(parseTimelineDays("5 - 7 Days")).toBe(7);
+    expect(parseTimelineDays("2 weeks")).toBe(14);
+  });
+});
+
+describe("agreement pagination and studio/personal finance", () => {
+  it("paginates design agreement across 2 to 5 non-empty A4 pages", () => {
+    const db = getDB();
+    const doc = inv({
+      id: "ag-1",
+      kind: "Agreement",
+      no: "RVAG-26111501",
+      clientId: "c1",
+      projectId: "p1",
+      items: db.services.map((s) => serviceItem(s, "USD", db.settings.khrRate)),
+    });
+    const pages = agreementPages(doc, db);
+    expect(pages.length).toBeGreaterThanOrEqual(2);
+    expect(pages.length).toBeLessThanOrEqual(5);
+    for (const p of pages) expect(p.length).toBeGreaterThan(0);
+  });
+
+  it("separates Studio and Personal expenses, categories, and saving goals", () => {
+    const db = getDB();
+    const period = db.expenses
+      .find((e) => expenseAccount(e) === "Personal")!
+      .date.slice(0, 7);
+    expect(expenseTotal(db, "Personal", period)).toBeGreaterThan(0);
+    expect(categoryTotals(db, "Personal", period).length).toBeGreaterThan(0);
+    expect(db.goals.some((g) => goalAccount(g) === "Personal")).toBe(true);
+    expect(expenseCategoriesFor("Personal")).toContain("Food and groceries");
+    expect(expenseCategoriesFor("Studio")).toContain(
+      "Software and subscriptions",
+    );
+  });
+});
