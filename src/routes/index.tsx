@@ -19,12 +19,15 @@ import {
   SlidingTabs,
   Stat,
 } from "@/components/rv/ui";
+import { EditModal, upsert, type Field } from "@/components/rv/Crud";
 import {
   AnimatedNumber,
   BudgetShelf,
   CategoryInspectorDrawer,
   GoalRingCard,
+  categoryIcon,
   expenseItemIcon,
+  paymentCardIcon,
 } from "@/components/rv/FinanceVisuals";
 import {
   BreakdownPieCard,
@@ -42,11 +45,13 @@ import {
   type BentoWidgetDef,
 } from "@/components/rv/BentoGrid";
 import {
+  CARD_METHODS,
   PROJECT_STATUSES,
   cashFlowSeries,
   compactMoney,
   documentKind,
   expenseAccount,
+  expenseCategoriesFor,
   goalAccount,
   invoiceView,
   isInvoice,
@@ -58,9 +63,12 @@ import {
   shortDate,
   toUSD,
   today,
+  uid,
   useDB,
+  type Account,
   type CashRange,
   type DB,
+  type Expense,
   type PersonalRange,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -70,13 +78,13 @@ export const Route = createFileRoute("/")({
     meta: [
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { title: "Overview · RothVan Studio" },
+      { title: "Dashboard · RothVan Studio" },
       {
         name: "description",
         content:
           "Cash profit, cash flow, personal monthly expenses, goals and project pipeline for RothVan Design.",
       },
-      { property: "og:title", content: "Overview · RothVan Studio" },
+      { property: "og:title", content: "Dashboard · RothVan Studio" },
       {
         property: "og:description",
         content:
@@ -84,7 +92,7 @@ export const Route = createFileRoute("/")({
       },
     ],
   }),
-  component: Overview,
+  component: Dashboard,
 });
 
 const RANGE_OPTIONS: { id: CashRange; label: string; desc: string }[] = [
@@ -158,11 +166,11 @@ const SYSTEM_WIDGET_CATALOG: { id: string; label: string; desc: string }[] = [
   {
     id: "cardSpend",
     label: "Card spending (Debit vs Credit)",
-    desc: "Daily (1m) and monthly (6m / 12m) Debit vs Credit card tracker",
+    desc: "This month and monthly (6m / 12m) Debit vs Credit card tracker",
   },
 ];
 
-function Overview() {
+function Dashboard() {
   const db = useDB((d) => d);
   const [range, setRange] = useState<CashRange>("all");
   const [cashChartMode, setCashChartMode] = useState<ChartMode>("area");
@@ -171,6 +179,7 @@ function Overview() {
   const [inspectedCategory, setInspectedCategory] = useState<string | null>(
     null,
   );
+  const [expenseDraft, setExpenseDraft] = useState<Expense | null>(null);
   const [editingLayout, setEditingLayout] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [newTabOpen, setNewTabOpen] = useState(false);
@@ -212,6 +221,87 @@ function Overview() {
     cashOut = s.reduce((a, x) => a + x.out, 0);
   const r = db.settings.khrRate;
   const thisMonth = today().slice(0, 7);
+
+  const openNewExpense = (account: Account, category?: string) => {
+    const cats = expenseCategoriesFor(account);
+    setExpenseDraft({
+      id: uid(),
+      date: today(),
+      projectId: "",
+      category:
+        category && cats.includes(category) ? category : (cats[0] ?? "Other"),
+      vendor: account === "Personal" ? "Debit" : "",
+      description: "",
+      amount: 0,
+      currency: "USD",
+      receipt: "",
+      account,
+    });
+  };
+
+  const expenseFields = (v: Expense): Field<Expense>[] => {
+    const acc = expenseAccount(v);
+    return [
+      {
+        k: "account",
+        label: "Account",
+        type: "chips",
+        options: [
+          { value: "Studio", label: "RothVan Design (Studio)" },
+          { value: "Personal", label: "Personal" },
+        ],
+      },
+      { k: "date", label: "Date", type: "date" },
+      { k: "amount", label: "Amount", type: "number" },
+      { k: "description", label: "Description", wide: true },
+      {
+        k: "category",
+        label: "Category (tap to choose)",
+        type: "chips",
+        options: expenseCategoriesFor(acc).map((c) => ({
+          value: c,
+          label: c,
+          icon: categoryIcon(c),
+        })),
+      },
+      ...(acc === "Personal"
+        ? [
+            {
+              k: "vendor" as const,
+              label: "Card / Payment method",
+              type: "chips" as const,
+              options: CARD_METHODS.map((m) => ({
+                value: m,
+                label: m,
+                icon: paymentCardIcon(m),
+              })),
+              allowCustom: true,
+              customPlaceholder: "Or enter custom card / merchant…",
+            },
+          ]
+        : [
+            {
+              k: "vendor" as const,
+              label: "Vendor / Merchant",
+            },
+            {
+              k: "projectId" as const,
+              label: "Project (optional)",
+              type: "select" as const,
+              options: db.projects.map((p) => ({
+                value: p.id,
+                label: `${p.code} · ${p.name}`,
+              })),
+            },
+          ]),
+      {
+        k: "currency",
+        label: "Currency",
+        type: "chips",
+        options: ["USD", "KHR"],
+      },
+    ];
+  };
 
   const personalTrend = personalSeries(db, personalRange, thisMonth);
   const personalAgg = personalCategoryTotals(db, personalRange, thisMonth);
@@ -501,6 +591,15 @@ function Overview() {
                 </h2>
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
+                <Btn
+                  type="button"
+                  variant="gold"
+                  onClick={() => openNewExpense("Personal")}
+                  className="px-2.5 py-1 text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Add expense
+                </Btn>
                 <SlidingTabs
                   size="xs"
                   layoutGroup="ov-pers-mode"
@@ -579,35 +678,48 @@ function Overview() {
                 {personalItemsPeriod.map((e) => {
                   const ItemIcon = expenseItemIcon(e);
                   return (
-                    <li
-                      key={e.id}
-                      className="flex items-center justify-between gap-3 py-2 text-xs"
-                    >
-                      <div className="flex min-w-0 items-center gap-2.5">
-                        <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-border bg-muted text-primary">
-                          <ItemIcon className="h-3.5 w-3.5" />
+                    <li key={e.id}>
+                      <button
+                        type="button"
+                        onClick={() => setExpenseDraft(e)}
+                        className="flex w-full items-center justify-between gap-3 rounded-xl px-1.5 py-2 text-left text-xs transition-colors hover:bg-muted/60"
+                      >
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-border bg-muted text-primary">
+                            <ItemIcon className="h-3.5 w-3.5" />
+                          </span>
+                          <span className="truncate text-muted-foreground">
+                            <b className="font-medium text-foreground">
+                              {e.description || e.vendor}
+                            </b>{" "}
+                            · {e.category} · {shortDate(e.date)}
+                          </span>
+                        </div>
+                        <span className="shrink-0 font-mono tabular-nums text-destructive">
+                          {money(-toUSD(e.amount, e.currency, r))}
                         </span>
-                        <span className="truncate text-muted-foreground">
-                          <b className="font-medium text-foreground">
-                            {e.description || e.vendor}
-                          </b>{" "}
-                          · {e.category} · {shortDate(e.date)}
-                        </span>
-                      </div>
-                      <span className="shrink-0 font-mono tabular-nums text-destructive">
-                        {money(-toUSD(e.amount, e.currency, r))}
-                      </span>
+                      </button>
                     </li>
                   );
                 })}
               </ul>
             )}
-            <Link
-              to="/finance"
-              className="mt-3 block text-xs text-primary hover:underline"
-            >
-              Open full Personal Finance ledger →
-            </Link>
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <Link
+                to="/finance"
+                className="text-xs text-primary hover:underline"
+              >
+                Open full Personal Finance ledger →
+              </Link>
+              <button
+                type="button"
+                onClick={() => openNewExpense("Personal")}
+                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Quick add personal expense
+              </button>
+            </div>
           </Glass>
         ),
       },
@@ -989,7 +1101,7 @@ function Overview() {
   return (
     <>
       <PageHeader
-        title={currentCustomTab ? currentCustomTab.label : "Overview"}
+        title={currentCustomTab ? currentCustomTab.label : "Dashboard"}
         owner={db.settings.ownerName}
         action={
           <div className="flex flex-wrap items-center gap-2">
@@ -997,8 +1109,16 @@ function Overview() {
               editing={editingLayout}
               onToggle={() => setEditingLayout((e) => !e)}
             />
+            <Btn
+              type="button"
+              onClick={() => openNewExpense("Personal")}
+              className="whitespace-nowrap shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+              Add expense
+            </Btn>
             <Link to="/invoices/$id" params={{ id: "new" }}>
-              <Btn variant="gold">
+              <Btn variant="gold" className="whitespace-nowrap shrink-0">
                 <Plus className="h-4 w-4" />
                 New invoice
               </Btn>
@@ -1023,7 +1143,7 @@ function Overview() {
                 : "border-border bg-muted/60 text-muted-foreground hover:text-foreground",
             )}
           >
-            Overview
+            Dashboard
           </button>
           {tabs.map((tab) => (
             <div
@@ -1087,6 +1207,58 @@ function Overview() {
         category={inspectedCategory}
         month={thisMonth}
         onClose={() => setInspectedCategory(null)}
+        onAddExpense={(acc, cat) => openNewExpense(acc, cat)}
+        onEditExpense={(exp) => setExpenseDraft(exp)}
+      />
+
+      <EditModal
+        item={expenseDraft}
+        onClose={() => setExpenseDraft(null)}
+        title={
+          expenseDraft && expenseAccount(expenseDraft) === "Personal"
+            ? "Personal Expense"
+            : "Studio Expense"
+        }
+        subtitle={
+          expenseDraft && expenseAccount(expenseDraft) === "Personal"
+            ? "Personal ledger"
+            : "RothVan Design"
+        }
+        presentation="drawer"
+        side="right"
+        fields={expenseFields}
+        onFieldChange={(next, key) => {
+          if (key === "account") {
+            const acc = expenseAccount(next);
+            const cats = expenseCategoriesFor(acc);
+            return {
+              ...next,
+              category: cats.includes(next.category)
+                ? next.category
+                : (cats[0] ?? "Other"),
+              vendor:
+                acc === "Personal" && !next.vendor
+                  ? "Debit"
+                  : acc === "Studio" &&
+                      (next.vendor === "Debit" || next.vendor === "Credit")
+                    ? ""
+                    : next.vendor,
+            };
+          }
+          return next;
+        }}
+        onSave={(v) =>
+          setDB((d) => ({ ...d, expenses: upsert(d.expenses, v) }))
+        }
+        onDelete={
+          expenseDraft && db.expenses.some((e) => e.id === expenseDraft.id)
+            ? (v) =>
+                setDB((d) => ({
+                  ...d,
+                  expenses: d.expenses.filter((x) => x.id !== v.id),
+                }))
+            : undefined
+        }
       />
 
       <SlideDrawer

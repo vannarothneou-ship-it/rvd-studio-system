@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   ArrowDown,
   ArrowUp,
+  Briefcase,
   CheckCircle2,
   ChevronDown,
   ChevronUp,
@@ -11,10 +12,15 @@ import {
   Download,
   Eye,
   EyeOff,
+  FilePlus2,
+  FileText,
+  FolderKanban,
   ImagePlus,
+  Layers,
   Plus,
   Trash2,
   Upload,
+  Users,
   Wallet,
 } from "lucide-react";
 import { InvoiceDoc } from "@/components/rv/InvoiceDoc";
@@ -1145,9 +1151,35 @@ function Editor() {
     </div>
   );
 
+  const sortedDocuments = useMemo(() => {
+    const clientMap = new Map(db.clients.map((c) => [c.id, c.name]));
+    return [...db.invoices]
+      .sort(
+        (a, b) => b.issue.localeCompare(a.issue) || b.no.localeCompare(a.no),
+      )
+      .slice(0, 80)
+      .map((doc) => {
+        const docKind = documentKind(doc);
+        const docClient = clientMap.get(doc.clientId) || "No client";
+        const docTotal = invoiceView(doc, db).total;
+        return {
+          value: doc.id,
+          label: `${doc.no} · ${docKind} · ${docClient} (${money(docTotal, doc.currency)})`,
+        };
+      });
+  }, [db]);
+
+  const switchNewKind = (k: DocumentType) => {
+    up({
+      kind: k,
+      no: nextInvoiceNo(draft.issue, db.invoices, k),
+      showSchedule: k !== "Delivery note",
+    });
+  };
+
   return (
     <>
-      <div className="rise mb-4 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
+      <div className="rise mb-3 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
         <div className="min-w-0">
           <Link
             to="/invoices"
@@ -1161,6 +1193,106 @@ function Editor() {
         </div>
         <Pill s={isNew ? "Draft" : v.status} />
       </div>
+
+      {/* Quick Document & Module Switcher — jump without clicking Back */}
+      <Glass className="no-print mb-3 p-3 sm:p-3.5">
+        <div className="flex flex-col gap-2.5 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            {isNew ? (
+              <>
+                <span className="label-mono whitespace-nowrap">New type</span>
+                <SlidingTabs
+                  size="xs"
+                  layoutGroup="doc-new-kind"
+                  value={kind}
+                  onChange={(k) => switchNewKind(k as DocumentType)}
+                  options={DOCUMENT_TYPES.map((t) => ({ id: t, label: t }))}
+                />
+              </>
+            ) : (
+              <>
+                <span className="label-mono whitespace-nowrap">Quick new</span>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {DOCUMENT_TYPES.map((t) => (
+                    <Link
+                      key={t}
+                      to="/invoices/$id"
+                      params={{ id: "new" }}
+                      search={{
+                        kind: t,
+                        ...(draft.clientId ? { client: draft.clientId } : {}),
+                        ...(draft.projectId
+                          ? { project: draft.projectId }
+                          : {}),
+                      }}
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors",
+                        t === kind
+                          ? "border-primary/50 bg-primary/15 text-primary hover:bg-primary/25"
+                          : "border-border bg-muted/50 text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                      )}
+                    >
+                      <FilePlus2 className="h-3 w-3" />+ {t}
+                    </Link>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="w-full min-w-[220px] sm:w-72">
+              <Sel
+                value={isNew ? "" : draft.id}
+                placeholder="Jump to another document…"
+                options={sortedDocuments}
+                onChange={(targetId) => {
+                  if (!targetId || targetId === draft.id) return;
+                  nav({ to: "/invoices/$id", params: { id: targetId } });
+                }}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5 border-l border-border/60 pl-2">
+              <Link
+                to="/invoices"
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
+              >
+                <FileText className="h-3 w-3" />
+                Documents
+              </Link>
+              <Link
+                to="/projects"
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
+              >
+                <FolderKanban className="h-3 w-3" />
+                Projects
+              </Link>
+              <Link
+                to="/clients"
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
+              >
+                <Users className="h-3 w-3" />
+                Clients
+              </Link>
+              <Link
+                to="/services"
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
+              >
+                <Layers className="h-3 w-3" />
+                Services
+              </Link>
+              <Link
+                to="/finance"
+                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
+              >
+                <Briefcase className="h-3 w-3" />
+                Finance
+              </Link>
+            </div>
+          </div>
+        </div>
+      </Glass>
 
       {/* Connected workflow quick bar */}
       <Glass className="mb-4 p-4">
@@ -1389,6 +1521,74 @@ function Editor() {
           <Preview inv={draft} />
         </div>
       </div>
+      {/* Quick Bottom Function Bar */}
+      <Glass className="no-print mt-6 flex flex-wrap items-center justify-between gap-3 p-3.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="label-mono mr-1">Switch function</span>
+          {DOCUMENT_TYPES.map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => {
+                if (isNew) {
+                  switchNewKind(t);
+                } else {
+                  nav({
+                    to: "/invoices/$id",
+                    params: { id: "new" },
+                    search: {
+                      kind: t,
+                      ...(draft.clientId ? { client: draft.clientId } : {}),
+                      ...(draft.projectId ? { project: draft.projectId } : {}),
+                    },
+                  });
+                }
+              }}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors",
+                isNew && t === kind
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-muted/50 text-muted-foreground hover:border-primary/40 hover:text-foreground",
+              )}
+            >
+              {isNew ? t : `+ New ${t}`}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link to="/projects">
+            <Btn type="button" className="text-xs whitespace-nowrap shrink-0">
+              <FolderKanban className="h-3.5 w-3.5" />
+              Projects
+            </Btn>
+          </Link>
+          <Link to="/clients">
+            <Btn type="button" className="text-xs whitespace-nowrap shrink-0">
+              <Users className="h-3.5 w-3.5" />
+              Clients
+            </Btn>
+          </Link>
+          <Link to="/services">
+            <Btn type="button" className="text-xs whitespace-nowrap shrink-0">
+              <Layers className="h-3.5 w-3.5" />
+              Services
+            </Btn>
+          </Link>
+          <Link to="/finance">
+            <Btn type="button" className="text-xs whitespace-nowrap shrink-0">
+              <Briefcase className="h-3.5 w-3.5" />
+              Finance
+            </Btn>
+          </Link>
+          <Link to="/invoices">
+            <Btn type="button" className="text-xs whitespace-nowrap shrink-0">
+              <FileText className="h-3.5 w-3.5" />
+              All documents
+            </Btn>
+          </Link>
+        </div>
+      </Glass>
+
       <PaymentModal
         open={payOpen}
         onClose={() => setPayOpen(false)}

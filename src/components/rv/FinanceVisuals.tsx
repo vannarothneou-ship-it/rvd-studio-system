@@ -52,6 +52,7 @@ import {
   type Goal,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { Btn } from "@/components/rv/ui";
 
 /* ---------- Category & Item Icon Mapping ---------- */
 
@@ -821,6 +822,21 @@ export function CategoryInspectorDrawer({
             )}
           </div>
         </div>
+
+        {/* Sticky Bottom Add Expense Action */}
+        {onAddExpense && (
+          <div className="border-t border-border bg-background/80 px-5 py-3.5 backdrop-blur-md">
+            <Btn
+              type="button"
+              variant="gold"
+              className="w-full"
+              onClick={() => onAddExpense(account, category)}
+            >
+              <Plus className="h-4 w-4" />
+              Add {category} expense
+            </Btn>
+          </div>
+        )}
       </aside>
     </div>
   );

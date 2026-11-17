@@ -941,7 +941,7 @@ export function cardSpendSeries(
   );
   const scopeLabel =
     range === "1m"
-      ? `${monthLabel} (daily)`
+      ? monthLabel
       : range === "6m"
         ? "last 6 months"
         : "last 12 months";

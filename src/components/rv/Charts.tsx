@@ -29,6 +29,7 @@ import {
   type CategoryStatItem,
 } from "@/components/rv/FinanceVisuals";
 import {
+  cardKind,
   cardSpendSeries,
   compactMoney,
   expenseAccount,
@@ -766,10 +767,12 @@ export function PeriodBarPulseCard({
 }
 
 const CARD_RANGE_OPTIONS: { id: PersonalRange; label: string }[] = [
-  { id: "1m", label: "Daily (1m)" },
+  { id: "1m", label: "This month" },
   { id: "6m", label: "6 months" },
   { id: "12m", label: "12 months" },
 ];
+
+type CardFilter = "both" | "debit" | "credit";
 
 export function CardSpendingChartCard({
   db,
@@ -786,6 +789,7 @@ export function CardSpendingChartCard({
 }) {
   const [range, setRange] = useState<PersonalRange>(defaultRange);
   const [mode, setMode] = useState<ChartMode>("bar");
+  const [cardFilter, setCardFilter] = useState<CardFilter>("both");
   const anchorMonth = month || today().slice(0, 7);
 
   const agg = useMemo(
@@ -793,12 +797,82 @@ export function CardSpendingChartCard({
     [db, range, anchorMonth],
   );
 
+  const insights = useMemo(() => {
+    const pointKeys = new Set(agg.points.map((p) => p.key));
+    const r = db.settings.khrRate;
+    const catByCard = {
+      debit: new Map<string, number>(),
+      credit: new Map<string, number>(),
+    };
+
+    for (const e of db.expenses) {
+      const k = range === "1m" ? e.date : e.date.slice(0, 7);
+      if (!pointKeys.has(k)) continue;
+      const ck = cardKind(e.vendor);
+      if (ck === "Other") continue;
+      const usd = toUSD(e.amount, e.currency, r);
+      const map = ck === "Debit" ? catByCard.debit : catByCard.credit;
+      map.set(e.category, (map.get(e.category) ?? 0) + usd);
+    }
+
+    const topOf = (m: Map<string, number>) => {
+      let best: { category: string; usd: number } | null = null;
+      for (const [category, usd] of m.entries()) {
+        if (!best || usd > best.usd) best = { category, usd };
+      }
+      return best;
+    };
+
+    let peak: (typeof agg.points)[number] | null = null;
+    for (const pt of agg.points) {
+      const v =
+        cardFilter === "debit"
+          ? pt.debit
+          : cardFilter === "credit"
+            ? pt.credit
+            : pt.debit + pt.credit;
+      const pv = peak
+        ? cardFilter === "debit"
+          ? peak.debit
+          : cardFilter === "credit"
+            ? peak.credit
+            : peak.debit + peak.credit
+        : -1;
+      if (v > pv) peak = pt;
+    }
+
+    return {
+      debitTop: topOf(catByCard.debit),
+      creditTop: topOf(catByCard.credit),
+      peak,
+    };
+  }, [agg.points, db.expenses, db.settings.khrRate, range, cardFilter]);
+
   const chartData = useMemo(() => [...agg.points], [agg.points]);
+  const cardTotal = agg.debitUSD + agg.creditUSD;
   const debitPct =
-    agg.totalUSD > 0 ? Math.round((agg.debitUSD / agg.totalUSD) * 100) : 0;
-  const creditPct =
-    agg.totalUSD > 0 ? Math.round((agg.creditUSD / agg.totalUSD) * 100) : 0;
+    cardTotal > 0 ? Math.round((agg.debitUSD / cardTotal) * 100) : 0;
+  const creditPct = cardTotal > 0 ? Math.max(0, 100 - debitPct) : 0;
+  const debitAvg = agg.debitCount > 0 ? agg.debitUSD / agg.debitCount : 0;
+  const creditAvg = agg.creditCount > 0 ? agg.creditUSD / agg.creditCount : 0;
+  const activePeriods = agg.points.filter((p) =>
+    cardFilter === "debit"
+      ? p.debit > 0
+      : cardFilter === "credit"
+        ? p.credit > 0
+        : p.total > 0,
+  ).length;
+  const selectedTotal =
+    cardFilter === "debit"
+      ? agg.debitUSD
+      : cardFilter === "credit"
+        ? agg.creditUSD
+        : agg.totalUSD;
+  const periodAvg = activePeriods > 0 ? selectedTotal / activePeriods : 0;
   const xInterval: number | "preserveStartEnd" = range === "1m" ? 3 : 0;
+
+  const toggleCardFilter = (target: "debit" | "credit") =>
+    setCardFilter((cur) => (cur === target ? "both" : target));
 
   const renderCardTooltip = () => (
     <Tooltip
@@ -818,28 +892,32 @@ export function CardSpendingChartCard({
               </span>
             </div>
             <div className="mt-1.5 space-y-1">
-              <div className="flex items-center justify-between gap-4">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className="h-2 w-2 rounded-full bg-primary" />
-                  Debit ({row.debitCount})
-                </span>
-                <span className="font-mono font-semibold tabular-nums text-primary">
-                  {money(row.debit)}
-                </span>
-              </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ background: "var(--chart-3)" }}
-                  />
-                  Credit ({row.creditCount})
-                </span>
-                <span className="font-mono font-semibold tabular-nums text-foreground">
-                  {money(row.credit)}
-                </span>
-              </div>
-              {row.other > 0 && (
+              {cardFilter !== "credit" && (
+                <div className="flex items-center justify-between gap-4">
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <span className="h-2 w-2 rounded-full bg-primary" />
+                    Debit ({row.debitCount})
+                  </span>
+                  <span className="font-mono font-semibold tabular-nums text-primary">
+                    {money(row.debit)}
+                  </span>
+                </div>
+              )}
+              {cardFilter !== "debit" && (
+                <div className="flex items-center justify-between gap-4">
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <span
+                      className="h-2 w-2 rounded-full"
+                      style={{ background: "var(--chart-3)" }}
+                    />
+                    Credit ({row.creditCount})
+                  </span>
+                  <span className="font-mono font-semibold tabular-nums text-foreground">
+                    {money(row.credit)}
+                  </span>
+                </div>
+              )}
+              {row.other > 0 && cardFilter === "both" && (
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground">Other / Cash</span>
                   <span className="font-mono tabular-nums text-muted-foreground">
@@ -850,7 +928,13 @@ export function CardSpendingChartCard({
               <div className="flex items-center justify-between gap-4 border-t border-border/60 pt-1">
                 <span className="font-medium text-muted-foreground">Total</span>
                 <span className="font-mono font-bold tabular-nums text-foreground">
-                  {money(row.total)}
+                  {money(
+                    cardFilter === "debit"
+                      ? row.debit
+                      : cardFilter === "credit"
+                        ? row.credit
+                        : row.total,
+                  )}
                 </span>
               </div>
             </div>
@@ -864,16 +948,31 @@ export function CardSpendingChartCard({
     <Glass delay={delay} className="flex h-full flex-col justify-between">
       <div>
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <CreditCard className="h-4 w-4 text-primary" />
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-primary/30 bg-primary/12 text-primary">
+              <CreditCard className="h-4 w-4" />
+            </span>
             <div>
               <h2 className="font-medium leading-tight">
                 Card spending · Debit vs Credit
               </h2>
-              <p className="text-xs text-muted-foreground">{agg.scopeLabel}</p>
+              <p className="text-xs text-muted-foreground">
+                {agg.scopeLabel} · Tap a card tile to filter chart
+              </p>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-1.5">
+            <SlidingTabs
+              size="xs"
+              layoutGroup={`${layoutIdPrefix}-filter`}
+              value={cardFilter}
+              onChange={setCardFilter}
+              options={[
+                { id: "both", label: "Both" },
+                { id: "debit", label: "Debit" },
+                { id: "credit", label: "Credit" },
+              ]}
+            />
             <SlidingTabs
               size="xs"
               layoutGroup={`${layoutIdPrefix}-mode`}
@@ -892,58 +991,110 @@ export function CardSpendingChartCard({
           </div>
         </div>
 
-        {/* Summary KPI Strip */}
-        <div className="mb-3 grid grid-cols-3 gap-2.5">
-          <div className="rounded-2xl border border-border/70 bg-muted/35 p-3">
-            <div className="flex items-center gap-1.5 text-[0.68rem] font-medium uppercase tracking-wider text-muted-foreground">
-              <Landmark className="h-3 w-3 text-primary" />
-              <span>Debit card</span>
+        {/* Interactive Summary KPI Strip */}
+        <div className="mb-3 grid gap-2.5 sm:grid-cols-3">
+          <button
+            type="button"
+            onClick={() => toggleCardFilter("debit")}
+            className={cn(
+              "rounded-2xl border p-3.5 text-left transition-all",
+              cardFilter === "debit"
+                ? "border-primary bg-primary/12 ring-1 ring-primary/40"
+                : cardFilter === "credit"
+                  ? "border-border/50 bg-muted/20 opacity-55 hover:opacity-90"
+                  : "border-border/75 bg-muted/35 hover:border-primary/45",
+            )}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[0.68rem] font-medium uppercase tracking-wider text-muted-foreground">
+                <Landmark className="h-3.5 w-3.5 text-primary" />
+                Debit card
+              </span>
+              <span className="font-mono text-[0.68rem] font-semibold tabular-nums text-primary">
+                {debitPct}%
+              </span>
             </div>
             <p
-              className="mt-1 font-display text-lg font-bold tabular-nums text-primary"
+              className="mt-1 font-display text-xl font-bold tabular-nums text-primary"
               title={money(agg.debitUSD)}
             >
               {compactMoney(agg.debitUSD)}
             </p>
-            <p className="font-mono text-[0.66rem] tabular-nums text-muted-foreground">
-              {agg.debitCount} tx · {debitPct}%
+            <p className="mt-0.5 truncate font-mono text-[0.67rem] tabular-nums text-muted-foreground">
+              {agg.debitCount} tx · avg {compactMoney(debitAvg)}
+              {insights.debitTop ? ` · ${insights.debitTop.category}` : ""}
             </p>
-          </div>
+          </button>
 
-          <div className="rounded-2xl border border-border/70 bg-muted/35 p-3">
-            <div className="flex items-center gap-1.5 text-[0.68rem] font-medium uppercase tracking-wider text-muted-foreground">
-              <CreditCard className="h-3 w-3 text-[var(--chart-3)]" />
-              <span>Credit card</span>
+          <button
+            type="button"
+            onClick={() => toggleCardFilter("credit")}
+            className={cn(
+              "rounded-2xl border p-3.5 text-left transition-all",
+              cardFilter === "credit"
+                ? "border-[var(--chart-3)] bg-muted/60 ring-1 ring-[var(--chart-3)]/40"
+                : cardFilter === "debit"
+                  ? "border-border/50 bg-muted/20 opacity-55 hover:opacity-90"
+                  : "border-border/75 bg-muted/35 hover:border-primary/45",
+            )}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-[0.68rem] font-medium uppercase tracking-wider text-muted-foreground">
+                <CreditCard className="h-3.5 w-3.5 text-[var(--chart-3)]" />
+                Credit card
+              </span>
+              <span className="font-mono text-[0.68rem] font-semibold tabular-nums text-foreground">
+                {creditPct}%
+              </span>
             </div>
             <p
-              className="mt-1 font-display text-lg font-bold tabular-nums"
+              className="mt-1 font-display text-xl font-bold tabular-nums"
               title={money(agg.creditUSD)}
             >
               {compactMoney(agg.creditUSD)}
             </p>
-            <p className="font-mono text-[0.66rem] tabular-nums text-muted-foreground">
-              {agg.creditCount} tx · {creditPct}%
+            <p className="mt-0.5 truncate font-mono text-[0.67rem] tabular-nums text-muted-foreground">
+              {agg.creditCount} tx · avg {compactMoney(creditAvg)}
+              {insights.creditTop ? ` · ${insights.creditTop.category}` : ""}
             </p>
-          </div>
+          </button>
 
-          <div className="rounded-2xl border border-border/70 bg-muted/35 p-3">
-            <span className="label-mono">Total card spend</span>
+          <div className="rounded-2xl border border-border/75 bg-muted/35 p-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="label-mono">
+                {cardFilter === "both" ? "Total & pace" : `${cardFilter} total`}
+              </span>
+              <span className="font-mono text-[0.67rem] tabular-nums text-muted-foreground">
+                {activePeriods}{" "}
+                {range === "1m" ? "active days" : "active months"}
+              </span>
+            </div>
             <p
-              className="mt-1 font-display text-lg font-bold tabular-nums"
-              title={money(agg.totalUSD)}
+              className="mt-1 font-display text-xl font-bold tabular-nums"
+              title={money(selectedTotal)}
             >
-              {compactMoney(agg.totalUSD)}
+              {compactMoney(selectedTotal)}
             </p>
-            <p className="font-mono text-[0.66rem] tabular-nums text-muted-foreground">
-              {agg.debitCount + agg.creditCount} card tx
+            <p className="mt-0.5 truncate font-mono text-[0.67rem] tabular-nums text-muted-foreground">
+              Avg {compactMoney(periodAvg)} /{" "}
+              {range === "1m" ? "active day" : "mo"}
+              {insights.peak && insights.peak.total > 0
+                ? ` · Peak ${insights.peak.label} (${compactMoney(
+                    cardFilter === "debit"
+                      ? insights.peak.debit
+                      : cardFilter === "credit"
+                        ? insights.peak.credit
+                        : insights.peak.debit + insights.peak.credit,
+                  )})`
+                : ""}
             </p>
           </div>
         </div>
 
-        {/* Split Bar */}
-        {agg.totalUSD > 0 && (
-          <div className="mb-3 h-2 w-full overflow-hidden rounded-full bg-muted">
-            <div className="flex h-full w-full">
+        {/* Split Bar with Labels */}
+        {cardTotal > 0 && (
+          <div className="mb-3 space-y-1">
+            <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full bg-primary transition-all duration-500"
                 style={{ width: `${debitPct}%` }}
@@ -963,8 +1114,8 @@ export function CardSpendingChartCard({
       </div>
 
       {/* Interactive Daily / Monthly Chart */}
-      <div className="h-52 w-full shrink-0">
-        <ResponsiveContainer width="100%" height={208}>
+      <div className="h-56 w-full shrink-0">
+        <ResponsiveContainer width="100%" height={224}>
           {mode === "bar" ? (
             <BarChart
               data={chartData}
@@ -989,20 +1140,24 @@ export function CardSpendingChartCard({
                 tickFormatter={(v) => compactMoney(Number(v))}
               />
               {renderCardTooltip()}
-              <Bar
-                name="Debit"
-                dataKey="debit"
-                fill="var(--primary)"
-                radius={[5, 5, 0, 0]}
-                animationDuration={550}
-              />
-              <Bar
-                name="Credit"
-                dataKey="credit"
-                fill="var(--chart-3)"
-                radius={[5, 5, 0, 0]}
-                animationDuration={550}
-              />
+              {cardFilter !== "credit" && (
+                <Bar
+                  name="Debit"
+                  dataKey="debit"
+                  fill="var(--primary)"
+                  radius={[5, 5, 0, 0]}
+                  animationDuration={550}
+                />
+              )}
+              {cardFilter !== "debit" && (
+                <Bar
+                  name="Credit"
+                  dataKey="credit"
+                  fill="var(--chart-3)"
+                  radius={[5, 5, 0, 0]}
+                  animationDuration={550}
+                />
+              )}
             </BarChart>
           ) : mode === "line" ? (
             <LineChart
@@ -1028,34 +1183,38 @@ export function CardSpendingChartCard({
                 tickFormatter={(v) => compactMoney(Number(v))}
               />
               {renderCardTooltip()}
-              <Line
-                name="Debit"
-                dataKey="debit"
-                type="monotone"
-                stroke="var(--primary)"
-                strokeWidth={2.25}
-                dot={{ r: 2, fill: "var(--primary)", strokeWidth: 0 }}
-                activeDot={{
-                  r: 4.5,
-                  fill: "var(--primary)",
-                  stroke: "var(--background)",
-                  strokeWidth: 2,
-                }}
-              />
-              <Line
-                name="Credit"
-                dataKey="credit"
-                type="monotone"
-                stroke="var(--chart-3)"
-                strokeWidth={2}
-                dot={{ r: 2, fill: "var(--chart-3)", strokeWidth: 0 }}
-                activeDot={{
-                  r: 4,
-                  fill: "var(--chart-3)",
-                  stroke: "var(--background)",
-                  strokeWidth: 2,
-                }}
-              />
+              {cardFilter !== "credit" && (
+                <Line
+                  name="Debit"
+                  dataKey="debit"
+                  type="monotone"
+                  stroke="var(--primary)"
+                  strokeWidth={2.25}
+                  dot={{ r: 2, fill: "var(--primary)", strokeWidth: 0 }}
+                  activeDot={{
+                    r: 4.5,
+                    fill: "var(--primary)",
+                    stroke: "var(--background)",
+                    strokeWidth: 2,
+                  }}
+                />
+              )}
+              {cardFilter !== "debit" && (
+                <Line
+                  name="Credit"
+                  dataKey="credit"
+                  type="monotone"
+                  stroke="var(--chart-3)"
+                  strokeWidth={2}
+                  dot={{ r: 2, fill: "var(--chart-3)", strokeWidth: 0 }}
+                  activeDot={{
+                    r: 4,
+                    fill: "var(--chart-3)",
+                    stroke: "var(--background)",
+                    strokeWidth: 2,
+                  }}
+                />
+              )}
             </LineChart>
           ) : (
             <AreaChart
@@ -1111,22 +1270,26 @@ export function CardSpendingChartCard({
                 tickFormatter={(v) => compactMoney(Number(v))}
               />
               {renderCardTooltip()}
-              <Area
-                name="Debit"
-                dataKey="debit"
-                type="monotone"
-                stroke="var(--primary)"
-                strokeWidth={2}
-                fill={`url(#${layoutIdPrefix}-debit)`}
-              />
-              <Area
-                name="Credit"
-                dataKey="credit"
-                type="monotone"
-                stroke="var(--chart-3)"
-                strokeWidth={2}
-                fill={`url(#${layoutIdPrefix}-credit)`}
-              />
+              {cardFilter !== "credit" && (
+                <Area
+                  name="Debit"
+                  dataKey="debit"
+                  type="monotone"
+                  stroke="var(--primary)"
+                  strokeWidth={2}
+                  fill={`url(#${layoutIdPrefix}-debit)`}
+                />
+              )}
+              {cardFilter !== "debit" && (
+                <Area
+                  name="Credit"
+                  dataKey="credit"
+                  type="monotone"
+                  stroke="var(--chart-3)"
+                  strokeWidth={2}
+                  fill={`url(#${layoutIdPrefix}-credit)`}
+                />
+              )}
             </AreaChart>
           )}
         </ResponsiveContainer>

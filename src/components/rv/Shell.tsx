@@ -16,7 +16,7 @@ import { getDB, invoiceView, useDB } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const tabs = [
-  { to: "/", label: "Overview", icon: LayoutGrid },
+  { to: "/", label: "Dashboard", icon: LayoutGrid },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/clients", label: "Clients", icon: Users },
   { to: "/services", label: "Services", icon: Layers },
