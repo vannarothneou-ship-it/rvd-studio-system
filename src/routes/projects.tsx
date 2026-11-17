@@ -61,11 +61,17 @@ import {
   type BentoWidgetDef,
 } from "@/components/rv/BentoGrid";
 import {
+  DesignMediaUploader,
+  MediaCountBadge,
+  MediaLightboxViewer,
+} from "@/components/rv/DesignMediaTools";
+import {
   DOCUMENT_TYPES,
   PROJECT_STATUSES,
   addDays,
   compactMoney,
   documentKind,
+  inferStudioDesignType,
   invoiceView,
   isInvoice,
   money,
@@ -78,6 +84,7 @@ import {
   updateProject,
   useDB,
   type Project,
+  type ShowcaseWorkItem,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -303,6 +310,10 @@ function Page() {
   const [showAllList, setShowAllList] = useState(false);
   const [editingLayout, setEditingLayout] = useState(false);
   const [edit, setEdit] = useState<Project | null>(null);
+  const [previewLightbox, setPreviewLightbox] = useState<{
+    item: ShowcaseWorkItem;
+    mediaId?: string;
+  } | null>(null);
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
 
   const updateBoardConfig = (status: string, patch: Partial<BoardConfig>) => {
@@ -387,6 +398,7 @@ function Page() {
       }),
     },
     { k: "quote", label: "Quote (USD)", type: "number" },
+    { k: "artworkCount", label: "Artwork pieces (pcs)", type: "number" },
     { k: "start", label: "Start", type: "date" },
     { k: "due", label: "Due", type: "date" },
     { k: "delivered", label: "Delivered", type: "date" },
@@ -430,6 +442,8 @@ function Page() {
     due: "",
     delivered: "",
     quote: 0,
+    artworkCount: 1,
+    media: [],
     ...overrides,
   });
 
@@ -730,7 +744,7 @@ function Page() {
                               className="h-2.5 w-2.5 shrink-0 rounded-full"
                               style={{ background: color.dot }}
                             />
-                            <span className="truncate font-mono text-[0.68rem] uppercase tracking-wider text-muted-foreground">
+                            <span className="font-num truncate text-[0.68rem] uppercase tracking-wider text-muted-foreground">
                               {status} · {count}
                             </span>
                           </div>
@@ -955,13 +969,13 @@ function Page() {
                 <DragOverlay>
                   {activeDragged ? (
                     <div className="glass-strong w-72 rounded-2xl border border-primary/60 p-3.5 shadow-2xl">
-                      <p className="font-mono text-[0.68rem] text-muted-foreground">
+                      <p className="font-num text-[0.68rem] text-muted-foreground">
                         {activeDragged.code}
                       </p>
                       <p className="mt-0.5 break-words font-medium">
                         {activeDragged.name || "Untitled"}
                       </p>
-                      <p className="mt-1 font-mono text-xs text-primary">
+                      <p className="font-num mt-1 text-xs text-primary">
                         {money(activeDragged.quote)}
                       </p>
                     </div>
@@ -1176,7 +1190,7 @@ function Page() {
                               <div className="min-w-0">
                                 <p className="truncate font-medium">
                                   {p.name || "Untitled"}{" "}
-                                  <span className="font-mono text-xs text-muted-foreground">
+                                  <span className="font-num text-xs text-muted-foreground">
                                     {p.code}
                                   </span>
                                 </p>
@@ -1194,10 +1208,15 @@ function Page() {
                                   {billing.docs.length > 0 &&
                                     ` · ${billing.docs.length} docs`}
                                 </p>
+                                {(p.media?.length ?? 0) > 0 && (
+                                  <div className="mt-1">
+                                    <MediaCountBadge media={p.media} />
+                                  </div>
+                                )}
                               </div>
                               <div className="flex items-center gap-3">
                                 <div className="text-right">
-                                  <p className="font-mono text-sm tabular-nums">
+                                  <p className="font-num text-sm">
                                     {money(p.quote)}
                                   </p>
                                   {billing.paid > 0 && (
@@ -1324,70 +1343,110 @@ function Page() {
           }
           return next;
         }}
-        footerExtra={(proj) => {
+        footerExtra={(proj, patchProj) => {
           const isExisting = db.projects.some((p) => p.id === proj.id);
           const linkedDocs = isExisting
             ? db.invoices.filter((i) => i.projectId === proj.id)
             : [];
+          const svc = db.services.find((s) => s.id === proj.serviceId);
+          const client = db.clients.find((c) => c.id === proj.clientId);
           return (
-            <div className="rounded-2xl border border-border bg-muted/60 p-3 text-xs">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="label-mono">Connected documents</span>
-                {linkedDocs.length > 0 && (
-                  <span className="text-muted-foreground">
-                    {linkedDocs.length} linked
-                  </span>
-                )}
+            <div className="space-y-3">
+              <div className="rounded-2xl border border-border bg-muted/40 p-3">
+                <span className="label-mono mb-2 block">
+                  Design mockups &amp; PDFs
+                </span>
+                <DesignMediaUploader
+                  compact
+                  media={proj.media ?? []}
+                  onChange={(media) => patchProj({ media })}
+                  onPreview={(m) =>
+                    setPreviewLightbox({
+                      mediaId: m.id,
+                      item: {
+                        id: proj.id,
+                        source: "studio",
+                        code: proj.code,
+                        title: proj.name || proj.code || "Project",
+                        subtitle: client?.name || "RothVan Studio",
+                        designType: inferStudioDesignType(proj, svc),
+                        status: proj.status,
+                        completed:
+                          proj.status === "Delivered" ||
+                          proj.status === "Closed",
+                        date: proj.delivered || proj.due || proj.start || "",
+                        artworkCount: Math.max(
+                          1,
+                          Number(proj.artworkCount) || 1,
+                        ),
+                        media: proj.media ?? [],
+                        notes: "",
+                      },
+                    })
+                  }
+                />
               </div>
-              {linkedDocs.length > 0 && (
-                <div className="mb-2.5 flex flex-wrap gap-1.5">
-                  {linkedDocs.map((d) => (
-                    <Link
-                      key={d.id}
-                      to="/invoices/$id"
-                      params={{ id: d.id }}
-                      onClick={() => setEdit(null)}
-                      className="inline-flex items-center gap-1 rounded-full border border-border bg-background/60 px-2.5 py-1 font-mono hover:border-primary"
+
+              <div className="rounded-2xl border border-border bg-muted/60 p-3 text-xs">
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="label-mono">Connected documents</span>
+                  {linkedDocs.length > 0 && (
+                    <span className="text-muted-foreground">
+                      {linkedDocs.length} linked
+                    </span>
+                  )}
+                </div>
+                {linkedDocs.length > 0 && (
+                  <div className="mb-2.5 flex flex-wrap gap-1.5">
+                    {linkedDocs.map((d) => (
+                      <Link
+                        key={d.id}
+                        to="/invoices/$id"
+                        params={{ id: d.id }}
+                        onClick={() => setEdit(null)}
+                        className="font-num inline-flex items-center gap-1 rounded-full border border-border bg-background/60 px-2.5 py-1 hover:border-primary"
+                      >
+                        <FileText className="h-3 w-3 text-primary" />
+                        {documentKind(d)} · {d.no}
+                      </Link>
+                    ))}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-1.5">
+                  {DOCUMENT_TYPES.map((docKind) => (
+                    <Btn
+                      key={docKind}
+                      type="button"
+                      className="px-2.5 py-1 text-xs"
+                      onClick={() => {
+                        const savedProj = { ...proj };
+                        if (!savedProj.name.trim())
+                          savedProj.name =
+                            db.services.find(
+                              (s) => s.id === savedProj.serviceId,
+                            )?.name || "Design project";
+                        setDB((d) => updateProject(d, savedProj));
+                        setEdit(null);
+                        nav({
+                          to: "/invoices/$id",
+                          params: { id: "new" },
+                          search: {
+                            kind: docKind,
+                            project: savedProj.id,
+                            ...(savedProj.clientId
+                              ? { client: savedProj.clientId }
+                              : {}),
+                            ...(savedProj.serviceId
+                              ? { service: savedProj.serviceId }
+                              : {}),
+                          },
+                        });
+                      }}
                     >
-                      <FileText className="h-3 w-3 text-primary" />
-                      {documentKind(d)} · {d.no}
-                    </Link>
+                      + {docKind}
+                    </Btn>
                   ))}
                 </div>
-              )}
-              <div className="flex flex-wrap gap-1.5">
-                {DOCUMENT_TYPES.map((docKind) => (
-                  <Btn
-                    key={docKind}
-                    type="button"
-                    className="px-2.5 py-1 text-xs"
-                    onClick={() => {
-                      const savedProj = { ...proj };
-                      if (!savedProj.name.trim())
-                        savedProj.name =
-                          db.services.find((s) => s.id === savedProj.serviceId)
-                            ?.name || "Design project";
-                      setDB((d) => updateProject(d, savedProj));
-                      setEdit(null);
-                      nav({
-                        to: "/invoices/$id",
-                        params: { id: "new" },
-                        search: {
-                          kind: docKind,
-                          project: savedProj.id,
-                          ...(savedProj.clientId
-                            ? { client: savedProj.clientId }
-                            : {}),
-                          ...(savedProj.serviceId
-                            ? { service: savedProj.serviceId }
-                            : {}),
-                        },
-                      });
-                    }}
-                  >
-                    + {docKind}
-                  </Btn>
-                ))}
               </div>
             </div>
           );
@@ -1404,6 +1463,12 @@ function Page() {
                 }))
             : undefined
         }
+      />
+
+      <MediaLightboxViewer
+        item={previewLightbox?.item ?? null}
+        initialMediaId={previewLightbox?.mediaId}
+        onClose={() => setPreviewLightbox(null)}
       />
     </>
   );
@@ -1465,7 +1530,7 @@ function BoardColumn({
             />
             <span className="truncate">{title || status}</span>
           </span>
-          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+          <span className="font-num text-xs text-muted-foreground">
             {count}
           </span>
         </div>
@@ -1597,7 +1662,7 @@ function BoardCard({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="font-mono text-[0.68rem] text-muted-foreground">
+          <p className="font-num text-[0.68rem] text-muted-foreground">
             {project.code}
           </p>
           <p className="mt-0.5 break-words text-sm font-semibold leading-snug">
@@ -1622,7 +1687,7 @@ function BoardCard({
             ? `Due ${shortDate(project.due)}${late ? " · late" : ""}`
             : "No dates"}
         </span>
-        <span className="font-mono font-medium tabular-nums">
+        <span className="font-num font-medium">
           {compactMoney(project.quote)}
           {paidUSD > 0 ? (
             <span className="ml-1 text-positive">
@@ -1631,10 +1696,15 @@ function BoardCard({
           ) : null}
         </span>
       </div>
-      {docsCount > 0 && (
-        <p className="mt-1 font-mono text-[0.65rem] text-muted-foreground">
-          {docsCount} linked doc{docsCount > 1 ? "s" : ""}
-        </p>
+      {(docsCount > 0 || (project.media?.length ?? 0) > 0) && (
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          {docsCount > 0 && (
+            <span className="font-num text-[0.65rem] text-muted-foreground">
+              {docsCount} linked doc{docsCount > 1 ? "s" : ""}
+            </span>
+          )}
+          <MediaCountBadge media={project.media} />
+        </div>
       )}
     </div>
   );
@@ -1766,7 +1836,7 @@ function ProjectTimelineView({
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
             </div>
-            <span className="font-mono text-xs text-muted-foreground">
+            <span className="font-num text-xs text-muted-foreground">
               {windowLabel}
             </span>
           </div>
@@ -1846,7 +1916,7 @@ function ProjectTimelineView({
                     <span
                       key={tk.iso}
                       style={{ left: `${tk.pct}%` }}
-                      className="absolute top-1/2 -translate-y-1/2 border-l border-border/60 pl-1.5 font-mono text-[0.66rem] text-muted-foreground"
+                      className="font-num absolute top-1/2 -translate-y-1/2 border-l border-border/60 pl-1.5 text-[0.66rem] text-muted-foreground"
                     >
                       {tk.label}
                     </span>
@@ -1854,7 +1924,7 @@ function ProjectTimelineView({
                   {showTodayLine && (
                     <span
                       style={{ left: `${todayPct}%` }}
-                      className="absolute top-1 z-10 -translate-x-1/2 rounded-full bg-primary px-1.5 py-0.5 font-mono text-[0.58rem] font-bold text-primary-foreground"
+                      className="font-num absolute top-1 z-10 -translate-x-1/2 rounded-full bg-primary px-1.5 py-0.5 text-[0.58rem] font-bold text-primary-foreground"
                     >
                       Today
                     </span>
@@ -1947,7 +2017,7 @@ function ProjectTimelineView({
                                   : startIso,
                               )
                             }
-                            className="rounded-md border border-border/70 px-1.5 py-0.5 font-mono text-[0.62rem] text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                            className="font-num rounded-md border border-border/70 px-1.5 py-0.5 text-[0.62rem] text-muted-foreground hover:border-primary/50 hover:text-foreground"
                           >
                             -3d
                           </button>
@@ -1957,7 +2027,7 @@ function ProjectTimelineView({
                             onClick={() =>
                               onAdjustDates(p, startIso, addDays(dueIso, 3))
                             }
-                            className="rounded-md border border-border/70 px-1.5 py-0.5 font-mono text-[0.62rem] text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                            className="font-num rounded-md border border-border/70 px-1.5 py-0.5 text-[0.62rem] text-muted-foreground hover:border-primary/50 hover:text-foreground"
                           >
                             +3d
                           </button>
@@ -2010,7 +2080,7 @@ function ProjectTimelineView({
                               >
                                 {p.code} · {p.name}
                               </span>
-                              <span className="flex shrink-0 items-center gap-1 font-mono text-[0.64rem] text-foreground/85">
+                              <span className="font-num flex shrink-0 items-center gap-1 text-[0.64rem] text-foreground/85">
                                 {p.delivered ? (
                                   <CheckCircle2 className="h-3 w-3 text-positive" />
                                 ) : (
@@ -2033,7 +2103,7 @@ function ProjectTimelineView({
                             onClick={() =>
                               setAnchorStart(addDays(startIso, -4))
                             }
-                            className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-border/70 bg-muted/60 px-2.5 py-0.5 font-mono text-[0.65rem] text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                            className="font-num absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-border/70 bg-muted/60 px-2.5 py-0.5 text-[0.65rem] text-muted-foreground hover:border-primary/50 hover:text-foreground"
                           >
                             {rawRight <= 0 ? "← " : ""}
                             {shortDate(startIso)} – {shortDate(dueIso)}

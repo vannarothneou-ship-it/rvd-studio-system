@@ -42,6 +42,7 @@ import {
   useDashboardTabs,
   type BentoWidgetDef,
 } from "@/components/rv/BentoGrid";
+import { WorkspaceBalanceCard } from "@/components/rv/WorkspaceBalanceCard";
 import {
   EXPENSE_CATEGORIES,
   PROJECT_STATUSES,
@@ -667,7 +668,7 @@ function Dashboard() {
                             · {e.category} · {shortDate(e.date)}
                           </span>
                         </div>
-                        <span className="shrink-0 font-mono tabular-nums text-destructive">
+                        <span className="font-num shrink-0 text-destructive">
                           {money(-toUSD(e.amount, e.currency, r))}
                         </span>
                       </button>
@@ -779,7 +780,7 @@ function Dashboard() {
                     </div>
                     <span
                       className={cn(
-                        "shrink-0 font-mono text-sm tabular-nums",
+                        "font-num shrink-0 text-sm",
                         a.kind === "in" && "text-positive",
                         a.kind === "out" && "text-destructive",
                         a.kind === "inv" && "text-muted-foreground",
@@ -831,9 +832,7 @@ function Dashboard() {
                 to="/projects"
                 className="rounded-2xl border border-primary/50 bg-primary/15 p-4 text-primary transition-transform hover:-translate-y-0.5"
               >
-                <p className="font-mono text-[0.68rem] uppercase tracking-wider">
-                  Ready to close
-                </p>
+                <p className="label-mono text-primary">Ready to close</p>
                 <p className="font-num text-3xl font-extrabold">
                   {readyToClose}
                 </p>
@@ -876,7 +875,7 @@ function Dashboard() {
                         className="flex items-center justify-between gap-2 py-2.5 text-xs hover:text-primary"
                       >
                         <div className="min-w-0">
-                          <p className="truncate font-mono font-medium">
+                          <p className="font-num truncate font-medium">
                             {i.no} · {client?.name ?? "Client"}
                           </p>
                           <p className="text-muted-foreground">
@@ -884,7 +883,7 @@ function Dashboard() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="font-mono font-semibold tabular-nums">
+                          <span className="font-num font-semibold">
                             {compactMoney(v.balanceUSD)}
                           </span>
                           <Pill s={v.status} />
@@ -930,7 +929,7 @@ function Dashboard() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span
-                      className="font-mono font-semibold tabular-nums"
+                      className="font-num font-semibold"
                       title={money(billed)}
                     >
                       {compactMoney(billed)}
@@ -1007,7 +1006,7 @@ function Dashboard() {
   return (
     <>
       <PageHeader
-        title={currentCustomTab ? currentCustomTab.label : "RothVan Studio"}
+        title={currentCustomTab ? currentCustomTab.label : "Studio"}
         owner={db.settings.ownerName}
         action={
           <div className="flex flex-wrap items-center gap-2">
@@ -1024,6 +1023,8 @@ function Dashboard() {
           </div>
         }
       />
+
+      <WorkspaceBalanceCard workspace="studio" />
 
       {/* Dashboard Tabs Strip + Add New Tab */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-2">
@@ -1212,7 +1213,7 @@ function Dashboard() {
                     </div>
                     <span
                       className={cn(
-                        "mt-0.5 shrink-0 rounded-full border px-2 py-0.5 font-mono text-[0.65rem]",
+                        "font-num mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-[0.65rem]",
                         picked
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border text-muted-foreground",

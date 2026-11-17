@@ -194,7 +194,7 @@ function Invoices() {
                         className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 hover:bg-muted"
                       >
                         <div className="min-w-0">
-                          <p className="truncate font-mono text-sm">{i.no}</p>
+                          <p className="font-num truncate text-sm">{i.no}</p>
                           <p className="text-xs text-muted-foreground">
                             {documentKind(i)} · {c?.name ?? "No client"} ·{" "}
                             {documentKind(i) === "Quotation"
@@ -210,7 +210,7 @@ function Invoices() {
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="text-right">
-                            <p className="font-mono text-sm tabular-nums">
+                            <p className="font-num text-sm">
                               {money(v.total, i.currency)}
                             </p>
                             {v.balance > 0 && v.status !== "Draft" && (

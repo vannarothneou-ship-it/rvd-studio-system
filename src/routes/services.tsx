@@ -215,7 +215,7 @@ function Services() {
           {s.name || "Untitled service"}
         </h2>
 
-        <p className="mt-2 font-mono text-xl font-semibold tabular-nums text-primary">
+        <p className="font-num mt-2 text-xl font-semibold text-primary">
           {money(s.rate)}{" "}
           <span className="text-xs font-normal text-muted-foreground">
             {s.unit}
@@ -384,7 +384,7 @@ function Services() {
                     >
                       <PIcon className="h-3.5 w-3.5" />
                       <span>{p}</span>
-                      <span className="font-mono text-[0.66rem] tabular-nums opacity-75">
+                      <span className="font-num text-[0.66rem] opacity-75">
                         {count}
                       </span>
                     </button>
@@ -422,7 +422,7 @@ function Services() {
                           <h3 className="font-display text-base font-bold">
                             {pillarName}
                           </h3>
-                          <span className="font-mono text-xs tabular-nums text-muted-foreground">
+                          <span className="font-num text-xs text-muted-foreground">
                             · {items.length}
                           </span>
                         </div>
@@ -663,7 +663,7 @@ function ServiceSideDrawer({
             >
               <Filter className="h-3.5 w-3.5 text-primary" />
               <span>Switch / filter service</span>
-              <span className="font-mono text-[0.68rem] tabular-nums text-muted-foreground">
+              <span className="font-num text-[0.68rem] text-muted-foreground">
                 ({drawerServices.length})
               </span>
               {browserOpen ? (
@@ -742,7 +742,7 @@ function ServiceSideDrawer({
                     >
                       <Tag className="h-2.5 w-2.5" />
                       <span>{tag}</span>
-                      <span className="font-mono text-[0.62rem] tabular-nums opacity-75">
+                      <span className="font-num text-[0.62rem] opacity-75">
                         {count}
                       </span>
                     </button>
@@ -761,9 +761,7 @@ function ServiceSideDrawer({
                     <div key={groupLabel}>
                       <p className="mb-1 flex items-center justify-between text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
                         <span>{groupLabel}</span>
-                        <span className="font-mono tabular-nums">
-                          {items.length}
-                        </span>
+                        <span className="font-num">{items.length}</span>
                       </p>
                       <div className="space-y-1">
                         {items.map((item) => {
@@ -783,14 +781,14 @@ function ServiceSideDrawer({
                             >
                               <span className="flex min-w-0 items-center gap-2">
                                 <ItemIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
-                                <span className="font-mono text-[0.68rem] text-muted-foreground">
+                                <span className="font-num text-[0.68rem] text-muted-foreground">
                                   {item.code}
                                 </span>
                                 <span className="truncate font-medium text-foreground">
                                   {item.name}
                                 </span>
                               </span>
-                              <span className="shrink-0 font-mono text-xs font-semibold tabular-nums text-primary">
+                              <span className="font-num shrink-0 text-xs font-semibold text-primary">
                                 {money(item.rate)}
                               </span>
                             </button>
@@ -820,7 +818,7 @@ function ServiceSideDrawer({
               </p>
             </div>
           </div>
-          <p className="shrink-0 font-mono text-lg font-bold tabular-nums text-primary">
+          <p className="font-num shrink-0 text-lg font-bold text-primary">
             {money(draft.rate)}
           </p>
         </div>

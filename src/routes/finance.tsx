@@ -1,6 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { ArrowDownLeft, Plus, Search, Sparkles } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  ArrowDownLeft,
+  ArrowUpRight,
+  Briefcase,
+  Layers,
+  Plus,
+  Search,
+  Sparkles,
+  Wallet,
+} from "lucide-react";
 import {
   Btn,
   Empty,
@@ -31,11 +40,13 @@ import {
   EditableBentoGrid,
   type BentoWidgetDef,
 } from "@/components/rv/BentoGrid";
+import { WorkspaceBalanceCard } from "@/components/rv/WorkspaceBalanceCard";
 import {
   EXPENSE_CATEGORIES,
   cashFlowSeries,
   cashReceived,
   categoryTotals,
+  combinedCashFlowSeries,
   compactMoney,
   expenseAccount,
   expenseTotal,
@@ -49,6 +60,7 @@ import {
   today,
   uid,
   useDB,
+  workspaceBalances,
   type CashRange,
   type Expense,
   type Goal,
@@ -56,6 +68,15 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/finance")({
+  validateSearch: (
+    s: Record<string, unknown>,
+  ): { view?: "studio" | "combined" } => ({
+    ...(s["view"] === "combined"
+      ? { view: "combined" }
+      : s["view"] === "studio"
+        ? { view: "studio" }
+        : {}),
+  }),
   head: () => ({
     meta: [
       { title: "Studio Finance · RothVan Studio" },
@@ -83,15 +104,31 @@ const STUDIO_RANGES: { id: CashRange; label: string; desc: string }[] = [
   { id: "all", label: "All time", desc: "all time" },
 ];
 
+type FinanceView = "studio" | "combined";
+type CombinedFilter = "all" | "studio" | "personal" | "income" | "expense";
+
 function Page() {
   const db = useDB((d) => d);
   const r = db.settings.khrRate;
+  const { view: searchView } = Route.useSearch();
+  const [financeView, setFinanceView] = useState<FinanceView>(
+    searchView === "combined" ? "combined" : "studio",
+  );
+  useEffect(() => {
+    if (searchView === "combined" || searchView === "studio") {
+      setFinanceView(searchView);
+    }
+  }, [searchView]);
+
   const [studioRange, setStudioRange] = useState<CashRange>("all");
   const [chartMode, setChartMode] = useState<ChartMode>("area");
   const [month, setMonth] = useState(() => today().slice(0, 7));
   const [catFilter, setCatFilter] = useState<string>("All");
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(40);
+  const [combinedFilter, setCombinedFilter] = useState<CombinedFilter>("all");
+  const [combinedQuery, setCombinedQuery] = useState("");
+  const [combinedVisible, setCombinedVisible] = useState(50);
   const [editingLayout, setEditingLayout] = useState(false);
   const [inspectedCategory, setInspectedCategory] = useState<string | null>(
     null,
@@ -274,6 +311,111 @@ function Page() {
         .slice(0, 10),
     [db.payments],
   );
+
+  const balances = useMemo(() => workspaceBalances(db, month), [db, month]);
+  const combinedPts = useMemo(
+    () => combinedCashFlowSeries(db, studioRange),
+    [db, studioRange],
+  );
+  const combinedInRange = useMemo(
+    () => combinedPts.reduce((a, x) => a + x.totalIn, 0),
+    [combinedPts],
+  );
+  const combinedOutRange = useMemo(
+    () => combinedPts.reduce((a, x) => a + x.totalOut, 0),
+    [combinedPts],
+  );
+  const combinedNetRange = combinedInRange - combinedOutRange;
+  const personalCatsAll = useMemo(
+    () => categoryTotals(db, "Personal", ""),
+    [db],
+  );
+
+  const combinedLedgerRows = useMemo(() => {
+    type Entry = {
+      id: string;
+      date: string;
+      workspace: "Studio" | "Personal";
+      direction: "income" | "expense";
+      title: string;
+      sub: string;
+      usd: number;
+    };
+    const invMap = new Map(db.invoices.map((i) => [i.id, i]));
+    const clientMap = new Map(db.clients.map((c) => [c.id, c.name]));
+
+    const entries: Entry[] = [
+      ...db.payments
+        .filter((p) => {
+          const inv = invMap.get(p.invoiceId);
+          return inv ? isInvoice(inv) : true;
+        })
+        .map((p) => {
+          const inv = invMap.get(p.invoiceId);
+          const clientName = inv ? clientMap.get(inv.clientId) : undefined;
+          return {
+            id: `pay-${p.id}`,
+            date: p.date,
+            workspace: "Studio" as const,
+            direction: "income" as const,
+            title: `${clientName || "Client"} · ${inv?.no || "Invoice"}`,
+            sub: `${p.method}${p.reference ? ` · ${p.reference}` : ""}`,
+            usd: toUSD(p.amount, p.currency, r),
+          };
+        }),
+      ...(db.personalIncome ?? []).map((inc) => ({
+        id: `pinc-${inc.id}`,
+        date: inc.date,
+        workspace: "Personal" as const,
+        direction: "income" as const,
+        title: inc.description || inc.source,
+        sub: `${inc.source}${inc.accountMethod ? ` · ${inc.accountMethod}` : ""}`,
+        usd: toUSD(inc.amount, inc.currency, r),
+      })),
+      ...db.expenses.map((e) => {
+        const ws = expenseAccount(e);
+        return {
+          id: `exp-${e.id}`,
+          date: e.date,
+          workspace: ws,
+          direction: "expense" as const,
+          title: e.description || e.vendor || e.category,
+          sub: `${e.category}${e.vendor ? ` · ${e.vendor}` : ""}`,
+          usd: toUSD(e.amount, e.currency, r),
+        };
+      }),
+    ];
+
+    const cq = combinedQuery.trim().toLowerCase();
+    return entries
+      .filter((row) => {
+        if (combinedFilter === "studio" && row.workspace !== "Studio")
+          return false;
+        if (combinedFilter === "personal" && row.workspace !== "Personal")
+          return false;
+        if (combinedFilter === "income" && row.direction !== "income")
+          return false;
+        if (combinedFilter === "expense" && row.direction !== "expense")
+          return false;
+        if (cq) {
+          const hay =
+            `${row.title} ${row.sub} ${row.workspace} ${row.direction}`.toLowerCase();
+          if (!hay.includes(cq)) return false;
+        }
+        return true;
+      })
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [
+    db.payments,
+    db.invoices,
+    db.clients,
+    db.personalIncome,
+    db.expenses,
+    r,
+    combinedFilter,
+    combinedQuery,
+  ]);
+  const combinedVisibleRows = combinedLedgerRows.slice(0, combinedVisible);
 
   const widgets = useMemo<BentoWidgetDef[]>(
     () => [
@@ -546,7 +688,7 @@ function Page() {
                             </p>
                           </div>
                         </div>
-                        <span className="shrink-0 font-mono text-sm tabular-nums text-positive">
+                        <span className="font-num shrink-0 text-sm text-positive">
                           +{money(toUSD(p.amount, p.currency, r))}
                         </span>
                       </Link>
@@ -664,7 +806,7 @@ function Page() {
                               </p>
                             </div>
                           </div>
-                          <p className="font-mono text-sm tabular-nums text-destructive">
+                          <p className="font-num text-sm text-destructive">
                             {money(-e.amount, e.currency)}
                           </p>
                         </button>
@@ -737,14 +879,20 @@ function Page() {
   return (
     <>
       <PageHeader
-        title="Studio Finance"
+        title={
+          financeView === "combined"
+            ? "Combined Studio + Personal Cash Flow"
+            : "Studio Finance"
+        }
         owner={db.settings.ownerName}
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <EditLayoutButton
-              editing={editingLayout}
-              onToggle={() => setEditingLayout((e) => !e)}
-            />
+            {financeView === "studio" && (
+              <EditLayoutButton
+                editing={editingLayout}
+                onToggle={() => setEditingLayout((e) => !e)}
+              />
+            )}
             <Btn
               variant="gold"
               onClick={() => openNewExpense()}
@@ -757,36 +905,422 @@ function Page() {
         }
       />
 
-      {/* Month Scope Bar */}
+      {/* Mode Switcher & Month Scope Bar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          RothVan Design revenue, client payments, and studio operating costs
-          (kept separate from your{" "}
-          <Link to="/personal" className="text-primary hover:underline">
-            Personal Income &amp; Spending
-          </Link>
-          ).
-        </p>
-        <div className="flex items-center gap-2">
-          <span className="label-mono">Month</span>
-          <input
-            type="month"
-            className="field w-auto py-1.5 text-xs"
-            value={month}
-            onChange={(e) => {
-              setMonth(e.target.value || today().slice(0, 7));
-              setVisibleCount(40);
-            }}
-          />
+        <SlidingTabs
+          layoutGroup="finance-top-view"
+          value={financeView}
+          onChange={setFinanceView}
+          options={[
+            { id: "studio", label: "Studio Finance", icon: Briefcase },
+            {
+              id: "combined",
+              label: "Combined (Studio + Personal)",
+              icon: Layers,
+            },
+          ]}
+        />
+        <div className="flex flex-wrap items-center gap-3">
+          {financeView === "studio" && (
+            <Link
+              to="/personal"
+              className="text-xs text-muted-foreground hover:text-primary hover:underline"
+            >
+              Open Personal Money →
+            </Link>
+          )}
+          <div className="flex items-center gap-2">
+            <span className="label-mono">Month</span>
+            <input
+              type="month"
+              className="field w-auto py-1.5 text-xs"
+              value={month}
+              onChange={(e) => {
+                setMonth(e.target.value || today().slice(0, 7));
+                setVisibleCount(40);
+              }}
+            />
+          </div>
         </div>
       </div>
 
-      <EditableBentoGrid
-        pageKey="finance:studio-only"
-        widgets={widgets}
-        editing={editingLayout}
-        onDoneEditing={() => setEditingLayout(false)}
-      />
+      {financeView === "studio" ? (
+        <>
+          <WorkspaceBalanceCard workspace="studio" />
+          <EditableBentoGrid
+            pageKey="finance:studio-only"
+            widgets={widgets}
+            editing={editingLayout}
+            onDoneEditing={() => setEditingLayout(false)}
+          />
+        </>
+      ) : (
+        <div className="space-y-4">
+          {/* Top Combined Summary Card */}
+          <Glass className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <Layers className="h-3.5 w-3.5 text-primary" />
+                <span className="font-medium text-foreground">
+                  Combined Studio + Personal Balance
+                </span>
+                <span aria-hidden="true">·</span>
+                <span>All-time real-time ledger total</span>
+              </div>
+              <p
+                className={cn(
+                  "font-num mt-1.5 text-3xl font-extrabold tracking-tight sm:text-4xl",
+                  balances.combinedBalance >= 0
+                    ? "text-foreground"
+                    : "text-destructive",
+                )}
+              >
+                <AnimatedNumber value={balances.combinedBalance} />
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Studio ({money(balances.studioBalance)}) + Personal (
+                {money(balances.personalBalance)})
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4 border-t border-border/70 pt-3 sm:grid-cols-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+              <Stat
+                label="Total cash in"
+                value={compactMoney(balances.combinedInAll)}
+                fullValue={money(balances.combinedInAll)}
+                tone="pos"
+              />
+              <Stat
+                label="Total out"
+                value={compactMoney(balances.combinedOutAll)}
+                fullValue={money(balances.combinedOutAll)}
+                tone="neg"
+              />
+              <Stat
+                label={`${monthLabel} net`}
+                value={compactMoney(balances.combinedMonthNet, "USD", true)}
+                fullValue={money(balances.combinedMonthNet, "USD", true)}
+                tone={balances.combinedMonthNet >= 0 ? "pos" : "neg"}
+              />
+              <Stat
+                label="Open A/R"
+                value={compactMoney(balances.openAR)}
+                fullValue={money(balances.openAR)}
+              />
+            </div>
+          </Glass>
+
+          {/* Combined Cash Flow Chart + Studio vs Personal Split */}
+          <div className="grid gap-4 lg:grid-cols-12">
+            <Glass className="lg:col-span-8">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-medium">
+                  Combined cash flow (Studio + Personal)
+                </h2>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <SlidingTabs
+                    size="xs"
+                    layoutGroup="fin-comb-mode"
+                    value={chartMode}
+                    onChange={setChartMode}
+                    options={CHART_MODE_OPTIONS}
+                  />
+                  <SlidingTabs
+                    size="xs"
+                    tone="invert"
+                    layoutGroup="fin-comb-range"
+                    value={studioRange}
+                    onChange={setStudioRange}
+                    options={STUDIO_RANGES.map((o) => ({
+                      id: o.id,
+                      label: o.label,
+                    }))}
+                  />
+                </div>
+              </div>
+              <div className="mb-3 grid grid-cols-3 gap-3">
+                <Stat
+                  label={`● In (${studioRangeMeta.desc})`}
+                  value={compactMoney(combinedInRange)}
+                  fullValue={money(combinedInRange)}
+                  tone="pos"
+                />
+                <Stat
+                  label={`○ Out (${studioRangeMeta.desc})`}
+                  value={compactMoney(combinedOutRange)}
+                  fullValue={money(combinedOutRange)}
+                />
+                <Stat
+                  label="Combined net"
+                  value={compactMoney(combinedNetRange, "USD", true)}
+                  fullValue={money(combinedNetRange, "USD", true)}
+                  tone={combinedNetRange >= 0 ? "pos" : "neg"}
+                />
+              </div>
+              <TrendChartCanvas
+                mode={chartMode}
+                data={combinedPts}
+                primaryKey="totalIn"
+                primaryName="Combined income (Studio + Personal)"
+                secondaryKey="totalOut"
+                secondaryName="Combined outflow (Studio + Personal)"
+                gradientId="fin-cf-combined"
+              />
+            </Glass>
+
+            <Glass className="flex flex-col justify-between lg:col-span-4">
+              <div>
+                <h2 className="font-medium">Studio vs Personal split</h2>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Side-by-side comparison across all time
+                </p>
+
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-2xl border border-border/80 bg-muted/40 p-3.5">
+                    <div className="flex items-center justify-between">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                        <Briefcase className="h-3.5 w-3.5 text-primary" />
+                        Studio
+                      </span>
+                      <Link
+                        to="/"
+                        className="text-[0.7rem] text-primary hover:underline"
+                      >
+                        Open →
+                      </Link>
+                    </div>
+                    <div className="mt-2.5 grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <p className="text-[0.65rem] text-muted-foreground">
+                          Cash in
+                        </p>
+                        <p className="font-num font-semibold text-positive">
+                          {compactMoney(balances.studioInAll)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[0.65rem] text-muted-foreground">
+                          Costs
+                        </p>
+                        <p className="font-num font-semibold text-destructive">
+                          {compactMoney(balances.studioOutAll)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[0.65rem] text-muted-foreground">
+                          Balance
+                        </p>
+                        <p className="font-num font-semibold text-foreground">
+                          {compactMoney(balances.studioBalance)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-border/80 bg-muted/40 p-3.5">
+                    <div className="flex items-center justify-between">
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                        <Wallet className="h-3.5 w-3.5 text-positive" />
+                        Personal
+                      </span>
+                      <Link
+                        to="/personal"
+                        className="text-[0.7rem] text-primary hover:underline"
+                      >
+                        Open →
+                      </Link>
+                    </div>
+                    <div className="mt-2.5 grid grid-cols-3 gap-2 text-xs">
+                      <div>
+                        <p className="text-[0.65rem] text-muted-foreground">
+                          Income
+                        </p>
+                        <p className="font-num font-semibold text-positive">
+                          {compactMoney(balances.personalInAll)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[0.65rem] text-muted-foreground">
+                          Spending
+                        </p>
+                        <p className="font-num font-semibold text-destructive">
+                          {compactMoney(balances.personalOutAll)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[0.65rem] text-muted-foreground">
+                          Balance
+                        </p>
+                        <p className="font-num font-semibold text-foreground">
+                          {compactMoney(balances.personalBalance)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 border-t border-border/70 pt-3 text-xs text-muted-foreground">
+                Combined monthly net ({monthLabel}):{" "}
+                <span
+                  className={cn(
+                    "font-num font-semibold",
+                    balances.combinedMonthNet >= 0
+                      ? "text-positive"
+                      : "text-destructive",
+                  )}
+                >
+                  {money(balances.combinedMonthNet, "USD", true)}
+                </span>
+              </div>
+            </Glass>
+          </div>
+
+          <BreakdownPieCard
+            db={db}
+            account="Combined"
+            personalItems={personalCatsAll}
+            studioItems={studioCatsAll}
+            scopeLabel="all combined expenses"
+            onSelectCategory={(_acc, category) =>
+              setInspectedCategory(category)
+            }
+          />
+
+          {/* Unified Combined Ledger */}
+          <Glass>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="label-mono">
+                  Combined Studio &amp; Personal Ledger (
+                  {combinedLedgerRows.length})
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Every invoice payment, studio operating cost, personal income,
+                  and personal expense in chronological order
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <SlidingTabs
+                  size="xs"
+                  layoutGroup="fin-combined-filter"
+                  value={combinedFilter}
+                  onChange={(v) => {
+                    setCombinedFilter(v);
+                    setCombinedVisible(50);
+                  }}
+                  options={[
+                    { id: "all", label: "All" },
+                    { id: "studio", label: "Studio" },
+                    { id: "personal", label: "Personal" },
+                    { id: "income", label: "Income" },
+                    { id: "expense", label: "Expense" },
+                  ]}
+                />
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <input
+                    type="search"
+                    value={combinedQuery}
+                    onChange={(e) => {
+                      setCombinedQuery(e.target.value);
+                      setCombinedVisible(50);
+                    }}
+                    placeholder="Search combined ledger…"
+                    className="field w-44 py-1.5 pl-8 text-xs sm:w-56"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {combinedVisibleRows.length === 0 ? (
+              <Empty>No ledger entries match this filter.</Empty>
+            ) : (
+              <>
+                <ul className="divide-y divide-border">
+                  {combinedVisibleRows.map((row) => (
+                    <li
+                      key={row.id}
+                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-2.5"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span
+                          className={cn(
+                            "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
+                            row.direction === "income"
+                              ? "text-positive"
+                              : "text-destructive",
+                          )}
+                        >
+                          {row.direction === "income" ? (
+                            <ArrowDownLeft className="h-4 w-4" />
+                          ) : (
+                            <ArrowUpRight className="h-4 w-4" />
+                          )}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="truncate text-sm font-medium text-foreground">
+                              {row.title}
+                            </p>
+                            <span
+                              className={cn(
+                                "rounded-full border px-2 py-0.5 text-[0.62rem] font-medium",
+                                row.workspace === "Studio"
+                                  ? "border-primary/40 bg-primary/12 text-primary"
+                                  : "border-border bg-muted text-muted-foreground",
+                              )}
+                            >
+                              {row.workspace}
+                            </span>
+                          </div>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {shortDate(row.date)} · {row.sub}
+                          </p>
+                        </div>
+                      </div>
+                      <span
+                        className={cn(
+                          "font-num shrink-0 text-sm font-semibold",
+                          row.direction === "income"
+                            ? "text-positive"
+                            : "text-destructive",
+                        )}
+                      >
+                        {row.direction === "income"
+                          ? `+${money(row.usd)}`
+                          : money(-row.usd)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+
+                {combinedLedgerRows.length > combinedVisibleRows.length && (
+                  <div className="mt-3 flex justify-center gap-2">
+                    <Btn
+                      type="button"
+                      onClick={() => setCombinedVisible((n) => n + 80)}
+                      className="px-4 py-1.5 text-xs"
+                    >
+                      Show more (
+                      {combinedLedgerRows.length - combinedVisibleRows.length}{" "}
+                      remaining)
+                    </Btn>
+                    <Btn
+                      type="button"
+                      onClick={() =>
+                        setCombinedVisible(combinedLedgerRows.length)
+                      }
+                      className="px-4 py-1.5 text-xs"
+                    >
+                      Show all ({combinedLedgerRows.length})
+                    </Btn>
+                  </div>
+                )}
+              </>
+            )}
+          </Glass>
+        </div>
+      )}
 
       {/* Right-Side Pop-Up Inspector Drawer */}
       <CategoryInspectorDrawer

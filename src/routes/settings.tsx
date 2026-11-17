@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
+import { toast } from "sonner";
 import { Download, Plus, Upload } from "lucide-react";
 import { Btn, F, Glass, PageHeader } from "@/components/rv/ui";
 import { EditModal, nextCode, upsert, type Field } from "@/components/rv/Crud";
@@ -115,10 +116,11 @@ function Page() {
       setDB(() => ({
         ...p,
         personalIncome: Array.isArray(p.personalIncome) ? p.personalIncome : [],
+        workTasks: Array.isArray(p.workTasks) ? p.workTasks : [],
       }));
-      alert("Backup restored.");
+      toast.success("Backup restored.");
     } catch {
-      alert("That file isn't a RothVan backup.");
+      toast.error("That file isn't a RothVan backup.");
     }
   };
   return (
@@ -201,7 +203,7 @@ function Page() {
             >
               <p className="label-mono">{x.pillar}</p>
               <p className="font-medium">{x.name}</p>
-              <p className="font-mono text-sm text-primary">
+              <p className="font-num text-sm text-primary">
                 {money(x.rate)}{" "}
                 <span className="text-xs text-muted-foreground">
                   {x.unit.toLowerCase()}

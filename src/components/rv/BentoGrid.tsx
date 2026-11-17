@@ -669,7 +669,7 @@ export function EditableBentoGrid({
                   <GripVertical className="h-4 w-4" />
                   {activeWidget.title}
                 </span>
-                <span className="rounded-full bg-primary/15 px-2 py-0.5 font-mono text-[0.65rem] tabular-nums text-primary">
+                <span className="font-num rounded-full bg-primary/15 px-2 py-0.5 text-[0.65rem] text-primary">
                   {activePacked.effectiveSpan}/12
                 </span>
               </div>
@@ -814,7 +814,7 @@ function BentoSlot({
             {children}
           </div>
           <div className="relative z-10 flex flex-col items-center rounded-2xl border border-primary/50 bg-background/85 px-4 py-3 shadow-lg backdrop-blur-md">
-            <span className="rounded-full bg-primary/20 px-3 py-1 font-mono text-xs font-semibold text-primary">
+            <span className="font-num rounded-full bg-primary/20 px-3 py-1 text-xs font-semibold text-primary">
               Drop preview · {title}
             </span>
             <span className="mt-1.5 text-xs tabular-nums text-muted-foreground">
@@ -830,7 +830,7 @@ function BentoSlot({
                 <GripVertical className="h-3.5 w-3.5 shrink-0 text-primary" />
                 <span className="truncate">{title}</span>
                 {autoExpanded && (
-                  <span className="shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 font-mono text-[0.6rem] tabular-nums text-primary">
+                  <span className="font-num shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[0.6rem] text-primary">
                     fill {effectiveSpan}/12
                   </span>
                 )}
@@ -844,7 +844,7 @@ function BentoSlot({
                     type="button"
                     onClick={onPair}
                     title="Combine 2 cards side by side (½ + ½)"
-                    className="mr-1 inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 font-mono text-[0.65rem] font-medium text-primary hover:bg-primary/20"
+                    className="font-num mr-1 inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[0.65rem] font-medium text-primary hover:bg-primary/20"
                   >
                     <Columns2 className="h-3 w-3" />
                     Pair ½+½
@@ -861,7 +861,7 @@ function BentoSlot({
                       onClick={() => onSpan(c.span)}
                       title={`Resize target to ${c.label}`}
                       className={cn(
-                        "shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 font-mono text-[0.65rem] transition-colors",
+                        "font-num shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[0.65rem] transition-colors",
                         active
                           ? "bg-primary text-primary-foreground"
                           : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -902,7 +902,7 @@ function BentoSlot({
                 <span className="h-12 w-1.5 rounded-full bg-primary/45 transition-all group-hover/edge:h-16 group-hover/edge:bg-primary" />
               </button>
               {isResizing && (
-                <div className="pointer-events-none absolute right-4 top-12 z-30 rounded-full border border-primary bg-background/95 px-2.5 py-1 font-mono text-[0.7rem] font-semibold text-primary shadow-xl">
+                <div className="font-num pointer-events-none absolute right-4 top-12 z-30 rounded-full border border-primary bg-background/95 px-2.5 py-1 text-[0.7rem] font-semibold text-primary shadow-xl">
                   Width: {spanLabel(effectiveSpan)} ({effectiveSpan}/12)
                 </div>
               )}

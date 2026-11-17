@@ -85,7 +85,7 @@ export function SlidingTabs<T extends string>({
             {opt.badge !== undefined && (
               <span
                 className={cn(
-                  "relative z-10 font-mono text-[0.66rem] tabular-nums opacity-80",
+                  "relative z-10 font-num text-[0.68rem] opacity-80",
                 )}
               >
                 {opt.badge}
@@ -607,12 +607,16 @@ const tone: Record<string, string> = {
   Declined: "bg-destructive/15 text-destructive",
   Expired: "bg-destructive/15 text-destructive",
   Lost: "bg-destructive/15 text-destructive",
+  Current: "bg-primary/15 text-primary",
+  "In review": "bg-secondary text-foreground",
+  Completed: "bg-positive/15 text-positive",
+  Backlog: "bg-muted text-muted-foreground",
 };
 export function Pill({ s }: { s: string }) {
   return (
     <span
       className={cn(
-        "inline-flex shrink-0 rounded-full px-2.5 py-0.5 font-mono text-[0.68rem] uppercase tracking-wider",
+        "font-num inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wider",
         tone[s] ?? "bg-secondary text-muted-foreground",
       )}
     >

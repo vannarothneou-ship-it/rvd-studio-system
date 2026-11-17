@@ -8,9 +8,11 @@ import {
   cashReceived,
   categoryLimit,
   categoryTotals,
+  combinedCashFlowSeries,
   compactMoney,
   convertDocument,
   deletePayment,
+  designOutputSummary,
   effectiveServiceTags,
   expenseAccount,
   expenseCategoriesFor,
@@ -35,6 +37,7 @@ import {
   serviceItem,
   setCategoryLimit,
   setDB,
+  workspaceBalances,
   type Invoice,
 } from "./store";
 
@@ -488,6 +491,104 @@ describe("bento dense packing and service tags", () => {
       (e) => expenseAccount(e) === "Studio" && e.date.startsWith("2026-11"),
     );
     expect(novStudio.outCount).toBe(novStudioExpenses.length);
+
+    setDB(() => base);
+  });
+
+  it("computes real-time workspaceBalances, combinedCashFlowSeries, and designOutputSummary across Work and Studio", () => {
+    const base = getDB();
+    setDB((d) => ({
+      ...d,
+      personalIncome: [
+        {
+          id: "inc-w1",
+          date: "2026-11-05",
+          source: "Salary",
+          accountMethod: "ABA Bank",
+          description: "Full-time salary",
+          amount: 1500,
+          currency: "USD",
+        },
+      ],
+      workTasks: [
+        {
+          id: "wt-1",
+          code: "WRK-01",
+          title: "Campaign Key Visual",
+          company: "Full-time",
+          designType: "Social & Campaign",
+          status: "Completed",
+          artworkCount: 6,
+          dueDate: "2026-11-10",
+          completedDate: "2026-11-09",
+          notes: "Approved by brand lead",
+          media: [
+            {
+              id: "m-1",
+              name: "kv-final.png",
+              kind: "image",
+              mimeType: "image/png",
+              size: 1024,
+              createdAt: "2026-11-09",
+            },
+          ],
+        },
+        {
+          id: "wt-2",
+          code: "WRK-02",
+          title: "Sales Deck Refresh",
+          company: "Full-time",
+          designType: "Presentation & Deck",
+          status: "Current",
+          artworkCount: 12,
+          dueDate: "2026-11-20",
+          completedDate: "",
+          notes: "",
+          media: [],
+        },
+      ],
+    }));
+
+    const db = getDB();
+    const bal = workspaceBalances(db, "2026-11");
+    expect(bal.studioInAll).toBeCloseTo(13880.1, 2);
+    expect(bal.studioBalance).toBeCloseTo(
+      bal.studioInAll - bal.studioOutAll,
+      2,
+    );
+    expect(bal.personalInAll).toBeCloseTo(1500, 2);
+    expect(bal.personalBalance).toBeCloseTo(
+      bal.personalInAll - bal.personalOutAll,
+      2,
+    );
+    expect(bal.combinedBalance).toBeCloseTo(
+      bal.studioBalance + bal.personalBalance,
+      2,
+    );
+
+    const combined6 = combinedCashFlowSeries(db, "6m");
+    expect(combined6).toHaveLength(6);
+    const novCombined = combined6.find((x) => x.m === "2026-11")!;
+    expect(novCombined.personalIn).toBeCloseTo(1500, 2);
+    expect(novCombined.totalIn).toBeCloseTo(
+      novCombined.studioIn + novCombined.personalIn,
+      2,
+    );
+    expect(novCombined.totalOut).toBeCloseTo(
+      novCombined.studioOut + novCombined.personalOut,
+      2,
+    );
+
+    const summary = designOutputSummary(db);
+    expect(summary.workCompleted).toBe(1);
+    expect(summary.workActive).toBe(1);
+    expect(summary.studioCompleted).toBeGreaterThan(0);
+    expect(summary.completedTotal).toBe(1 + summary.studioCompleted);
+    expect(summary.totalArtworks).toBeGreaterThanOrEqual(18);
+    expect(summary.mediaCount).toBe(1);
+    expect(
+      summary.byType.some((t) => t.designType === "Social & Campaign"),
+    ).toBe(true);
 
     setDB(() => base);
   });

@@ -11,6 +11,7 @@ import {
   Sun,
   Moon,
   Layers,
+  Layers3,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { invoiceStatus, isInvoice, useDB } from "@/lib/store";
@@ -76,18 +77,25 @@ export function Shell({ children }: { children: ReactNode }) {
   }, [light]);
 
   const isPersonal = path.startsWith("/personal");
-  const activeWorkspace: WorkspaceMode = isPersonal ? "personal" : "studio";
+  const isWork = path.startsWith("/work");
+  const activeWorkspace: WorkspaceMode = isPersonal
+    ? "personal"
+    : isWork
+      ? "work"
+      : "studio";
 
   useEffect(() => {
-    if (!isPersonal && !path.startsWith("/settings")) {
+    if (!isPersonal && !isWork && !path.startsWith("/settings")) {
       lastStudioPathRef.current = path;
     }
-  }, [isPersonal, path]);
+  }, [isPersonal, isWork, path]);
 
   const handleWorkspaceSwitch = (next: WorkspaceMode) => {
     if (next === activeWorkspace) return;
     if (next === "personal") {
       navigate({ to: "/personal" });
+    } else if (next === "work") {
+      navigate({ to: "/work" });
     } else {
       const target = lastStudioPathRef.current;
       if (target.startsWith("/projects")) navigate({ to: "/projects" });
@@ -146,7 +154,7 @@ export function Shell({ children }: { children: ReactNode }) {
         {/* Desktop top floating dock / mobile bottom tab dock */}
         <nav className="no-print fixed inset-x-3 bottom-3 z-40 sm:inset-x-auto sm:left-1/2 sm:top-4 sm:bottom-auto sm:w-[min(calc(100vw-2rem),78rem)] sm:-translate-x-1/2">
           <div className="glass-strong flex items-center justify-between gap-2 rounded-full p-1.5 sm:gap-3 sm:p-2">
-            {/* Top-Level Workspace Switcher */}
+            {/* Top-Level Workspace Switcher: Studio > Work > Personal */}
             <div className="hidden shrink-0 items-center gap-2 sm:flex">
               <WorkspaceSwitcher
                 activeWorkspace={activeWorkspace}
@@ -163,7 +171,18 @@ export function Shell({ children }: { children: ReactNode }) {
                 </span>
                 <span className="hidden truncate text-xs text-muted-foreground md:inline">
                   Income, daily spending, cards &amp; saving goals — isolated
-                  from studio data
+                  from Studio &amp; Work
+                </span>
+              </div>
+            ) : isWork ? (
+              <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2 py-1 text-xs sm:text-sm">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 font-medium text-primary whitespace-nowrap">
+                  <Layers3 className="h-3.5 w-3.5 shrink-0" />
+                  Full-Time Work &amp; Output
+                </span>
+                <span className="hidden truncate text-xs text-muted-foreground md:inline">
+                  Current &amp; completed tasks, PNG/JPEG/PDF mockups &amp;
+                  Studio + Work totals
                 </span>
               </div>
             ) : (

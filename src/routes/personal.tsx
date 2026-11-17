@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   ArrowDownLeft,
@@ -40,6 +40,7 @@ import {
   EditableBentoGrid,
   type BentoWidgetDef,
 } from "@/components/rv/BentoGrid";
+import { WorkspaceBalanceCard } from "@/components/rv/WorkspaceBalanceCard";
 import {
   CARD_METHODS,
   PERSONAL_CATEGORIES,
@@ -807,7 +808,7 @@ function PersonalPage() {
                           </div>
                           <span
                             className={cn(
-                              "flex items-center gap-1 font-mono text-sm tabular-nums",
+                              "font-num flex items-center gap-1 text-sm",
                               row.kind === "income"
                                 ? "text-positive"
                                 : "text-destructive",
@@ -921,12 +922,20 @@ function PersonalPage() {
         }
       />
 
+      <WorkspaceBalanceCard workspace="personal" />
+
       {/* Personal Scope Bar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
           Dedicated personal wallet for tracking your income, everyday spending,
-          Debit &amp; Credit cards, and saving goals — completely separate from
-          RothVan Design clients and invoices.
+          Debit &amp; Credit cards, and saving goals —{" "}
+          <Link
+            to="/finance"
+            search={{ view: "combined" }}
+            className="text-primary hover:underline"
+          >
+            View combined Studio + Personal cash flow →
+          </Link>
         </p>
         <div className="flex items-center gap-2">
           <span className="label-mono">Month</span>

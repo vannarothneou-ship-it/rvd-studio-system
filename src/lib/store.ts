@@ -160,6 +160,50 @@ export interface Service {
   overage: number;
   tags?: string[];
 }
+export const DESIGN_TYPES = [
+  "Branding & Identity",
+  "Creative & Digital",
+  "Social & Campaign",
+  "Marketing & Packaging",
+  "Print & Collateral",
+  "UI & Web",
+  "Spatial & Signage",
+  "Presentation & Deck",
+  "Other",
+] as const;
+
+export const WORK_STATUSES = [
+  "Current",
+  "In review",
+  "Completed",
+  "Backlog",
+] as const;
+export type WorkStatus = (typeof WORK_STATUSES)[number];
+
+export interface DesignMedia {
+  id: string;
+  name: string;
+  mimeType: string;
+  kind: "image" | "pdf";
+  size: number;
+  dataUrl?: string;
+  createdAt: string;
+}
+
+export interface WorkTask {
+  id: string;
+  code: string;
+  title: string;
+  status: WorkStatus;
+  designType: string;
+  artworkCount: number;
+  company: string;
+  dueDate: string;
+  completedDate: string;
+  notes: string;
+  media: DesignMedia[];
+}
+
 export interface Project {
   id: string;
   code: string;
@@ -171,6 +215,8 @@ export interface Project {
   due: string;
   delivered: string;
   quote: number;
+  artworkCount?: number;
+  media?: DesignMedia[];
 }
 export interface Item {
   id: string;
@@ -288,6 +334,7 @@ export interface DB {
   payments: Payment[];
   expenses: Expense[];
   personalIncome: PersonalIncome[];
+  workTasks: WorkTask[];
   goals: Goal[];
   settings: Settings;
   categoryLimits?: Record<string, number>;
@@ -387,6 +434,7 @@ function seed(): DB {
     payments: rothvanPayments.map((p) => ({ ...p })),
     expenses: buildSampleExpenses(m),
     personalIncome: [],
+    workTasks: [],
     goals: rothvanGoals.map((g) => ({ ...g })),
     settings: { ...defaultSettings },
     categoryLimits: {},
@@ -416,6 +464,13 @@ function load() {
         ...p,
         personalIncome: Array.isArray(p.personalIncome)
           ? (p.personalIncome as PersonalIncome[])
+          : [],
+        workTasks: Array.isArray(p.workTasks)
+          ? (p.workTasks as WorkTask[]).map((t) => ({
+              ...t,
+              media: Array.isArray(t.media) ? t.media : [],
+              artworkCount: Math.max(1, Number(t.artworkCount) || 1),
+            }))
           : [],
         services: rawServices.map((s) => ({
           ...s,
@@ -451,7 +506,7 @@ export function setDB(fn: (d: DB) => DB) {
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
   } catch {
-    alert("Storage is full. Remove some images to keep saving.");
+    console.warn("Local storage capacity reached.");
   }
   listeners.forEach((l) => l());
 }
@@ -1194,6 +1249,407 @@ export function cashFlowSeries(db: DB, range: CashRange): CashFlowPoint[] {
       outCount: studioAgg?.count ?? 0,
     };
   });
+}
+
+export interface CombinedCashPoint {
+  m: string;
+  label: string;
+  fullDate: string;
+  studioIn: number;
+  personalIn: number;
+  totalIn: number;
+  studioOut: number;
+  personalOut: number;
+  totalOut: number;
+  studioNet: number;
+  personalNet: number;
+  combinedNet: number;
+  count: number;
+}
+
+export function combinedCashFlowSeries(
+  db: DB,
+  range: CashRange,
+): CombinedCashPoint[] {
+  const r = db.settings.khrRate;
+  const invIds = new Set(db.invoices.filter(isInvoice).map((i) => i.id));
+  const studioInMap = new Map<string, { usd: number; count: number }>();
+  const personalInMap = new Map<string, { usd: number; count: number }>();
+  const studioOutMap = new Map<string, { usd: number; count: number }>();
+  const personalOutMap = new Map<string, { usd: number; count: number }>();
+  let earliest = today().slice(0, 7);
+
+  for (const p of db.payments) {
+    if (!invIds.has(p.invoiceId) || !/^\d{4}-\d{2}/.test(p.date)) continue;
+    const ym = p.date.slice(0, 7);
+    if (ym < earliest) earliest = ym;
+    const prev = studioInMap.get(ym) ?? { usd: 0, count: 0 };
+    prev.usd += toUSD(p.amount, p.currency, r);
+    prev.count += 1;
+    studioInMap.set(ym, prev);
+  }
+
+  for (const inc of db.personalIncome ?? []) {
+    if (!/^\d{4}-\d{2}/.test(inc.date)) continue;
+    const ym = inc.date.slice(0, 7);
+    if (ym < earliest) earliest = ym;
+    const prev = personalInMap.get(ym) ?? { usd: 0, count: 0 };
+    prev.usd += toUSD(inc.amount, inc.currency, r);
+    prev.count += 1;
+    personalInMap.set(ym, prev);
+  }
+
+  for (const e of db.expenses) {
+    if (!/^\d{4}-\d{2}/.test(e.date)) continue;
+    const ym = e.date.slice(0, 7);
+    if (ym < earliest) earliest = ym;
+    const usd = toUSD(e.amount, e.currency, r);
+    const map = expenseAccount(e) === "Studio" ? studioOutMap : personalOutMap;
+    const prev = map.get(ym) ?? { usd: 0, count: 0 };
+    prev.usd += usd;
+    prev.count += 1;
+    map.set(ym, prev);
+  }
+
+  let months: string[];
+  if (range === "all") {
+    const last = today().slice(0, 7);
+    const [fy, fm] = earliest.split("-").map(Number);
+    const [ly, lm] = last.split("-").map(Number);
+    months = [];
+    if (fy && fm && ly && lm) {
+      let y = fy;
+      let m = fm;
+      while (y < ly || (y === ly && m <= lm)) {
+        months.push(`${y}-${String(m).padStart(2, "0")}`);
+        m += 1;
+        if (m > 12) {
+          m = 1;
+          y += 1;
+        }
+      }
+    }
+  } else {
+    months = trailingMonths(range === "1m" ? 1 : range === "6m" ? 6 : 12);
+  }
+
+  const showYear = range === "all";
+  return months.map((m) => {
+    const sIn = studioInMap.get(m);
+    const pIn = personalInMap.get(m);
+    const sOut = studioOutMap.get(m);
+    const pOut = personalOutMap.get(m);
+    const studioIn = sIn?.usd ?? 0;
+    const personalIn = pIn?.usd ?? 0;
+    const studioOut = sOut?.usd ?? 0;
+    const personalOut = pOut?.usd ?? 0;
+    const totalIn = studioIn + personalIn;
+    const totalOut = studioOut + personalOut;
+    const dt = new Date(m + "-01T00:00:00Z");
+    return {
+      m,
+      label: dt.toLocaleDateString("en-US", {
+        month: "short",
+        ...(showYear ? { year: "2-digit" } : {}),
+        timeZone: "UTC",
+      }),
+      fullDate: dt.toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      }),
+      studioIn,
+      personalIn,
+      totalIn,
+      studioOut,
+      personalOut,
+      totalOut,
+      studioNet: studioIn - studioOut,
+      personalNet: personalIn - personalOut,
+      combinedNet: totalIn - totalOut,
+      count:
+        (sIn?.count ?? 0) +
+        (pIn?.count ?? 0) +
+        (sOut?.count ?? 0) +
+        (pOut?.count ?? 0),
+    };
+  });
+}
+
+export function workspaceBalances(db: DB, period = today().slice(0, 7)) {
+  const r = db.settings.khrRate;
+  const invIds = new Set(db.invoices.filter(isInvoice).map((i) => i.id));
+  let studioInAll = 0;
+  let studioInMonth = 0;
+  for (const p of db.payments) {
+    if (!invIds.has(p.invoiceId)) continue;
+    const usd = toUSD(p.amount, p.currency, r);
+    studioInAll += usd;
+    if (period && p.date.startsWith(period)) studioInMonth += usd;
+  }
+
+  let personalInAll = 0;
+  let personalInMonth = 0;
+  for (const inc of db.personalIncome ?? []) {
+    const usd = toUSD(inc.amount, inc.currency, r);
+    personalInAll += usd;
+    if (period && inc.date.startsWith(period)) personalInMonth += usd;
+  }
+
+  let studioOutAll = 0;
+  let studioOutMonth = 0;
+  let personalOutAll = 0;
+  let personalOutMonth = 0;
+  for (const e of db.expenses) {
+    const usd = toUSD(e.amount, e.currency, r);
+    if (expenseAccount(e) === "Studio") {
+      studioOutAll += usd;
+      if (period && e.date.startsWith(period)) studioOutMonth += usd;
+    } else {
+      personalOutAll += usd;
+      if (period && e.date.startsWith(period)) personalOutMonth += usd;
+    }
+  }
+
+  let openAR = 0;
+  for (const inv of db.invoices) {
+    if (!isInvoice(inv)) continue;
+    const v = invoiceView(inv, db);
+    if (v.status !== "Draft") openAR += v.balanceUSD;
+  }
+
+  let personalGoalsSaved = 0;
+  for (const g of db.goals) {
+    if (goalAccount(g) === "Personal") personalGoalsSaved += g.current;
+  }
+
+  const studioBalance = studioInAll - studioOutAll;
+  const personalBalance = personalInAll - personalOutAll;
+
+  return {
+    studioBalance,
+    studioInAll,
+    studioOutAll,
+    studioInMonth,
+    studioOutMonth,
+    studioMonthNet: studioInMonth - studioOutMonth,
+    openAR,
+    personalBalance,
+    personalInAll,
+    personalOutAll,
+    personalInMonth,
+    personalOutMonth,
+    personalMonthNet: personalInMonth - personalOutMonth,
+    personalGoalsSaved,
+    combinedInAll: studioInAll + personalInAll,
+    combinedOutAll: studioOutAll + personalOutAll,
+    combinedBalance: studioBalance + personalBalance,
+    combinedMonthNet:
+      studioInMonth + personalInMonth - (studioOutMonth + personalOutMonth),
+  };
+}
+
+export function inferStudioDesignType(
+  project: Project,
+  service?: Service,
+): string {
+  const txt =
+    `${project.name} ${service?.name ?? ""} ${(service?.tags ?? []).join(" ")}`.toLowerCase();
+  const pillar = normalizeServicePillar(service?.pillar ?? "");
+  if (/\bui\b|ux|web|landing|homepage|app|figma/.test(txt)) {
+    return "UI & Web";
+  }
+  if (/deck|presentation|pitch|slide|profile/.test(txt)) {
+    return "Presentation & Deck";
+  }
+  if (/social|campaign|post|poster|banner|promo|ad\b/.test(txt)) {
+    return "Social & Campaign";
+  }
+  if (
+    /print|brochure|flyer|folder|letterhead|card|catalog|leaflet|menu/.test(txt)
+  ) {
+    return "Print & Collateral";
+  }
+  if (/pack|box|label|bottle|pouch|dieline|bag/.test(txt)) {
+    return "Marketing & Packaging";
+  }
+  if (pillar === "Branding Design") return "Branding & Identity";
+  if (pillar === "Spatial Design") return "Spatial & Signage";
+  if (pillar === "Marketing & Packaging") return "Marketing & Packaging";
+  if (pillar === "Creative & Digital") return "Creative & Digital";
+  return "Other";
+}
+
+export interface ShowcaseWorkItem {
+  id: string;
+  source: "work" | "studio";
+  code: string;
+  title: string;
+  subtitle: string;
+  designType: string;
+  status: string;
+  completed: boolean;
+  date: string;
+  artworkCount: number;
+  media: DesignMedia[];
+  notes: string;
+}
+
+export function designOutputSummary(db: DB) {
+  const svcMap = new Map(db.services.map((s) => [s.id, s]));
+  const clientMap = new Map(db.clients.map((c) => [c.id, c]));
+  const items: ShowcaseWorkItem[] = [];
+
+  for (const t of db.workTasks ?? []) {
+    items.push({
+      id: t.id,
+      source: "work",
+      code: t.code,
+      title: t.title || "Untitled task",
+      subtitle: t.company || "Full-time design",
+      designType: t.designType || "Other",
+      status: t.status,
+      completed: t.status === "Completed",
+      date: t.completedDate || t.dueDate || "",
+      artworkCount: Math.max(1, Number(t.artworkCount) || 1),
+      media: Array.isArray(t.media) ? t.media : [],
+      notes: t.notes || "",
+    });
+  }
+
+  for (const p of db.projects) {
+    if (p.status === "Lost") continue;
+    const svc = p.serviceId ? svcMap.get(p.serviceId) : undefined;
+    const client = p.clientId ? clientMap.get(p.clientId) : undefined;
+    const completed = p.status === "Delivered" || p.status === "Closed";
+    items.push({
+      id: p.id,
+      source: "studio",
+      code: p.code,
+      title: p.name || p.code,
+      subtitle: client?.name || "Freelance studio client",
+      designType: inferStudioDesignType(p, svc),
+      status: p.status,
+      completed,
+      date: p.delivered || p.due || p.start || "",
+      artworkCount: Math.max(1, Number(p.artworkCount) || 1),
+      media: Array.isArray(p.media) ? p.media : [],
+      notes: svc?.name ?? "",
+    });
+  }
+
+  const byTypeMap = new Map<
+    string,
+    {
+      designType: string;
+      workProjects: number;
+      studioProjects: number;
+      totalProjects: number;
+      completedProjects: number;
+      artworkCount: number;
+    }
+  >();
+
+  let completedTotal = 0;
+  let activeTotal = 0;
+  let totalArtworks = 0;
+  let mediaCount = 0;
+  let workCompleted = 0;
+  let workActive = 0;
+  let studioCompleted = 0;
+  let studioActive = 0;
+
+  for (const it of items) {
+    totalArtworks += it.artworkCount;
+    mediaCount += it.media.length;
+    if (it.completed) {
+      completedTotal += 1;
+      if (it.source === "work") workCompleted += 1;
+      else studioCompleted += 1;
+    } else if (it.status !== "Backlog" && it.status !== "On hold") {
+      activeTotal += 1;
+      if (it.source === "work") workActive += 1;
+      else studioActive += 1;
+    }
+
+    const row = byTypeMap.get(it.designType) ?? {
+      designType: it.designType,
+      workProjects: 0,
+      studioProjects: 0,
+      totalProjects: 0,
+      completedProjects: 0,
+      artworkCount: 0,
+    };
+    if (it.source === "work") row.workProjects += 1;
+    else row.studioProjects += 1;
+    row.totalProjects += 1;
+    if (it.completed) row.completedProjects += 1;
+    row.artworkCount += it.artworkCount;
+    byTypeMap.set(it.designType, row);
+  }
+
+  const months = trailingMonths(12);
+  const monthMap = new Map<
+    string,
+    { work: number; studio: number; artworks: number }
+  >();
+  for (const m of months) {
+    monthMap.set(m, { work: 0, studio: 0, artworks: 0 });
+  }
+  for (const it of items) {
+    if (!it.completed || !it.date) continue;
+    const ym = it.date.slice(0, 7);
+    const bucket = monthMap.get(ym);
+    if (!bucket) continue;
+    if (it.source === "work") bucket.work += 1;
+    else bucket.studio += 1;
+    bucket.artworks += it.artworkCount;
+  }
+
+  const monthlyTrend = months.map((m) => {
+    const b = monthMap.get(m)!;
+    const dt = new Date(m + "-01T00:00:00Z");
+    return {
+      m,
+      label: dt.toLocaleDateString("en-US", {
+        month: "short",
+        timeZone: "UTC",
+      }),
+      fullDate: dt.toLocaleDateString("en-US", {
+        month: "long",
+        year: "numeric",
+        timeZone: "UTC",
+      }),
+      work: b.work,
+      studio: b.studio,
+      total: b.work + b.studio,
+      artworks: b.artworks,
+    };
+  });
+
+  const byType = Array.from(byTypeMap.values()).sort(
+    (a, b) =>
+      b.totalProjects - a.totalProjects || b.artworkCount - a.artworkCount,
+  );
+
+  const sortedItems = [...items].sort((a, b) =>
+    (b.date || "").localeCompare(a.date || ""),
+  );
+
+  return {
+    items: sortedItems,
+    completedTotal,
+    activeTotal,
+    totalProjects: items.length,
+    totalArtworks,
+    mediaCount,
+    workCompleted,
+    workActive,
+    studioCompleted,
+    studioActive,
+    byType,
+    monthlyTrend,
+  };
 }
 export function serviceItem(
   service: Service,

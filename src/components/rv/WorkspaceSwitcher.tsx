@@ -1,31 +1,31 @@
 import { motion } from "motion/react";
-import { Briefcase, PiggyBank } from "lucide-react";
+import { Briefcase, Layers3, PiggyBank } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type WorkspaceMode = "studio" | "personal";
+export type WorkspaceMode = "studio" | "work" | "personal";
 
 const WORKSPACES: {
   id: WorkspaceMode;
   label: string;
-  shortLabel: string;
   subtitle: string;
-  badge: string;
   icon: typeof Briefcase;
 }[] = [
   {
     id: "studio",
-    label: "RothVan Studio",
-    shortLabel: "Studio",
-    subtitle: "Clients & design work",
-    badge: "RV",
+    label: "Studio",
+    subtitle: "Freelance clients, projects & invoices",
     icon: Briefcase,
+  },
+  {
+    id: "work",
+    label: "Work",
+    subtitle: "Full-time design tasks, mockups & combined output",
+    icon: Layers3,
   },
   {
     id: "personal",
     label: "Personal",
-    shortLabel: "Personal",
-    subtitle: "Income & spending",
-    badge: "RN",
+    subtitle: "Personal income, daily spending & savings",
     icon: PiggyBank,
   },
 ];
@@ -81,9 +81,7 @@ export function WorkspaceSwitcher({
               />
             )}
             <Icon className="relative z-10 h-3.5 w-3.5 shrink-0" />
-            <span className="relative z-10 whitespace-nowrap">
-              {compact ? ws.shortLabel : ws.label}
-            </span>
+            <span className="relative z-10 whitespace-nowrap">{ws.label}</span>
           </button>
         );
       })}

@@ -110,14 +110,14 @@ export function SparklineWithDates({
               if (!p) return null;
               return (
                 <div className="rounded-xl border border-border bg-popover/95 px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-md">
-                  <p className="font-mono text-[0.68rem] text-muted-foreground">
+                  <p className="font-num text-[0.68rem] text-muted-foreground">
                     {p.fullDate || p.label}
                   </p>
-                  <p className="mt-0.5 font-mono font-semibold tabular-nums text-primary">
+                  <p className="font-num mt-0.5 font-semibold text-primary">
                     {valueLabel}: {money(p.v)}
                   </p>
                   {(p.inn !== undefined || p.out !== undefined) && (
-                    <p className="mt-0.5 font-mono text-[0.68rem] tabular-nums text-muted-foreground">
+                    <p className="font-num mt-0.5 text-[0.68rem] text-muted-foreground">
                       {p.inn !== undefined ? `In ${compactMoney(p.inn)}` : ""}
                       {p.inn !== undefined && p.out !== undefined ? " · " : ""}
                       {p.out !== undefined ? `Out ${compactMoney(p.out)}` : ""}
@@ -173,7 +173,7 @@ export function TrendChartCanvas({
   secondaryKey,
   secondaryName,
   gradientId = "rv-cf",
-  xInterval = 0,
+  xInterval,
   height = 224,
 }: {
   mode: ChartMode;
@@ -187,6 +187,16 @@ export function TrendChartCanvas({
   height?: number;
 }) {
   const chartData = useMemo(() => [...data], [data]);
+  const resolvedInterval: number | "preserveStartEnd" =
+    xInterval !== undefined
+      ? typeof xInterval === "number" &&
+        xInterval === 0 &&
+        chartData.length > 12
+        ? "preserveStartEnd"
+        : xInterval
+      : chartData.length > 12
+        ? "preserveStartEnd"
+        : 0;
   const renderTooltip = () => (
     <Tooltip
       content={({ active, payload }) => {
@@ -207,7 +217,7 @@ export function TrendChartCanvas({
                 {row.fullDate || row.label}
               </span>
               {txCount !== undefined && (
-                <span className="font-mono text-[0.65rem] tabular-nums text-muted-foreground">
+                <span className="font-num text-[0.68rem] text-muted-foreground">
                   {txCount} tx
                 </span>
               )}
@@ -218,7 +228,7 @@ export function TrendChartCanvas({
                   <span className="h-2 w-2 rounded-full bg-primary" />
                   {primaryName}
                 </span>
-                <span className="font-mono font-semibold tabular-nums text-primary">
+                <span className="font-num font-semibold text-primary">
                   {money(primaryVal)}
                 </span>
               </div>
@@ -227,7 +237,7 @@ export function TrendChartCanvas({
                   <span className="h-2 w-2 rounded-full bg-muted-foreground" />
                   {secondaryName}
                 </span>
-                <span className="font-mono tabular-nums text-foreground">
+                <span className="font-num text-foreground">
                   {money(secondaryVal)}
                 </span>
               </div>
@@ -244,7 +254,7 @@ export function TrendChartCanvas({
         {mode === "bar" ? (
           <BarChart
             data={chartData}
-            margin={{ left: -16, right: 6, top: 8, bottom: 0 }}
+            margin={{ left: 2, right: 12, top: 8, bottom: 2 }}
           >
             <CartesianGrid
               stroke="var(--border)"
@@ -256,9 +266,12 @@ export function TrendChartCanvas({
               tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
-              interval={xInterval}
+              tickMargin={6}
+              minTickGap={38}
+              interval={resolvedInterval}
             />
             <YAxis
+              width={48}
               tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
@@ -284,7 +297,7 @@ export function TrendChartCanvas({
         ) : mode === "line" ? (
           <LineChart
             data={chartData}
-            margin={{ left: -16, right: 6, top: 8, bottom: 0 }}
+            margin={{ left: 2, right: 12, top: 8, bottom: 2 }}
           >
             <CartesianGrid
               stroke="var(--border)"
@@ -296,9 +309,12 @@ export function TrendChartCanvas({
               tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
-              interval={xInterval}
+              tickMargin={6}
+              minTickGap={38}
+              interval={resolvedInterval}
             />
             <YAxis
+              width={48}
               tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
@@ -311,7 +327,11 @@ export function TrendChartCanvas({
               type="monotone"
               stroke="var(--primary)"
               strokeWidth={2.5}
-              dot={{ r: 2.5, fill: "var(--primary)", strokeWidth: 0 }}
+              dot={
+                chartData.length <= 24
+                  ? { r: 2.5, fill: "var(--primary)", strokeWidth: 0 }
+                  : false
+              }
               activeDot={{
                 r: 5,
                 fill: "var(--primary)",
@@ -335,7 +355,7 @@ export function TrendChartCanvas({
         ) : (
           <AreaChart
             data={chartData}
-            margin={{ left: -16, right: 6, top: 8, bottom: 0 }}
+            margin={{ left: 2, right: 12, top: 8, bottom: 2 }}
           >
             <defs>
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -357,9 +377,12 @@ export function TrendChartCanvas({
               tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
-              interval={xInterval}
+              tickMargin={6}
+              minTickGap={38}
+              interval={resolvedInterval}
             />
             <YAxis
+              width={48}
               tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
@@ -497,7 +520,13 @@ export function BreakdownPieCard({
                 ? "Studio revenue by pillar"
                 : effectiveMode === "income"
                   ? `Personal income · ${scopeLabel}`
-                  : `${account === "Personal" ? "Personal spending" : "Studio expense"} breakdown · ${scopeLabel}`}
+                  : `${
+                      account === "Personal"
+                        ? "Personal spending"
+                        : account === "Combined"
+                          ? "Combined expense"
+                          : "Studio expense"
+                    } breakdown · ${scopeLabel}`}
             </h2>
           </div>
         </div>
@@ -696,7 +725,7 @@ export function PeriodBarPulseCard({
         <ResponsiveContainer width="100%" height={176}>
           <BarChart
             data={chartData}
-            margin={{ left: -20, right: 4, top: 8, bottom: 0 }}
+            margin={{ left: 2, right: 10, top: 8, bottom: 2 }}
           >
             <CartesianGrid
               stroke="var(--border)"
@@ -708,8 +737,11 @@ export function PeriodBarPulseCard({
               tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
               axisLine={false}
               tickLine={false}
+              minTickGap={28}
+              interval={chartData.length > 10 ? "preserveStartEnd" : 0}
             />
             <YAxis
+              width={46}
               tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
               axisLine={false}
               tickLine={false}
@@ -723,10 +755,10 @@ export function PeriodBarPulseCard({
                 const val = numField(row, valueKey);
                 return (
                   <div className="rounded-xl border border-border bg-popover/95 px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-md">
-                    <p className="font-mono text-[0.68rem] text-muted-foreground">
+                    <p className="font-num text-[0.68rem] text-muted-foreground">
                       {row.fullDate || row.label}
                     </p>
-                    <p className="mt-0.5 font-mono font-semibold tabular-nums text-primary">
+                    <p className="font-num mt-0.5 font-semibold text-primary">
                       {money(val)}
                     </p>
                     {row.count !== undefined && (
@@ -884,7 +916,7 @@ export function CardSpendingChartCard({
               <span className="font-medium text-foreground">
                 {row.fullDate}
               </span>
-              <span className="font-mono text-[0.65rem] tabular-nums text-muted-foreground">
+              <span className="font-num text-[0.68rem] text-muted-foreground">
                 {row.count} tx
               </span>
             </div>
@@ -895,7 +927,7 @@ export function CardSpendingChartCard({
                     <span className="h-2 w-2 rounded-full bg-primary" />
                     Debit ({row.debitCount})
                   </span>
-                  <span className="font-mono font-semibold tabular-nums text-primary">
+                  <span className="font-num font-semibold text-primary">
                     {money(row.debit)}
                   </span>
                 </div>
@@ -909,7 +941,7 @@ export function CardSpendingChartCard({
                     />
                     Credit ({row.creditCount})
                   </span>
-                  <span className="font-mono font-semibold tabular-nums text-foreground">
+                  <span className="font-num font-semibold text-foreground">
                     {money(row.credit)}
                   </span>
                 </div>
@@ -917,14 +949,14 @@ export function CardSpendingChartCard({
               {row.other > 0 && cardFilter === "both" && (
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-muted-foreground">Other / Cash</span>
-                  <span className="font-mono tabular-nums text-muted-foreground">
+                  <span className="font-num text-muted-foreground">
                     {money(row.other)}
                   </span>
                 </div>
               )}
               <div className="flex items-center justify-between gap-4 border-t border-border/60 pt-1">
                 <span className="font-medium text-muted-foreground">Total</span>
-                <span className="font-mono font-bold tabular-nums text-foreground">
+                <span className="font-num font-bold text-foreground">
                   {money(
                     cardFilter === "debit"
                       ? row.debit
@@ -1007,7 +1039,7 @@ export function CardSpendingChartCard({
                 <Landmark className="h-3.5 w-3.5 text-primary" />
                 Debit card
               </span>
-              <span className="font-mono text-[0.68rem] font-semibold tabular-nums text-primary">
+              <span className="font-num text-[0.68rem] font-semibold text-primary">
                 {debitPct}%
               </span>
             </div>
@@ -1072,7 +1104,7 @@ export function CardSpendingChartCard({
             >
               {compactMoney(selectedTotal)}
             </p>
-            <p className="mt-0.5 truncate font-mono text-[0.67rem] tabular-nums text-muted-foreground">
+            <p className="font-num mt-0.5 truncate text-[0.68rem] text-muted-foreground">
               Avg {compactMoney(periodAvg)} /{" "}
               {range === "1m" ? "active day" : "mo"}
               {insights.peak && insights.peak.total > 0
@@ -1116,7 +1148,7 @@ export function CardSpendingChartCard({
           {mode === "bar" ? (
             <BarChart
               data={chartData}
-              margin={{ left: -18, right: 6, top: 8, bottom: 0 }}
+              margin={{ left: 2, right: 10, top: 8, bottom: 2 }}
             >
               <CartesianGrid
                 stroke="var(--border)"
@@ -1128,9 +1160,11 @@ export function CardSpendingChartCard({
                 tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
-                interval={xInterval}
+                minTickGap={28}
+                interval={range === "1m" ? "preserveStartEnd" : xInterval}
               />
               <YAxis
+                width={46}
                 tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
@@ -1159,7 +1193,7 @@ export function CardSpendingChartCard({
           ) : mode === "line" ? (
             <LineChart
               data={chartData}
-              margin={{ left: -18, right: 6, top: 8, bottom: 0 }}
+              margin={{ left: 2, right: 10, top: 8, bottom: 2 }}
             >
               <CartesianGrid
                 stroke="var(--border)"
@@ -1171,9 +1205,11 @@ export function CardSpendingChartCard({
                 tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
-                interval={xInterval}
+                minTickGap={28}
+                interval={range === "1m" ? "preserveStartEnd" : xInterval}
               />
               <YAxis
+                width={46}
                 tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
@@ -1187,7 +1223,11 @@ export function CardSpendingChartCard({
                   type="monotone"
                   stroke="var(--primary)"
                   strokeWidth={2.25}
-                  dot={{ r: 2, fill: "var(--primary)", strokeWidth: 0 }}
+                  dot={
+                    range === "1m"
+                      ? false
+                      : { r: 2, fill: "var(--primary)", strokeWidth: 0 }
+                  }
                   activeDot={{
                     r: 4.5,
                     fill: "var(--primary)",
@@ -1203,7 +1243,11 @@ export function CardSpendingChartCard({
                   type="monotone"
                   stroke="var(--chart-3)"
                   strokeWidth={2}
-                  dot={{ r: 2, fill: "var(--chart-3)", strokeWidth: 0 }}
+                  dot={
+                    range === "1m"
+                      ? false
+                      : { r: 2, fill: "var(--chart-3)", strokeWidth: 0 }
+                  }
                   activeDot={{
                     r: 4,
                     fill: "var(--chart-3)",
@@ -1216,7 +1260,7 @@ export function CardSpendingChartCard({
           ) : (
             <AreaChart
               data={chartData}
-              margin={{ left: -18, right: 6, top: 8, bottom: 0 }}
+              margin={{ left: 2, right: 10, top: 8, bottom: 2 }}
             >
               <defs>
                 <linearGradient
@@ -1258,9 +1302,11 @@ export function CardSpendingChartCard({
                 tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
-                interval={xInterval}
+                minTickGap={28}
+                interval={range === "1m" ? "preserveStartEnd" : xInterval}
               />
               <YAxis
+                width={46}
                 tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}

@@ -418,7 +418,7 @@ export function BudgetShelf({
               })()}
               <span className="truncate">{j.category}</span>
             </span>
-            <span className="font-mono text-[0.68rem] tabular-nums text-muted-foreground">
+            <span className="font-num text-[0.68rem] tabular-nums text-muted-foreground">
               {compactMoney(j.totalUSD)}
             </span>
             {(j.isOver || j.isFast) && (
@@ -483,7 +483,7 @@ export function BudgetShelf({
                 })()}
                 <span className="truncate">{j.category}</span>
               </span>
-              <span className="mt-0.5 font-mono text-[0.68rem] tabular-nums text-muted-foreground">
+              <span className="mt-0.5 font-num text-[0.68rem] tabular-nums text-muted-foreground">
                 {compactMoney(j.totalUSD)} of {compactMoney(j.limit)}
               </span>
               {j.isOver ? (
@@ -549,11 +549,11 @@ export function BudgetShelf({
                       <p className="truncate text-sm font-medium">
                         {j.category}
                       </p>
-                      <p className="font-mono text-[0.7rem] text-muted-foreground">
+                      <p className="font-num text-[0.7rem] text-muted-foreground">
                         {money(j.totalUSD)} / {money(j.limit)}
                       </p>
                     </div>
-                    <span className="shrink-0 rounded-full border border-destructive/30 bg-destructive/15 px-2.5 py-0.5 font-mono text-xs font-semibold text-destructive">
+                    <span className="shrink-0 rounded-full border border-destructive/30 bg-destructive/15 px-2.5 py-0.5 font-num text-xs font-semibold text-destructive">
                       {j.pct}%
                     </span>
                   </button>
@@ -714,7 +714,7 @@ export function CategoryInspectorDrawer({
               size="lg"
               selected
             />
-            <p className="mt-3 font-mono text-xs text-muted-foreground">
+            <p className="mt-3 font-num text-xs text-muted-foreground">
               <strong className="text-foreground">{money(spentCur)}</strong> of{" "}
               {money(limit)}
             </p>
@@ -736,14 +736,14 @@ export function CategoryInspectorDrawer({
               <span className="text-muted-foreground">Spent in {shortCur}</span>
               <AnimatedNumber
                 value={spentCur}
-                className="font-mono font-semibold"
+                className="font-num font-semibold"
               />
             </div>
             <div className="flex items-center justify-between py-2.5">
               <span className="text-muted-foreground">
                 Spent in {shortPrev}
               </span>
-              <span className="font-mono text-muted-foreground">
+              <span className="font-num text-muted-foreground">
                 {money(spentPrev)}
               </span>
             </div>
@@ -764,7 +764,7 @@ export function CategoryInspectorDrawer({
                 onKeyDown={(e) => {
                   if (e.key === "Enter") saveLimit();
                 }}
-                className="field font-mono"
+                className="field font-num"
               />
               <button
                 type="button"
@@ -827,7 +827,7 @@ export function CategoryInspectorDrawer({
                             {e.vendor ? ` · ${e.vendor}` : ""}
                           </p>
                         </div>
-                        <span className="shrink-0 font-mono text-xs font-semibold text-destructive">
+                        <span className="shrink-0 font-num text-xs font-semibold text-destructive">
                           -{money(usd)}
                         </span>
                       </button>
@@ -904,14 +904,14 @@ export function GoalRingCard({
             {goal.name || "Untitled goal"}
           </p>
           {accountLabel && (
-            <span className="font-mono text-[0.65rem] text-muted-foreground">
+            <span className="font-num text-[0.65rem] text-muted-foreground">
               {accountLabel}
             </span>
           )}
         </button>
         <span
           className={cn(
-            "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[0.68rem] font-semibold",
+            "shrink-0 rounded-full border px-2 py-0.5 font-num text-[0.68rem] font-semibold",
             done
               ? "border-positive/40 bg-positive/15 text-positive"
               : "border-border bg-background/60 text-muted-foreground",
@@ -984,7 +984,7 @@ export function GoalRingCard({
           ))}
         </div>
       ) : (
-        <p className="text-center font-mono text-[0.65rem] text-muted-foreground">
+        <p className="text-center font-num text-[0.65rem] text-muted-foreground">
           {goal.kind === "cash"
             ? "Auto-synced from paid invoices"
             : "Auto-synced from active clients"}

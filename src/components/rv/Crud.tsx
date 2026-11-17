@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
+import { toast } from "sonner";
 import { Btn, F, Modal, Sel, SlideDrawer } from "@/components/rv/ui";
 import { fileToDataUrl } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -40,7 +41,7 @@ export function EditModal<T extends { id: string }>({
   onDelete?: ((v: T) => void) | undefined;
   onClose: () => void;
   onFieldChange?: (next: T, key: string) => T;
-  footerExtra?: (v: T) => ReactNode;
+  footerExtra?: (v: T, patch: (p: Partial<T>) => void) => ReactNode;
 }) {
   const [v, setV] = useState<T | null>(item);
   useEffect(() => {
@@ -94,7 +95,7 @@ export function EditModal<T extends { id: string }>({
                       try {
                         set(f.k, await fileToDataUrl(file, 400));
                       } catch {
-                        alert("Please choose a valid image.");
+                        toast.error("Please choose a valid image.");
                       }
                     }
                   }}
@@ -195,7 +196,13 @@ export function EditModal<T extends { id: string }>({
           </F>
         );
       })}
-      {footerExtra ? <div className="col-span-2">{footerExtra(v)}</div> : null}
+      {footerExtra ? (
+        <div className="col-span-2">
+          {footerExtra(v, (patch) =>
+            setV((cur) => (cur ? { ...cur, ...patch } : cur)),
+          )}
+        </div>
+      ) : null}
       <div className="col-span-2 mt-2 flex justify-between gap-2 border-t border-border/70 pt-3">
         {onDelete ? (
           <Btn

@@ -59,8 +59,10 @@
   --color-ring-offset-background: var(--background);
   --color-positive: var(--positive);
   --font-display: "Merriweather", Georgia, serif;
-  --font-sans: "Inter", "Noto Sans Khmer", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --font-sans:
+    "Plus Jakarta Sans", "Inter", "Noto Sans Khmer", system-ui, sans-serif;
+  --font-mono:
+    "Inter", "Plus Jakarta Sans", "Noto Sans Khmer", system-ui, sans-serif;
   --font-khmer: "Noto Sans Khmer", "Inter", sans-serif;
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
@@ -265,12 +267,11 @@
   box-shadow: var(--shadow-glass);
 }
 @utility font-num {
-  font-family: var(--font-sans);
+  font-family:
+    "Inter", "Plus Jakarta Sans", "Noto Sans Khmer", system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
-  font-feature-settings:
-    "tnum" 1,
-    "cv05" 1;
-  letter-spacing: -0.02em;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.015em;
 }
 @utility field {
   width: 100%;
@@ -289,8 +290,9 @@
   }
 }
 @utility label-mono {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 0.68rem;
+  font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted-foreground);
@@ -510,8 +512,9 @@
   color: var(--muted-foreground);
 }
 .project-calendar .fc-col-header-cell-cushion {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   font-size: 0.7rem;
+  font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted-foreground);

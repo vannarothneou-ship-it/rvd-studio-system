@@ -340,7 +340,7 @@ function Editor() {
         >
           <span className="font-medium text-foreground">{title}</span>
           {!isOpen && summary && (
-            <span className="truncate font-mono text-xs text-muted-foreground">
+            <span className="font-num truncate text-xs text-muted-foreground">
               · {summary}
             </span>
           )}
@@ -448,7 +448,7 @@ function Editor() {
             </F>
             <F label="Document no.">
               <input
-                className="field font-mono"
+                className="field font-num"
                 value={draft.no}
                 onChange={(e) => up({ no: e.target.value })}
               />
@@ -920,7 +920,7 @@ function Editor() {
                         }
                       />
                     </div>
-                    <p className="text-right font-mono text-sm">
+                    <p className="font-num text-right text-sm">
                       {money(it.qty * it.price, draft.currency)}
                     </p>
                   </div>
@@ -1056,13 +1056,13 @@ function Editor() {
             <div className="mt-4 space-y-1 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Subtotal</span>
-                <span className="font-mono">
+                <span className="font-num">
                   {money(v.subtotal, draft.currency)}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Discount</span>
-                <span className="font-mono">
+                <span className="font-num">
                   −{money(v.discountAmt, draft.currency)}
                 </span>
               </div>
@@ -1129,7 +1129,7 @@ function Editor() {
                         {p.reference && `· ${p.reference}`}
                       </span>
                       <span className="flex items-center gap-2">
-                        <span className="font-mono text-positive">
+                        <span className="font-num text-positive">
                           +{money(p.amount, p.currency)}
                         </span>
                         <button
@@ -1304,9 +1304,7 @@ function Editor() {
                 to="/projects"
                 className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-1 hover:bg-accent"
               >
-                <span className="font-mono text-foreground">
-                  {project.code}
-                </span>
+                <span className="font-num text-foreground">{project.code}</span>
                 <span className="text-muted-foreground">{project.name}</span>
                 <Pill s={project.status} />
               </Link>
@@ -1324,7 +1322,7 @@ function Editor() {
                       key={d.id}
                       to="/invoices/$id"
                       params={{ id: d.id }}
-                      className="rounded-full border border-border px-2.5 py-0.5 font-mono text-[0.7rem] text-muted-foreground hover:border-primary hover:text-foreground"
+                      className="font-num rounded-full border border-border px-2.5 py-0.5 text-[0.7rem] text-muted-foreground hover:border-primary hover:text-foreground"
                     >
                       {documentKind(d)}: {d.no}
                     </Link>

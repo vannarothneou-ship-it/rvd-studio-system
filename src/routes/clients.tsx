@@ -232,7 +232,7 @@ function Page() {
                           <Pill s={c.status} />
                         </div>
                         <div className="min-w-0">
-                          <p className="font-mono text-xs text-muted-foreground">
+                          <p className="font-num text-xs text-muted-foreground">
                             {c.code}
                           </p>
                           <p className="truncate font-display text-lg font-bold">
@@ -253,23 +253,19 @@ function Page() {
                         <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                           <div>
                             <p className="label-mono">Projects</p>
-                            <p className="font-mono tabular-nums">
-                              {s.projects}
-                            </p>
+                            <p className="font-num">{s.projects}</p>
                           </div>
                           <div title={money(s.billed)}>
                             <p className="label-mono">Billed</p>
-                            <p className="font-mono tabular-nums">
-                              {compactMoney(s.billed)}
-                            </p>
+                            <p className="font-num">{compactMoney(s.billed)}</p>
                           </div>
                           <div title={money(s.owed)}>
                             <p className="label-mono">Owed</p>
                             <p
                               className={
                                 s.owed > 0
-                                  ? "font-mono tabular-nums text-destructive"
-                                  : "font-mono tabular-nums"
+                                  ? "font-num text-destructive"
+                                  : "font-num"
                               }
                             >
                               {compactMoney(s.owed)}
