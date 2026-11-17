@@ -26,12 +26,15 @@ import {
   normalizeServicePillar,
   parseTimelineDays,
   personalCategoryTotals,
+  personalIncomeSourceTotals,
+  personalIncomeTotal,
   personalSeries,
   recordPayment,
   revenueByPillar,
   saveDocument,
   serviceItem,
   setCategoryLimit,
+  setDB,
   type Invoice,
 } from "./store";
 
@@ -312,6 +315,8 @@ describe("agreement pagination and studio/personal finance", () => {
     expect(compactMoney(1410)).toBe("$1.4k");
     expect(compactMoney(13880.1)).toBe("$13.9k");
     expect(compactMoney(6000)).toBe("$6k");
+    expect(compactMoney(870.9)).toBe("$870.90");
+    expect(compactMoney(295)).toBe("$295");
     expect(compactMoney(-500)).toBe("−$500");
     expect(compactMoney(1250000)).toBe("$1.3M");
 
@@ -436,5 +441,54 @@ describe("bento dense packing and service tags", () => {
     const year = cardSpendSeries(db, "12m", "2026-11");
     expect(year.points).toHaveLength(12);
     expect(year.creditUSD).toBeGreaterThan(0);
+  });
+
+  it("tracks personal income separately from studio revenue and excludes personal expenses from studio cash flow counts", () => {
+    const base = getDB();
+    setDB((d) => ({
+      ...d,
+      personalIncome: [
+        {
+          id: "inc-1",
+          date: "2026-11-10",
+          source: "Salary",
+          accountMethod: "ABA Bank",
+          description: "November draw",
+          amount: 1200,
+          currency: "USD",
+        },
+        {
+          id: "inc-2",
+          date: "2026-10-15",
+          source: "Freelance",
+          accountMethod: "KHQR",
+          description: "Side workshop",
+          amount: 410000,
+          currency: "KHR",
+        },
+      ],
+    }));
+    const db = getDB();
+    expect(personalIncomeTotal(db, "2026-11")).toBeCloseTo(1200, 2);
+    expect(personalIncomeTotal(db, "2026-10")).toBeCloseTo(100, 2);
+
+    const sources6m = personalIncomeSourceTotals(db, "6m", "2026-11");
+    expect(sources6m.map((s) => s.source)).toEqual(["Salary", "Freelance"]);
+
+    const p6 = personalSeries(db, "6m", "2026-11");
+    expect(p6.every((pt) => pt.studioOut === 0)).toBe(true);
+    const novPt = p6.find((pt) => pt.key === "2026-11")!;
+    expect(novPt.personalIn).toBeCloseTo(1200, 2);
+    expect(novPt.personalOut).toBeCloseTo(770.59, 2);
+    expect(novPt.net).toBeCloseTo(1200 - 770.59, 2);
+
+    const studioSeries = cashFlowSeries(db, "6m");
+    const novStudio = studioSeries.find((pt) => pt.m === "2026-11")!;
+    const novStudioExpenses = db.expenses.filter(
+      (e) => expenseAccount(e) === "Studio" && e.date.startsWith("2026-11"),
+    );
+    expect(novStudio.outCount).toBe(novStudioExpenses.length);
+
+    setDB(() => base);
   });
 });

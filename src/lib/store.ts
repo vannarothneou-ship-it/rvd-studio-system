@@ -60,6 +60,23 @@ export const CARD_METHODS = [
   "Cash",
   "Other",
 ] as const;
+export const PERSONAL_INCOME_SOURCES = [
+  "Salary",
+  "Studio Draw",
+  "Freelance",
+  "Bonus",
+  "Investment",
+  "Gift & Refund",
+  "Other",
+] as const;
+export const PERSONAL_INCOME_METHODS = [
+  "Debit",
+  "ABA Bank",
+  "KHQR",
+  "Wing",
+  "Cash",
+  "Other",
+] as const;
 export const EXPENSE_CATEGORIES = [
   "Software and subscriptions",
   "Fonts and licenses",
@@ -225,6 +242,15 @@ export interface Expense {
   receipt: string;
   account?: Account;
 }
+export interface PersonalIncome {
+  id: string;
+  date: string;
+  source: string;
+  accountMethod: string;
+  description: string;
+  amount: number;
+  currency: Currency;
+}
 export interface Goal {
   id: string;
   name: string;
@@ -261,6 +287,7 @@ export interface DB {
   invoices: Invoice[];
   payments: Payment[];
   expenses: Expense[];
+  personalIncome: PersonalIncome[];
   goals: Goal[];
   settings: Settings;
   categoryLimits?: Record<string, number>;
@@ -359,6 +386,7 @@ function seed(): DB {
     })),
     payments: rothvanPayments.map((p) => ({ ...p })),
     expenses: buildSampleExpenses(m),
+    personalIncome: [],
     goals: rothvanGoals.map((g) => ({ ...g })),
     settings: { ...defaultSettings },
     categoryLimits: {},
@@ -386,6 +414,9 @@ function load() {
       state = {
         ...seeded,
         ...p,
+        personalIncome: Array.isArray(p.personalIncome)
+          ? (p.personalIncome as PersonalIncome[])
+          : [],
         services: rawServices.map((s) => ({
           ...s,
           pillar: normalizeServicePillar(s.pillar),
@@ -677,9 +708,41 @@ export interface PersonalSeriesPoint {
   key: string;
   label: string;
   fullDate: string;
+  personalIn: number;
   personalOut: number;
   studioOut: number;
+  net: number;
+  inCount: number;
   count: number;
+}
+
+export function personalIncomeTotal(db: DB, period: string) {
+  return (db.personalIncome ?? [])
+    .filter((i) => !period || i.date.startsWith(period))
+    .reduce((s, i) => s + toUSD(i.amount, i.currency, db.settings.khrRate), 0);
+}
+
+export function personalIncomeSourceTotals(
+  db: DB,
+  range: PersonalRange,
+  anchorMonth = today().slice(0, 7),
+) {
+  const monthsCount = range === "1m" ? 1 : range === "6m" ? 6 : 12;
+  const monthSet = new Set(trailingMonths(monthsCount, anchorMonth));
+  const map = new Map<
+    string,
+    { source: string; totalUSD: number; count: number }
+  >();
+  for (const inc of db.personalIncome ?? []) {
+    const ym = inc.date.slice(0, 7);
+    if (!monthSet.has(ym)) continue;
+    const key = inc.source || "Other";
+    const prev = map.get(key) ?? { source: key, totalUSD: 0, count: 0 };
+    prev.totalUSD += toUSD(inc.amount, inc.currency, db.settings.khrRate);
+    prev.count += 1;
+    map.set(key, prev);
+  }
+  return Array.from(map.values()).sort((a, b) => b.totalUSD - a.totalUSD);
 }
 
 export function personalSeries(
@@ -688,26 +751,39 @@ export function personalSeries(
   anchorMonth = today().slice(0, 7),
 ): PersonalSeriesPoint[] {
   const r = db.settings.khrRate;
+  const incomes = db.personalIncome ?? [];
   if (range === "1m") {
     const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
       ? anchorMonth
       : today().slice(0, 7);
     const [y, m] = ym.split("-").map(Number);
     const daysInMonth = y && m ? new Date(Date.UTC(y, m, 0)).getUTCDate() : 30;
+    const outByDay = new Map<string, { usd: number; count: number }>();
+    const inByDay = new Map<string, { usd: number; count: number }>();
+
+    for (const e of db.expenses) {
+      if (expenseAccount(e) !== "Personal" || !e.date.startsWith(ym)) continue;
+      const prev = outByDay.get(e.date) ?? { usd: 0, count: 0 };
+      prev.usd += toUSD(e.amount, e.currency, r);
+      prev.count += 1;
+      outByDay.set(e.date, prev);
+    }
+    for (const inc of incomes) {
+      if (!inc.date.startsWith(ym)) continue;
+      const prev = inByDay.get(inc.date) ?? { usd: 0, count: 0 };
+      prev.usd += toUSD(inc.amount, inc.currency, r);
+      prev.count += 1;
+      inByDay.set(inc.date, prev);
+    }
+
     const pts: PersonalSeriesPoint[] = [];
     for (let day = 1; day <= daysInMonth; day++) {
       const iso = `${ym}-${String(day).padStart(2, "0")}`;
       const dt = new Date(iso + "T00:00:00Z");
-      const personalItems = db.expenses.filter(
-        (e) => expenseAccount(e) === "Personal" && e.date === iso,
-      );
-      const personalOut = personalItems.reduce(
-        (s, e) => s + toUSD(e.amount, e.currency, r),
-        0,
-      );
-      const studioOut = db.expenses
-        .filter((e) => expenseAccount(e) === "Studio" && e.date === iso)
-        .reduce((s, e) => s + toUSD(e.amount, e.currency, r), 0);
+      const outAgg = outByDay.get(iso);
+      const inAgg = inByDay.get(iso);
+      const personalOut = outAgg?.usd ?? 0;
+      const personalIn = inAgg?.usd ?? 0;
       pts.push({
         key: iso,
         label: dt.toLocaleDateString("en-US", {
@@ -722,25 +798,45 @@ export function personalSeries(
           year: "numeric",
           timeZone: "UTC",
         }),
+        personalIn,
         personalOut,
-        studioOut,
-        count: personalItems.length,
+        studioOut: 0,
+        net: personalIn - personalOut,
+        inCount: inAgg?.count ?? 0,
+        count: outAgg?.count ?? 0,
       });
     }
     return pts;
   }
+
   const months = trailingMonths(range === "6m" ? 6 : 12, anchorMonth);
+  const monthSet = new Set(months);
+  const outByMonth = new Map<string, { usd: number; count: number }>();
+  const inByMonth = new Map<string, { usd: number; count: number }>();
+
+  for (const e of db.expenses) {
+    if (expenseAccount(e) !== "Personal") continue;
+    const ym = e.date.slice(0, 7);
+    if (!monthSet.has(ym)) continue;
+    const prev = outByMonth.get(ym) ?? { usd: 0, count: 0 };
+    prev.usd += toUSD(e.amount, e.currency, r);
+    prev.count += 1;
+    outByMonth.set(ym, prev);
+  }
+  for (const inc of incomes) {
+    const ym = inc.date.slice(0, 7);
+    if (!monthSet.has(ym)) continue;
+    const prev = inByMonth.get(ym) ?? { usd: 0, count: 0 };
+    prev.usd += toUSD(inc.amount, inc.currency, r);
+    prev.count += 1;
+    inByMonth.set(ym, prev);
+  }
+
   return months.map((m) => {
-    const personalItems = db.expenses.filter(
-      (e) => expenseAccount(e) === "Personal" && e.date.startsWith(m),
-    );
-    const personalOut = personalItems.reduce(
-      (s, e) => s + toUSD(e.amount, e.currency, r),
-      0,
-    );
-    const studioOut = db.expenses
-      .filter((e) => expenseAccount(e) === "Studio" && e.date.startsWith(m))
-      .reduce((s, e) => s + toUSD(e.amount, e.currency, r), 0);
+    const outAgg = outByMonth.get(m);
+    const inAgg = inByMonth.get(m);
+    const personalOut = outAgg?.usd ?? 0;
+    const personalIn = inAgg?.usd ?? 0;
     const dt = new Date(m + "-01T00:00:00Z");
     return {
       key: m,
@@ -753,9 +849,12 @@ export function personalSeries(
         year: "numeric",
         timeZone: "UTC",
       }),
+      personalIn,
       personalOut,
-      studioOut,
-      count: personalItems.length,
+      studioOut: 0,
+      net: personalIn - personalOut,
+      inCount: inAgg?.count ?? 0,
+      count: outAgg?.count ?? 0,
     };
   });
 }
@@ -828,10 +927,24 @@ export function cardSpendSeries(
   anchorMonth = today().slice(0, 7),
 ) {
   const r = db.settings.khrRate;
-  const personalExpenses = db.expenses.filter(
-    (e) => expenseAccount(e) === "Personal",
-  );
   let points: CardSpendPoint[];
+
+  type Bucket = {
+    debit: number;
+    credit: number;
+    other: number;
+    debitCount: number;
+    creditCount: number;
+    count: number;
+  };
+  const emptyBucket = (): Bucket => ({
+    debit: 0,
+    credit: 0,
+    other: 0,
+    debitCount: 0,
+    creditCount: 0,
+    count: 0,
+  });
 
   if (range === "1m") {
     const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
@@ -839,29 +952,34 @@ export function cardSpendSeries(
       : today().slice(0, 7);
     const [y, m] = ym.split("-").map(Number);
     const daysInMonth = y && m ? new Date(Date.UTC(y, m, 0)).getUTCDate() : 30;
+    const byDay = new Map<string, Bucket>();
+
+    for (const e of db.expenses) {
+      if (expenseAccount(e) !== "Personal" || !e.date.startsWith(ym)) continue;
+      const b = byDay.get(e.date) ?? emptyBucket();
+      const usd = toUSD(e.amount, e.currency, r);
+      const kind = cardKind(e.vendor);
+      if (kind === "Debit") {
+        b.debit += usd;
+        b.debitCount += 1;
+      } else if (kind === "Credit") {
+        b.credit += usd;
+        b.creditCount += 1;
+      } else {
+        b.other += usd;
+      }
+      b.count += 1;
+      byDay.set(e.date, b);
+    }
+
     points = [];
     for (let day = 1; day <= daysInMonth; day++) {
       const iso = `${ym}-${String(day).padStart(2, "0")}`;
       const dt = new Date(iso + "T00:00:00Z");
-      const dayItems = personalExpenses.filter((e) => e.date === iso);
-      let debit = 0;
-      let credit = 0;
-      let other = 0;
-      let debitCount = 0;
-      let creditCount = 0;
-      for (const e of dayItems) {
-        const usd = toUSD(e.amount, e.currency, r);
-        const kind = cardKind(e.vendor);
-        if (kind === "Debit") {
-          debit += usd;
-          debitCount += 1;
-        } else if (kind === "Credit") {
-          credit += usd;
-          creditCount += 1;
-        } else {
-          other += usd;
-        }
-      }
+      const b = byDay.get(iso);
+      const debit = b?.debit ?? 0;
+      const credit = b?.credit ?? 0;
+      const other = b?.other ?? 0;
       points.push({
         key: iso,
         label: dt.toLocaleDateString("en-US", {
@@ -880,33 +998,41 @@ export function cardSpendSeries(
         credit,
         other,
         total: debit + credit + other,
-        debitCount,
-        creditCount,
-        count: dayItems.length,
+        debitCount: b?.debitCount ?? 0,
+        creditCount: b?.creditCount ?? 0,
+        count: b?.count ?? 0,
       });
     }
   } else {
     const months = trailingMonths(range === "6m" ? 6 : 12, anchorMonth);
-    points = months.map((m) => {
-      const mItems = personalExpenses.filter((e) => e.date.startsWith(m));
-      let debit = 0;
-      let credit = 0;
-      let other = 0;
-      let debitCount = 0;
-      let creditCount = 0;
-      for (const e of mItems) {
-        const usd = toUSD(e.amount, e.currency, r);
-        const kind = cardKind(e.vendor);
-        if (kind === "Debit") {
-          debit += usd;
-          debitCount += 1;
-        } else if (kind === "Credit") {
-          credit += usd;
-          creditCount += 1;
-        } else {
-          other += usd;
-        }
+    const monthSet = new Set(months);
+    const byMonth = new Map<string, Bucket>();
+
+    for (const e of db.expenses) {
+      if (expenseAccount(e) !== "Personal") continue;
+      const ym = e.date.slice(0, 7);
+      if (!monthSet.has(ym)) continue;
+      const b = byMonth.get(ym) ?? emptyBucket();
+      const usd = toUSD(e.amount, e.currency, r);
+      const kind = cardKind(e.vendor);
+      if (kind === "Debit") {
+        b.debit += usd;
+        b.debitCount += 1;
+      } else if (kind === "Credit") {
+        b.credit += usd;
+        b.creditCount += 1;
+      } else {
+        b.other += usd;
       }
+      b.count += 1;
+      byMonth.set(ym, b);
+    }
+
+    points = months.map((m) => {
+      const b = byMonth.get(m);
+      const debit = b?.debit ?? 0;
+      const credit = b?.credit ?? 0;
+      const other = b?.other ?? 0;
       const dt = new Date(m + "-01T00:00:00Z");
       return {
         key: m,
@@ -923,9 +1049,9 @@ export function cardSpendSeries(
         credit,
         other,
         total: debit + credit + other,
-        debitCount,
-        creditCount,
-        count: mItems.length,
+        debitCount: b?.debitCount ?? 0,
+        creditCount: b?.creditCount ?? 0,
+        count: b?.count ?? 0,
       };
     });
   }
@@ -986,17 +1112,40 @@ export function revenueByPillar(db: DB) {
 export function cashFlowSeries(db: DB, range: CashRange): CashFlowPoint[] {
   const r = db.settings.khrRate;
   const invIds = new Set(db.invoices.filter(isInvoice).map((i) => i.id));
+  const inByMonth = new Map<string, { usd: number; count: number }>();
+  const studioByMonth = new Map<string, { usd: number; count: number }>();
+  const personalByMonth = new Map<string, number>();
+  let earliest = today().slice(0, 7);
+
+  for (const p of db.payments) {
+    if (!invIds.has(p.invoiceId) || !/^\d{4}-\d{2}/.test(p.date)) continue;
+    const ym = p.date.slice(0, 7);
+    if (ym < earliest) earliest = ym;
+    const prev = inByMonth.get(ym) ?? { usd: 0, count: 0 };
+    prev.usd += toUSD(p.amount, p.currency, r);
+    prev.count += 1;
+    inByMonth.set(ym, prev);
+  }
+
+  for (const e of db.expenses) {
+    if (!/^\d{4}-\d{2}/.test(e.date)) continue;
+    const ym = e.date.slice(0, 7);
+    if (ym < earliest) earliest = ym;
+    const usd = toUSD(e.amount, e.currency, r);
+    if (expenseAccount(e) === "Studio") {
+      const prev = studioByMonth.get(ym) ?? { usd: 0, count: 0 };
+      prev.usd += usd;
+      prev.count += 1;
+      studioByMonth.set(ym, prev);
+    } else {
+      personalByMonth.set(ym, (personalByMonth.get(ym) ?? 0) + usd);
+    }
+  }
+
   let months: string[];
   if (range === "all") {
-    const allDates = [
-      ...db.payments.filter((p) => invIds.has(p.invoiceId)).map((p) => p.date),
-      ...db.expenses.map((e) => e.date),
-    ]
-      .filter((d) => /^\d{4}-\d{2}/.test(d))
-      .sort();
-    const first = allDates[0]?.slice(0, 7) ?? today().slice(0, 7);
     const last = today().slice(0, 7);
-    const [fy, fm] = first.split("-").map(Number);
+    const [fy, fm] = earliest.split("-").map(Number);
     const [ly, lm] = last.split("-").map(Number);
     months = [];
     if (fy && fm && ly && lm) {
@@ -1016,24 +1165,11 @@ export function cashFlowSeries(db: DB, range: CashRange): CashFlowPoint[] {
   }
   const showYear = range === "all";
   return months.map((m) => {
-    const payList = db.payments.filter(
-      (p) => invIds.has(p.invoiceId) && p.date.startsWith(m),
-    );
-    const studioExpList = db.expenses.filter(
-      (e) => expenseAccount(e) === "Studio" && e.date.startsWith(m),
-    );
-    const personalExpList = db.expenses.filter(
-      (e) => expenseAccount(e) === "Personal" && e.date.startsWith(m),
-    );
-    const inn = payList.reduce((s, p) => s + toUSD(p.amount, p.currency, r), 0);
-    const out = studioExpList.reduce(
-      (s, e) => s + toUSD(e.amount, e.currency, r),
-      0,
-    );
-    const personalOut = personalExpList.reduce(
-      (s, e) => s + toUSD(e.amount, e.currency, r),
-      0,
-    );
+    const inAgg = inByMonth.get(m);
+    const studioAgg = studioByMonth.get(m);
+    const inn = inAgg?.usd ?? 0;
+    const out = studioAgg?.usd ?? 0;
+    const personalOut = personalByMonth.get(m) ?? 0;
     const dt = new Date(m + "-01T00:00:00Z");
     const label = dt.toLocaleDateString("en-US", {
       month: "short",
@@ -1054,8 +1190,8 @@ export function cashFlowSeries(db: DB, range: CashRange): CashFlowPoint[] {
       personalOut,
       net: inn - out,
       combinedNet: inn - out - personalOut,
-      inCount: payList.length,
-      outCount: studioExpList.length + personalExpList.length,
+      inCount: inAgg?.count ?? 0,
+      outCount: studioAgg?.count ?? 0,
     };
   });
 }
@@ -1324,7 +1460,7 @@ export function compactMoney(n: number, cur: Currency = "USD", signed = false) {
   if (a >= 1_000) return fmtUnit(a / 1_000, "k");
   if (cur === "KHR") return `${sign}៛${Math.round(a)}`;
   const small = Math.round(a * 100) / 100;
-  return `${sign}$${Number.isInteger(small) ? String(small) : small.toFixed(2).replace(/0$/, "")}`;
+  return `${sign}$${Number.isInteger(small) ? String(small) : small.toFixed(2)}`;
 }
 export const longDate = (d: string) =>
   d

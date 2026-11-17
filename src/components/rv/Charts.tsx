@@ -26,6 +26,7 @@ import {
 import { Glass, SlidingTabs } from "@/components/rv/ui";
 import {
   categoryIcon,
+  incomeSourceIcon,
   type CategoryStatItem,
 } from "@/components/rv/FinanceVisuals";
 import {
@@ -143,7 +144,7 @@ export function SparklineWithDates({
               stroke: "var(--background)",
               strokeWidth: 2,
             }}
-            animationDuration={650}
+            animationDuration={360}
             animationEasing="ease-out"
           />
         </AreaChart>
@@ -378,7 +379,7 @@ export function TrendChartCanvas({
                 stroke: "var(--background)",
                 strokeWidth: 2,
               }}
-              animationDuration={700}
+              animationDuration={360}
               animationEasing="ease-out"
             />
             <Area
@@ -388,7 +389,7 @@ export function TrendChartCanvas({
               stroke="var(--muted-foreground)"
               strokeDasharray="5 5"
               fill="transparent"
-              animationDuration={700}
+              animationDuration={360}
               animationEasing="ease-out"
             />
           </AreaChart>
@@ -398,13 +399,14 @@ export function TrendChartCanvas({
   );
 }
 
-type PieMode = "expenses" | "revenue" | "split";
+type PieMode = "expenses" | "revenue" | "income";
 
 export function BreakdownPieCard({
   db,
   account = "Personal",
   personalItems,
   studioItems,
+  personalIncomeItems,
   scopeLabel,
   onSelectCategory,
   delay = 140,
@@ -413,6 +415,7 @@ export function BreakdownPieCard({
   account?: Account | "Combined";
   personalItems: CategoryStatItem[];
   studioItems: CategoryStatItem[];
+  personalIncomeItems?: { source: string; totalUSD: number; count: number }[];
   scopeLabel: string;
   onSelectCategory?: (acc: Account, category: string) => void;
   delay?: number;
@@ -421,8 +424,15 @@ export function BreakdownPieCard({
     account === "Studio" ? "revenue" : "expenses",
   );
 
+  const effectiveMode: PieMode =
+    account === "Personal" && pieMode === "revenue"
+      ? "expenses"
+      : account === "Studio" && pieMode === "income"
+        ? "expenses"
+        : pieMode;
+
   const slices = useMemo(() => {
-    if (pieMode === "revenue") {
+    if (effectiveMode === "revenue" && account !== "Personal") {
       return revenueByPillar(db).map((x, idx) => ({
         name: x.label,
         value: Math.round(x.totalUSD * 100) / 100,
@@ -432,46 +442,16 @@ export function BreakdownPieCard({
         clickable: false,
       }));
     }
-    if (pieMode === "split") {
-      const r = db.settings.khrRate;
-      const studioTotal = db.expenses
-        .filter((e) => expenseAccount(e) === "Studio")
-        .reduce((s, e) => s + toUSD(e.amount, e.currency, r), 0);
-      const personalTotal = db.expenses
-        .filter((e) => expenseAccount(e) === "Personal")
-        .reduce((s, e) => s + toUSD(e.amount, e.currency, r), 0);
-      const billedTotal = revenueByPillar(db).reduce(
-        (s, x) => s + x.totalUSD,
-        0,
-      );
-      return [
-        {
-          name: "Studio revenue",
-          value: Math.round(billedTotal * 100) / 100,
-          count: db.payments.length,
-          color: PIE_PALETTE[0]!,
-          account: "Studio" as Account,
-          clickable: false,
-        },
-        {
-          name: "Studio expenses",
-          value: Math.round(studioTotal * 100) / 100,
-          count: db.expenses.filter((e) => expenseAccount(e) === "Studio")
-            .length,
-          color: PIE_PALETTE[2]!,
-          account: "Studio" as Account,
-          clickable: false,
-        },
-        {
-          name: "Personal expenses",
-          value: Math.round(personalTotal * 100) / 100,
-          count: db.expenses.filter((e) => expenseAccount(e) === "Personal")
-            .length,
-          color: PIE_PALETTE[4]!,
-          account: "Personal" as Account,
-          clickable: false,
-        },
-      ].filter((x) => x.value > 0);
+
+    if (effectiveMode === "income" && account === "Personal") {
+      return (personalIncomeItems ?? []).slice(0, 7).map((x, idx) => ({
+        name: x.source,
+        value: Math.round(x.totalUSD * 100) / 100,
+        count: x.count,
+        color: PIE_PALETTE[idx % PIE_PALETTE.length]!,
+        account: "Personal" as Account,
+        clickable: false,
+      }));
     }
 
     const source =
@@ -480,11 +460,11 @@ export function BreakdownPieCard({
         : account === "Personal"
           ? personalItems.map((i) => ({ ...i, acc: "Personal" as Account }))
           : [
+              ...studioItems.map((i) => ({ ...i, acc: "Studio" as Account })),
               ...personalItems.map((i) => ({
                 ...i,
                 acc: "Personal" as Account,
               })),
-              ...studioItems.map((i) => ({ ...i, acc: "Studio" as Account })),
             ].sort((a, b) => b.totalUSD - a.totalUSD);
 
     return source.slice(0, 8).map((item, idx) => ({
@@ -495,7 +475,14 @@ export function BreakdownPieCard({
       account: item.acc,
       clickable: true,
     }));
-  }, [pieMode, db, account, personalItems, studioItems]);
+  }, [
+    effectiveMode,
+    db,
+    account,
+    personalItems,
+    studioItems,
+    personalIncomeItems,
+  ]);
 
   const total = slices.reduce((s, x) => s + x.value, 0);
 
@@ -506,11 +493,11 @@ export function BreakdownPieCard({
           <PieIcon className="h-4 w-4 text-primary" />
           <div>
             <h2 className="font-medium leading-tight">
-              {pieMode === "revenue"
-                ? "Revenue by pillar"
-                : pieMode === "split"
-                  ? "Studio vs Personal mix"
-                  : `Expense breakdown · ${scopeLabel}`}
+              {effectiveMode === "revenue"
+                ? "Studio revenue by pillar"
+                : effectiveMode === "income"
+                  ? `Personal income · ${scopeLabel}`
+                  : `${account === "Personal" ? "Personal spending" : "Studio expense"} breakdown · ${scopeLabel}`}
             </h2>
           </div>
         </div>
@@ -518,13 +505,19 @@ export function BreakdownPieCard({
           size="xs"
           tone="invert"
           layoutGroup={`pie-mode-${account}`}
-          value={pieMode}
+          value={effectiveMode}
           onChange={setPieMode}
-          options={[
-            { id: "expenses", label: "Expenses" },
-            { id: "revenue", label: "Revenue" },
-            { id: "split", label: "Mix" },
-          ]}
+          options={
+            account === "Personal"
+              ? [
+                  { id: "expenses", label: "Spending" },
+                  { id: "income", label: "Income" },
+                ]
+              : [
+                  { id: "expenses", label: "Expenses" },
+                  { id: "revenue", label: "Revenue" },
+                ]
+          }
         />
       </div>
 
@@ -546,7 +539,7 @@ export function BreakdownPieCard({
                   paddingAngle={3}
                   cornerRadius={5}
                   stroke="none"
-                  animationDuration={650}
+                  animationDuration={360}
                   onClick={(entry) => {
                     if (
                       entry &&
@@ -578,10 +571,10 @@ export function BreakdownPieCard({
                     return (
                       <div className="rounded-xl border border-border bg-popover/95 px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-md">
                         <p className="font-medium text-foreground">{s.name}</p>
-                        <p className="mt-0.5 font-mono font-semibold tabular-nums text-primary">
+                        <p className="font-num mt-0.5 font-semibold text-primary">
                           {money(s.value)} ({pct}%)
                         </p>
-                        <p className="font-mono text-[0.66rem] text-muted-foreground">
+                        <p className="font-num text-[0.68rem] text-muted-foreground">
                           {s.count} {s.count === 1 ? "item" : "items"}
                         </p>
                       </div>
@@ -593,13 +586,13 @@ export function BreakdownPieCard({
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
               <span className="label-mono text-[0.6rem]">Total</span>
               <span
-                className="font-display text-lg font-black tabular-nums"
+                className="font-num text-xl font-bold tracking-tight text-foreground"
                 title={money(total)}
               >
                 {compactMoney(total)}
               </span>
-              <span className="font-mono text-[0.65rem] text-muted-foreground">
-                {slices.length} slices
+              <span className="font-num text-[0.68rem] text-muted-foreground">
+                {slices.length} {slices.length === 1 ? "slice" : "slices"}
               </span>
             </div>
           </div>
@@ -607,7 +600,10 @@ export function BreakdownPieCard({
           <ul className="space-y-1.5">
             {slices.map((s) => {
               const pct = total > 0 ? Math.round((s.value / total) * 100) : 0;
-              const CatIcon = categoryIcon(s.name);
+              const CatIcon =
+                effectiveMode === "income"
+                  ? incomeSourceIcon(s.name)
+                  : categoryIcon(s.name);
               const content = (
                 <>
                   <span className="flex min-w-0 items-center gap-2">
@@ -620,7 +616,7 @@ export function BreakdownPieCard({
                       {s.name}
                     </span>
                   </span>
-                  <span className="flex shrink-0 items-center gap-2 font-mono text-xs tabular-nums">
+                  <span className="font-num flex shrink-0 items-center gap-2 text-xs">
                     <span className="text-muted-foreground">{pct}%</span>
                     <span className="font-semibold text-foreground">
                       {compactMoney(s.value)}
@@ -688,7 +684,7 @@ export function PeriodBarPulseCard({
         <div className="text-right">
           <span className="label-mono block">Period total</span>
           <span
-            className="font-display text-lg font-bold tabular-nums text-primary"
+            className="font-num text-lg font-bold text-primary"
             title={money(total)}
           >
             {compactMoney(total)}
@@ -806,6 +802,7 @@ export function CardSpendingChartCard({
     };
 
     for (const e of db.expenses) {
+      if (expenseAccount(e) !== "Personal") continue;
       const k = range === "1m" ? e.date : e.date.slice(0, 7);
       if (!pointKeys.has(k)) continue;
       const ck = cardKind(e.vendor);
@@ -846,7 +843,7 @@ export function CardSpendingChartCard({
       creditTop: topOf(catByCard.credit),
       peak,
     };
-  }, [agg.points, db.expenses, db.settings.khrRate, range, cardFilter]);
+  }, [agg, db.expenses, db.settings.khrRate, range, cardFilter]);
 
   const chartData = useMemo(() => [...agg.points], [agg.points]);
   const cardTotal = agg.debitUSD + agg.creditUSD;
@@ -1015,12 +1012,12 @@ export function CardSpendingChartCard({
               </span>
             </div>
             <p
-              className="mt-1 font-display text-xl font-bold tabular-nums text-primary"
+              className="font-num mt-1 text-xl font-bold text-primary"
               title={money(agg.debitUSD)}
             >
               {compactMoney(agg.debitUSD)}
             </p>
-            <p className="mt-0.5 truncate font-mono text-[0.67rem] tabular-nums text-muted-foreground">
+            <p className="font-num mt-0.5 truncate text-[0.7rem] text-muted-foreground">
               {agg.debitCount} tx · avg {compactMoney(debitAvg)}
               {insights.debitTop ? ` · ${insights.debitTop.category}` : ""}
             </p>
@@ -1043,17 +1040,17 @@ export function CardSpendingChartCard({
                 <CreditCard className="h-3.5 w-3.5 text-[var(--chart-3)]" />
                 Credit card
               </span>
-              <span className="font-mono text-[0.68rem] font-semibold tabular-nums text-foreground">
+              <span className="font-num text-[0.7rem] font-semibold text-foreground">
                 {creditPct}%
               </span>
             </div>
             <p
-              className="mt-1 font-display text-xl font-bold tabular-nums"
+              className="font-num mt-1 text-xl font-bold"
               title={money(agg.creditUSD)}
             >
               {compactMoney(agg.creditUSD)}
             </p>
-            <p className="mt-0.5 truncate font-mono text-[0.67rem] tabular-nums text-muted-foreground">
+            <p className="font-num mt-0.5 truncate text-[0.7rem] text-muted-foreground">
               {agg.creditCount} tx · avg {compactMoney(creditAvg)}
               {insights.creditTop ? ` · ${insights.creditTop.category}` : ""}
             </p>
@@ -1064,13 +1061,13 @@ export function CardSpendingChartCard({
               <span className="label-mono">
                 {cardFilter === "both" ? "Total & pace" : `${cardFilter} total`}
               </span>
-              <span className="font-mono text-[0.67rem] tabular-nums text-muted-foreground">
+              <span className="font-num text-[0.68rem] text-muted-foreground">
                 {activePeriods}{" "}
                 {range === "1m" ? "active days" : "active months"}
               </span>
             </div>
             <p
-              className="mt-1 font-display text-xl font-bold tabular-nums"
+              className="font-num mt-1 text-xl font-bold"
               title={money(selectedTotal)}
             >
               {compactMoney(selectedTotal)}

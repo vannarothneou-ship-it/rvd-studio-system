@@ -1068,7 +1068,7 @@ function Editor() {
               </div>
               <div className="flex items-end justify-between border-t border-border pt-2">
                 <span>Grand total</span>
-                <span className="font-display text-2xl font-black">
+                <span className="font-num text-2xl font-extrabold">
                   {money(v.total, draft.currency)}
                 </span>
               </div>

@@ -10,6 +10,7 @@ import {
   Coins,
   CreditCard,
   Fuel,
+  Gift,
   Hammer,
   HeartPulse,
   Landmark,
@@ -24,7 +25,9 @@ import {
   ShoppingBag,
   ShoppingCart,
   Smartphone,
+  Sparkles,
   Stethoscope,
+  TrendingUp,
   Type,
   Users,
   Utensils,
@@ -85,12 +88,25 @@ export function categoryIcon(category: string): LucideIcon {
   return CATEGORY_ICON_MAP[category] ?? Briefcase;
 }
 
+const INCOME_ICON_MAP: Record<string, LucideIcon> = {
+  Salary: Briefcase,
+  "Studio Draw": Building2,
+  Freelance: Laptop,
+  Bonus: Sparkles,
+  Investment: TrendingUp,
+  "Gift & Refund": Gift,
+  Other: Coins,
+};
+
+export function incomeSourceIcon(source: string): LucideIcon {
+  return INCOME_ICON_MAP[source] ?? Coins;
+}
+
 export function paymentCardIcon(method: string): LucideIcon {
   const m = method.trim().toLowerCase();
   if (m.includes("credit")) return CreditCard;
-  if (m.includes("debit")) return Landmark;
-  if (m.includes("khqr") || m.includes("wing") || m.includes("aba"))
-    return Smartphone;
+  if (m.includes("debit") || m.includes("aba")) return Landmark;
+  if (m.includes("khqr") || m.includes("wing")) return Smartphone;
   if (m.includes("cash")) return Wallet;
   return CreditCard;
 }
@@ -136,7 +152,7 @@ export function expenseItemIcon(
 export function AnimatedNumber({
   value,
   format = (n) => money(n),
-  duration = 520,
+  duration = 320,
   className,
 }: {
   value: number;
@@ -282,7 +298,7 @@ export function LiquidJar({
         {/* Top Icon Medallion */}
         <div
           className={cn(
-            "relative z-10 mx-auto grid place-items-center rounded-full border border-border/80 bg-background/80 backdrop-blur-md shadow-sm transition-transform duration-300 group-hover:scale-105",
+            "relative z-10 mx-auto grid place-items-center rounded-full border border-border/80 bg-background/90 shadow-sm transition-transform duration-200 group-hover:scale-105",
             size === "sm"
               ? "mt-2.5 h-8 w-8"
               : size === "lg"
@@ -305,7 +321,7 @@ export function LiquidJar({
         {/* Bottom-left Percentage Pill */}
         <span
           className={cn(
-            "absolute bottom-2 left-2 z-10 rounded-full border border-border/70 bg-background/85 px-2 py-0.5 font-mono font-semibold backdrop-blur-md",
+            "font-num absolute bottom-2 left-2 z-10 rounded-full border border-border/70 bg-background/90 px-2 py-0.5 font-semibold",
             size === "sm" ? "text-[0.62rem]" : "text-[0.68rem]",
             overLimit ? "text-destructive" : "text-foreground",
           )}
@@ -946,9 +962,9 @@ export function GoalRingCard({
             format={(n) =>
               isMoney ? compactMoney(Math.round(n)) : String(Math.round(n))
             }
-            className="font-display text-lg font-black leading-tight tabular-nums"
+            className="font-num text-lg font-bold leading-tight"
           />
-          <span className="mt-0.5 font-mono text-[0.64rem] tabular-nums text-muted-foreground">
+          <span className="font-num mt-0.5 text-[0.68rem] text-muted-foreground">
             of {isMoney ? compactMoney(goal.target) : goal.target}
           </span>
         </div>

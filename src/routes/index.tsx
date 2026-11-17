@@ -3,9 +3,9 @@ import { useMemo, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Briefcase,
   FileText,
   FolderKanban,
-  PiggyBank,
   Plus,
   Trash2,
   Users,
@@ -27,12 +27,10 @@ import {
   GoalRingCard,
   categoryIcon,
   expenseItemIcon,
-  paymentCardIcon,
 } from "@/components/rv/FinanceVisuals";
 import {
   BreakdownPieCard,
   CHART_MODE_OPTIONS,
-  CardSpendingChartCard,
   PeriodBarPulseCard,
   SparklineWithDates,
   TrendChartCanvas,
@@ -45,31 +43,30 @@ import {
   type BentoWidgetDef,
 } from "@/components/rv/BentoGrid";
 import {
-  CARD_METHODS,
+  EXPENSE_CATEGORIES,
   PROJECT_STATUSES,
   cashFlowSeries,
+  cashReceived,
+  categoryTotals,
   compactMoney,
   documentKind,
   expenseAccount,
-  expenseCategoriesFor,
+  expenseTotal,
   goalAccount,
   invoiceView,
   isInvoice,
   money,
   needsFollowUp,
-  personalCategoryTotals,
-  personalSeries,
   setDB,
   shortDate,
   toUSD,
   today,
   uid,
   useDB,
-  type Account,
   type CashRange,
   type DB,
   type Expense,
-  type PersonalRange,
+  type Goal,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -82,13 +79,13 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Cash profit, cash flow, personal monthly expenses, goals and project pipeline for RothVan Design.",
+          "Client pipeline, quotations, invoices, and studio cash flow for RothVan Design.",
       },
       { property: "og:title", content: "Dashboard · RothVan Studio" },
       {
         property: "og:description",
         content:
-          "Cash profit, cash flow, personal monthly expenses, goals and project pipeline for RothVan Design.",
+          "Client pipeline, quotations, invoices, and studio cash flow for RothVan Design.",
       },
     ],
   }),
@@ -101,12 +98,6 @@ const RANGE_OPTIONS: { id: CashRange; label: string; desc: string }[] = [
   { id: "all", label: "All time", desc: "all time" },
 ];
 
-const PERSONAL_RANGES: { id: PersonalRange; label: string; desc: string }[] = [
-  { id: "1m", label: "This month", desc: "this month" },
-  { id: "6m", label: "6 months", desc: "last 6 months" },
-  { id: "12m", label: "12 months", desc: "last 12 months" },
-];
-
 const SYSTEM_WIDGET_CATALOG: { id: string; label: string; desc: string }[] = [
   {
     id: "followUps",
@@ -116,27 +107,37 @@ const SYSTEM_WIDGET_CATALOG: { id: string; label: string; desc: string }[] = [
   {
     id: "netProfit",
     label: "Studio net cash profit",
-    desc: "Headline profit sparkline, outstanding A/R & monthly spend",
+    desc: "Headline profit sparkline, outstanding A/R & active projects",
   },
   {
     id: "cashFlowChart",
     label: "Studio cash flow",
-    desc: "Interactive 6m / 12m / All time revenue vs expense trend",
+    desc: "Interactive 6m / 12m / All time client revenue vs studio costs",
   },
   {
-    id: "personalExpenses",
-    label: "Personal expenses & jars",
-    desc: "This month / 6m / 12m living spend jars & recent items",
+    id: "categoryMixPie",
+    label: "Studio revenue & expense pie",
+    desc: "Donut chart across Studio Revenue by Pillar & Studio Expense categories",
+  },
+  {
+    id: "periodPulse",
+    label: "Monthly studio cash-in pulse",
+    desc: "Monthly revenue bar breakdown with peak highlight",
+  },
+  {
+    id: "studioExpenses",
+    label: "Studio operating costs & jars",
+    desc: "Software, tools, printing & studio category jars",
   },
   {
     id: "goalsRings",
-    label: "Goals & savings",
-    desc: "Animated progress rings with quick +$50 / +$100 deposits",
+    label: "RothVan Studio goals",
+    desc: "Revenue, active client, and equipment fund progress rings",
   },
   {
     id: "recentActivity",
-    label: "Recent activity",
-    desc: "Latest client payments, invoices, and studio/personal spend",
+    label: "Recent studio activity",
+    desc: "Latest client payments, invoices, and studio expenses",
   },
   {
     id: "projectPipeline",
@@ -149,24 +150,9 @@ const SYSTEM_WIDGET_CATALOG: { id: string; label: string; desc: string }[] = [
     desc: "Unpaid invoices requiring collection or follow-up",
   },
   {
-    id: "categoryMixPie",
-    label: "Category & revenue pie chart",
-    desc: "Donut chart across Expenses, Revenue by Pillar & Studio/Personal mix",
-  },
-  {
-    id: "periodPulse",
-    label: "Recent activity bar pulse",
-    desc: "Bar breakdown with date axis & peak highlight",
-  },
-  {
     id: "topClients",
     label: "Top studio clients",
     desc: "Active clients ranked by total billed volume",
-  },
-  {
-    id: "cardSpend",
-    label: "Card spending (Debit vs Credit)",
-    desc: "This month and monthly (6m / 12m) Debit vs Credit card tracker",
   },
 ];
 
@@ -174,12 +160,11 @@ function Dashboard() {
   const db = useDB((d) => d);
   const [range, setRange] = useState<CashRange>("all");
   const [cashChartMode, setCashChartMode] = useState<ChartMode>("area");
-  const [personalRange, setPersonalRange] = useState<PersonalRange>("1m");
-  const [personalChartMode, setPersonalChartMode] = useState<ChartMode>("area");
   const [inspectedCategory, setInspectedCategory] = useState<string | null>(
     null,
   );
   const [expenseDraft, setExpenseDraft] = useState<Expense | null>(null);
+  const [goalDraft, setGoalDraft] = useState<Goal | null>(null);
   const [editingLayout, setEditingLayout] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("overview");
   const [newTabOpen, setNewTabOpen] = useState(false);
@@ -188,140 +173,134 @@ function Dashboard() {
     "netProfit",
     "cashFlowChart",
     "categoryMixPie",
-    "personalExpenses",
-    "goalsRings",
+    "projectPipeline",
+    "invoicesSummary",
   ]);
   const { tabs, addTab, removeTab } = useDashboardTabs();
 
-  const s = cashFlowSeries(db, range);
+  const s = useMemo(() => cashFlowSeries(db, range), [db, range]);
   const rangeMeta =
     RANGE_OPTIONS.find((o) => o.id === range) ?? RANGE_OPTIONS[2]!;
-  const netRange = s.reduce((a, x) => a + x.net, 0);
-  let run = 0;
-  const spark = s.map((x) => ({
-    label: x.label,
-    fullDate: x.fullDate,
-    v: (run += x.net),
-    inn: x.inn,
-    out: x.out,
-    count: x.inCount + x.outCount,
-  }));
+  const netRange = useMemo(() => s.reduce((a, x) => a + x.net, 0), [s]);
+  const spark = useMemo(() => {
+    let run = 0;
+    return s.map((x) => ({
+      label: x.label,
+      fullDate: x.fullDate,
+      v: (run += x.net),
+      inn: x.inn,
+      out: x.out,
+      count: x.inCount + x.outCount,
+    }));
+  }, [s]);
 
-  const views = db.invoices.map((i) => ({ i, v: invoiceView(i, db) }));
-  const followUps = db.invoices
-    .filter((i) => needsFollowUp(i))
-    .sort((a, b) => (a.followUp ?? "").localeCompare(b.followUp ?? ""));
-  const outstanding = views
-    .filter((x) => x.v.status !== "Draft")
-    .reduce((a, x) => a + x.v.balanceUSD, 0);
-  const overdue = views
-    .filter((x) => x.v.status === "Overdue")
-    .reduce((a, x) => a + x.v.balanceUSD, 0);
-  const cashIn = s.reduce((a, x) => a + x.inn, 0),
-    cashOut = s.reduce((a, x) => a + x.out, 0);
+  const views = useMemo(
+    () => db.invoices.map((i) => ({ i, v: invoiceView(i, db) })),
+    [db],
+  );
+  const followUps = useMemo(
+    () =>
+      db.invoices
+        .filter((i) => needsFollowUp(i))
+        .sort((a, b) => (a.followUp ?? "").localeCompare(b.followUp ?? "")),
+    [db.invoices],
+  );
+  const outstanding = useMemo(
+    () =>
+      views
+        .filter((x) => x.v.status !== "Draft")
+        .reduce((a, x) => a + x.v.balanceUSD, 0),
+    [views],
+  );
+  const overdue = useMemo(
+    () =>
+      views
+        .filter((x) => x.v.status === "Overdue")
+        .reduce((a, x) => a + x.v.balanceUSD, 0),
+    [views],
+  );
+  const cashIn = useMemo(() => s.reduce((a, x) => a + x.inn, 0), [s]);
+  const cashOut = useMemo(() => s.reduce((a, x) => a + x.out, 0), [s]);
   const r = db.settings.khrRate;
   const thisMonth = today().slice(0, 7);
+  const year = today().slice(0, 4);
 
-  const openNewExpense = (account: Account, category?: string) => {
-    const cats = expenseCategoriesFor(account);
+  const openNewStudioExpense = (category?: string) => {
     setExpenseDraft({
       id: uid(),
       date: today(),
       projectId: "",
       category:
-        category && cats.includes(category) ? category : (cats[0] ?? "Other"),
-      vendor: account === "Personal" ? "Debit" : "",
+        category && EXPENSE_CATEGORIES.includes(category)
+          ? category
+          : (EXPENSE_CATEGORIES[0] ?? "Other"),
+      vendor: "",
       description: "",
       amount: 0,
       currency: "USD",
       receipt: "",
-      account,
+      account: "Studio",
     });
   };
 
-  const expenseFields = (v: Expense): Field<Expense>[] => {
-    const acc = expenseAccount(v);
-    return [
-      {
-        k: "account",
-        label: "Account",
-        type: "chips",
-        options: [
-          { value: "Studio", label: "RothVan Design (Studio)" },
-          { value: "Personal", label: "Personal" },
-        ],
-      },
-      { k: "date", label: "Date", type: "date" },
-      { k: "amount", label: "Amount", type: "number" },
-      { k: "description", label: "Description", wide: true },
-      {
-        k: "category",
-        label: "Category (tap to choose)",
-        type: "chips",
-        options: expenseCategoriesFor(acc).map((c) => ({
-          value: c,
-          label: c,
-          icon: categoryIcon(c),
-        })),
-      },
-      ...(acc === "Personal"
-        ? [
-            {
-              k: "vendor" as const,
-              label: "Card / Payment method",
-              type: "chips" as const,
-              options: CARD_METHODS.map((m) => ({
-                value: m,
-                label: m,
-                icon: paymentCardIcon(m),
-              })),
-              allowCustom: true,
-              customPlaceholder: "Or enter custom card / merchant…",
-            },
-          ]
-        : [
-            {
-              k: "vendor" as const,
-              label: "Vendor / Merchant",
-            },
-            {
-              k: "projectId" as const,
-              label: "Project (optional)",
-              type: "select" as const,
-              options: db.projects.map((p) => ({
-                value: p.id,
-                label: `${p.code} · ${p.name}`,
-              })),
-            },
-          ]),
-      {
-        k: "currency",
-        label: "Currency",
-        type: "chips",
-        options: ["USD", "KHR"],
-      },
-    ];
-  };
+  const studioExpenseFields = (): Field<Expense>[] => [
+    { k: "date", label: "Date", type: "date" },
+    { k: "amount", label: "Amount", type: "number" },
+    { k: "description", label: "Description", wide: true },
+    {
+      k: "category",
+      label: "Studio Category (tap to choose)",
+      type: "chips",
+      options: EXPENSE_CATEGORIES.map((c) => ({
+        value: c,
+        label: c,
+        icon: categoryIcon(c),
+      })),
+    },
+    { k: "vendor", label: "Vendor / Supplier" },
+    {
+      k: "projectId",
+      label: "Project (optional)",
+      type: "select",
+      options: db.projects.map((p) => ({
+        value: p.id,
+        label: `${p.code} · ${p.name}`,
+      })),
+    },
+    {
+      k: "currency",
+      label: "Currency",
+      type: "chips",
+      options: ["USD", "KHR"],
+    },
+  ];
 
-  const personalTrend = personalSeries(db, personalRange, thisMonth);
-  const personalAgg = personalCategoryTotals(db, personalRange, thisMonth);
-  const personalRangeTotal = personalTrend.reduce(
-    (a, x) => a + x.personalOut,
-    0,
-  );
-  const personalAvgPerMonth = personalRangeTotal / personalAgg.monthsCount;
-  const personalMonthTotal = personalCategoryTotals(
-    db,
-    "1m",
-    thisMonth,
-  ).items.reduce((a, c) => a + c.totalUSD, 0);
+  const studioGoalFields = (): Field<Goal>[] => [
+    {
+      k: "kind",
+      label: "Tracks",
+      type: "select",
+      options: [
+        { value: "cash", label: "Studio cash received (auto)" },
+        { value: "clients", label: "Clients won (auto)" },
+        { value: "manual", label: "Manual studio fund" },
+      ],
+    },
+    { k: "name", label: "Goal name", wide: true },
+    { k: "target", label: "Target (USD or count)", type: "number" },
+    { k: "current", label: "Current saved (manual)", type: "number" },
+  ];
 
-  const personalItemsPeriod = [...db.expenses]
-    .filter(
-      (e) =>
-        expenseAccount(e) === "Personal" &&
-        personalAgg.monthSet.has(e.date.slice(0, 7)),
-    )
+  const studioCatsMonth = categoryTotals(db, "Studio", thisMonth);
+  const studioCatsAll = categoryTotals(db, "Studio", "");
+  const studioCats =
+    studioCatsMonth.length > 0 ? studioCatsMonth : studioCatsAll;
+  const studioCatsScopeLabel =
+    studioCatsMonth.length > 0 ? "this month" : "all time";
+  const studioYearExpenses = expenseTotal(db, "Studio", year);
+
+  const recentStudioExpenses = [...db.expenses]
+    .filter((e) => expenseAccount(e) === "Studio")
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 4);
 
@@ -332,20 +311,24 @@ function Dashboard() {
       return {
         date: p.date,
         title: `${c?.name ?? "Client"} · ${p.reference || "payment"}`,
-        sub: `Income · ${p.method}`,
+        sub: `Client payment · ${p.method}`,
         amt: toUSD(p.amount, p.currency, r),
         kind: "in" as const,
         expense: null as DB["expenses"][number] | null,
+        invoiceId: p.invoiceId,
       };
     }),
-    ...db.expenses.map((e) => ({
-      date: e.date,
-      title: e.description || e.vendor,
-      sub: `${expenseAccount(e)} · ${e.category}`,
-      amt: -toUSD(e.amount, e.currency, r),
-      kind: "out" as const,
-      expense: e,
-    })),
+    ...db.expenses
+      .filter((e) => expenseAccount(e) === "Studio")
+      .map((e) => ({
+        date: e.date,
+        title: e.description || e.vendor,
+        sub: `Studio cost · ${e.category}`,
+        amt: -toUSD(e.amount, e.currency, r),
+        kind: "out" as const,
+        expense: e,
+        invoiceId: null as string | null,
+      })),
     ...db.invoices.filter(isInvoice).map((i) => ({
       date: i.issue,
       title: `Invoice ${i.no}`,
@@ -353,20 +336,23 @@ function Dashboard() {
       amt: invoiceView(i, db).totalUSD,
       kind: "inv" as const,
       expense: null as DB["expenses"][number] | null,
+      invoiceId: i.id,
     })),
   ]
     .sort((a, b) => b.date.localeCompare(a.date))
     .slice(0, 7);
 
-  const year = today().slice(0, 4);
+  const studioGoals = db.goals.filter((g) => goalAccount(g) === "Studio");
   const goalValue = (g: DB["goals"][number]) =>
     g.kind === "cash"
-      ? db.payments
-          .filter((p) => p.date.startsWith(year))
-          .reduce((a, p) => a + toUSD(p.amount, p.currency, r), 0)
+      ? cashReceived(db, year)
       : g.kind === "clients"
         ? db.clients.filter((c) => c.status !== "Lead").length
         : g.current;
+
+  const inProductionCount = db.projects.filter(
+    (p) => p.status === "In production",
+  ).length;
   const readyToClose = db.projects.filter(
     (p) =>
       p.status === "Delivered" &&
@@ -476,19 +462,19 @@ function Dashboard() {
               </p>
               <p
                 className={cn(
-                  "mt-2 font-display text-4xl font-black tabular-nums",
+                  "font-num mt-2 text-4xl font-extrabold",
                   netRange < 0 && "text-destructive",
                 )}
               >
                 <AnimatedNumber value={netRange} />
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
-                Studio cash received minus RothVan Design expenses
+                Client invoice payments minus RothVan Design studio costs
               </p>
               <SparklineWithDates
                 data={spark}
                 gradientId="ov-sp"
-                valueLabel="Cumulative net"
+                valueLabel="Studio cumulative net"
               />
             </div>
             <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
@@ -507,12 +493,8 @@ function Dashboard() {
                   tone={overdue > 0 ? "neg" : undefined}
                 />
               </Link>
-              <Link to="/finance">
-                <Stat
-                  label="Personal (mo)"
-                  value={compactMoney(personalMonthTotal)}
-                  fullValue={money(personalMonthTotal)}
-                />
+              <Link to="/projects">
+                <Stat label="In production" value={String(inProductionCount)} />
               </Link>
             </div>
           </Glass>
@@ -569,7 +551,7 @@ function Dashboard() {
               mode={cashChartMode}
               data={s}
               primaryKey="inn"
-              primaryName="Cash in"
+              primaryName="Client cash in"
               secondaryKey="out"
               secondaryName="Studio expenses"
               gradientId="ov-cf"
@@ -577,105 +559,95 @@ function Dashboard() {
           </Glass>
         ),
       },
-      personalExpenses: {
-        id: "personalExpenses",
-        title: "Personal expenses",
+      categoryMixPie: {
+        id: "categoryMixPie",
+        title: "Studio revenue & expense pie",
+        defaultSpan: 6,
+        render: () => (
+          <BreakdownPieCard
+            db={db}
+            account="Studio"
+            personalItems={[]}
+            studioItems={studioCats}
+            scopeLabel={studioCatsScopeLabel}
+            onSelectCategory={(_acc, cat) => setInspectedCategory(cat)}
+          />
+        ),
+      },
+      periodPulse: {
+        id: "periodPulse",
+        title: "Monthly studio revenue pulse",
+        defaultSpan: 6,
+        render: () => {
+          const slice = s.slice(-6);
+          return (
+            <PeriodBarPulseCard
+              title="Monthly studio revenue"
+              subtitle={`Last ${Math.min(6, slice.length)} months of paid client invoices`}
+              data={slice}
+              valueKey="inn"
+            />
+          );
+        },
+      },
+      studioExpenses: {
+        id: "studioExpenses",
+        title: "Studio operating costs",
         defaultSpan: 6,
         render: () => (
           <Glass delay={120} className="h-full">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <PiggyBank className="h-4 w-4 text-primary" />
+                <Briefcase className="h-4 w-4 text-primary" />
                 <h2 className="font-medium">
-                  Personal expenses · {personalAgg.scopeLabel}
+                  Studio expenses · {studioCatsScopeLabel}
                 </h2>
               </div>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <Btn
-                  type="button"
-                  variant="gold"
-                  onClick={() => openNewExpense("Personal")}
-                  className="px-2.5 py-1 text-xs"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  Add expense
-                </Btn>
-                <SlidingTabs
-                  size="xs"
-                  layoutGroup="ov-pers-mode"
-                  value={personalChartMode}
-                  onChange={setPersonalChartMode}
-                  options={CHART_MODE_OPTIONS}
-                />
-                <SlidingTabs
-                  size="xs"
-                  tone="invert"
-                  layoutGroup="ov-pers-range"
-                  value={personalRange}
-                  onChange={setPersonalRange}
-                  options={PERSONAL_RANGES.map((o) => ({
-                    id: o.id,
-                    label: o.label,
-                  }))}
-                />
-              </div>
+              <Btn
+                type="button"
+                variant="gold"
+                onClick={() => openNewStudioExpense()}
+                className="px-2.5 py-1 text-xs whitespace-nowrap shrink-0"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add studio cost
+              </Btn>
             </div>
             <div className="mb-4 grid grid-cols-3 gap-3 border-b border-border pb-4">
               <Stat
-                label={
-                  personalRange === "1m"
-                    ? "Spent (mo)"
-                    : `Spent (${personalRange})`
-                }
-                value={compactMoney(personalRangeTotal)}
-                fullValue={money(personalRangeTotal)}
+                label={`Spent (${year})`}
+                value={compactMoney(studioYearExpenses)}
+                fullValue={money(studioYearExpenses)}
                 tone="neg"
               />
+              <Stat label="Categories" value={String(studioCats.length)} />
               <Stat
-                label="Avg / month"
-                value={compactMoney(personalAvgPerMonth)}
-                fullValue={money(personalAvgPerMonth)}
-              />
-              <Stat
-                label="Categories"
-                value={String(personalAgg.items.length)}
+                label="Active clients"
+                value={String(
+                  db.clients.filter((c) => c.status === "Active").length,
+                )}
               />
             </div>
 
-            <div className="mb-4">
-              <TrendChartCanvas
-                mode={personalChartMode}
-                data={personalTrend}
-                primaryKey="personalOut"
-                primaryName="Personal spend"
-                secondaryKey="studioOut"
-                secondaryName="Studio expenses"
-                gradientId="ov-pers"
-                xInterval={personalRange === "1m" ? 4 : 0}
-                height={150}
-              />
-            </div>
-
-            {personalAgg.items.length === 0 ? (
+            {studioCats.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No personal expenses recorded in {personalAgg.scopeLabel}.
+                No studio operating expenses logged yet.
               </p>
             ) : (
               <BudgetShelf
                 db={db}
-                account="Personal"
+                account="Studio"
                 month={thisMonth}
-                monthLabel={personalAgg.scopeLabel}
-                items={personalAgg.items}
+                monthLabel={studioCatsScopeLabel}
+                items={studioCats}
                 selectedCategory={inspectedCategory}
                 onSelectCategory={(cat) => setInspectedCategory(cat)}
-                limitScale={personalAgg.monthsCount}
                 compact
               />
             )}
-            {personalItemsPeriod.length > 0 && (
+            {recentStudioExpenses.length > 0 && (
               <ul className="mt-4 divide-y divide-border border-t border-border pt-2">
-                {personalItemsPeriod.map((e) => {
+                {recentStudioExpenses.map((e) => {
                   const ItemIcon = expenseItemIcon(e);
                   return (
                     <li key={e.id}>
@@ -704,46 +676,35 @@ function Dashboard() {
                 })}
               </ul>
             )}
-            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-              <Link
-                to="/finance"
-                className="text-xs text-primary hover:underline"
-              >
-                Open full Personal Finance ledger →
-              </Link>
-              <button
-                type="button"
-                onClick={() => openNewExpense("Personal")}
-                className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Quick add personal expense
-              </button>
-            </div>
+            <Link
+              to="/finance"
+              className="mt-3 block text-xs text-primary hover:underline"
+            >
+              Open full Studio Finance ledger →
+            </Link>
           </Glass>
         ),
       },
       goalsRings: {
         id: "goalsRings",
-        title: "Goals & savings",
+        title: "RothVan Studio goals",
         defaultSpan: 6,
         render: () => (
           <Glass delay={160} className="h-full">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-medium">Goals & savings</h2>
+              <h2 className="font-medium">RothVan Studio goals</h2>
               <span className="text-sm text-muted-foreground">
-                {db.goals.length} active
+                {studioGoals.length} active
               </span>
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {db.goals.slice(0, 4).map((g, idx) => (
+              {studioGoals.slice(0, 4).map((g, idx) => (
                 <GoalRingCard
                   key={g.id}
                   goal={g}
                   current={goalValue(g)}
-                  accountLabel={goalAccount(g)}
                   delay={idx * 60}
-                  onEdit={() => {}}
+                  onEdit={() => setGoalDraft(g)}
                   onQuickAdd={
                     g.kind === "manual"
                       ? (amt) =>
@@ -764,24 +725,24 @@ function Dashboard() {
               to="/finance"
               className="mt-4 block text-xs text-muted-foreground hover:text-foreground"
             >
-              Manage all {db.goals.length} studio & personal goals in Finance →
+              Manage all {studioGoals.length} studio goals in Finance →
             </Link>
           </Glass>
         ),
       },
       recentActivity: {
         id: "recentActivity",
-        title: "Recent activity",
+        title: "Recent studio activity",
         defaultSpan: 12,
         render: () => (
           <Glass delay={200} className="h-full">
             <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-medium">Recent activity</h2>
+              <h2 className="font-medium">Recent studio activity</h2>
               <Link
                 to="/finance"
                 className="text-sm text-muted-foreground hover:text-foreground"
               >
-                View all →
+                Studio finance →
               </Link>
             </div>
             <ul className="divide-y divide-border">
@@ -861,7 +822,7 @@ function Dashboard() {
                   className="rounded-2xl border border-border bg-muted p-4 transition-transform hover:-translate-y-0.5"
                 >
                   <p className="label-mono">{st}</p>
-                  <p className="font-display text-3xl font-black tabular-nums">
+                  <p className="font-num text-3xl font-extrabold">
                     {db.projects.filter((p) => p.status === st).length}
                   </p>
                 </Link>
@@ -873,7 +834,7 @@ function Dashboard() {
                 <p className="font-mono text-[0.68rem] uppercase tracking-wider">
                   Ready to close
                 </p>
-                <p className="font-display text-3xl font-black tabular-nums">
+                <p className="font-num text-3xl font-extrabold">
                   {readyToClose}
                 </p>
               </Link>
@@ -982,61 +943,6 @@ function Dashboard() {
           </Glass>
         ),
       },
-      categoryMixPie: {
-        id: "categoryMixPie",
-        title: "Category & revenue pie chart",
-        defaultSpan: 6,
-        render: () => (
-          <BreakdownPieCard
-            db={db}
-            account="Personal"
-            personalItems={personalAgg.items}
-            studioItems={[]}
-            scopeLabel={personalAgg.scopeLabel}
-            onSelectCategory={(_acc, cat) => setInspectedCategory(cat)}
-          />
-        ),
-      },
-      periodPulse: {
-        id: "periodPulse",
-        title: "Daily & monthly bar pulse",
-        defaultSpan: 6,
-        render: () => {
-          const slice =
-            personalRange === "1m"
-              ? personalTrend.filter((p) => p.personalOut > 0).slice(-7)
-              : personalTrend.slice(-6);
-          return (
-            <PeriodBarPulseCard
-              title={
-                personalRange === "1m"
-                  ? "Recent spending days"
-                  : "Monthly personal pulse"
-              }
-              subtitle={
-                personalRange === "1m"
-                  ? `Active days in ${personalAgg.scopeLabel}`
-                  : `Comparison across ${personalAgg.scopeLabel}`
-              }
-              data={slice.length > 0 ? slice : personalTrend.slice(-7)}
-              valueKey="personalOut"
-            />
-          );
-        },
-      },
-      cardSpend: {
-        id: "cardSpend",
-        title: "Card spending · Debit vs Credit",
-        defaultSpan: 12,
-        render: () => (
-          <CardSpendingChartCard
-            db={db}
-            month={thisMonth}
-            defaultRange={personalRange}
-            layoutIdPrefix="ov-card-spend"
-          />
-        ),
-      },
     }),
     [
       db,
@@ -1046,40 +952,40 @@ function Dashboard() {
       spark,
       outstanding,
       overdue,
-      personalMonthTotal,
+      inProductionCount,
       range,
       cashChartMode,
       cashIn,
       cashOut,
       s,
-      personalAgg,
-      personalRange,
-      personalChartMode,
-      personalRangeTotal,
-      personalAvgPerMonth,
-      personalTrend,
+      studioCats,
+      studioCatsScopeLabel,
+      studioYearExpenses,
       thisMonth,
       inspectedCategory,
-      personalItemsPeriod,
+      recentStudioExpenses,
       r,
+      studioGoals,
       activity,
       readyToClose,
       openInvoicesList,
       topClientsList,
+      year,
     ],
   );
 
-  const overviewWidgetList: BentoWidgetDef[] = [
+  const studioDashboardList: BentoWidgetDef[] = [
     allWidgets["followUps"]!,
     allWidgets["netProfit"]!,
     allWidgets["cashFlowChart"]!,
+    allWidgets["projectPipeline"]!,
+    allWidgets["invoicesSummary"]!,
+    allWidgets["topClients"]!,
     allWidgets["categoryMixPie"]!,
     allWidgets["periodPulse"]!,
-    allWidgets["cardSpend"]!,
-    allWidgets["personalExpenses"]!,
+    allWidgets["studioExpenses"]!,
     allWidgets["goalsRings"]!,
     allWidgets["recentActivity"]!,
-    allWidgets["projectPipeline"]!,
   ];
 
   const currentCustomTab = tabs.find((t) => t.id === activeTab);
@@ -1087,10 +993,10 @@ function Dashboard() {
     ? currentCustomTab.widgetIds
         .map((id) => allWidgets[id])
         .filter((w): w is BentoWidgetDef => Boolean(w))
-    : overviewWidgetList;
+    : studioDashboardList;
 
   const pageKey =
-    activeTab === "overview" ? "overview" : `overview:${activeTab}`;
+    activeTab === "overview" ? "studio-overview" : `overview:${activeTab}`;
 
   const toggleNewTabWidget = (id: string) => {
     setNewTabWidgets((prev) =>
@@ -1101,7 +1007,7 @@ function Dashboard() {
   return (
     <>
       <PageHeader
-        title={currentCustomTab ? currentCustomTab.label : "Dashboard"}
+        title={currentCustomTab ? currentCustomTab.label : "RothVan Studio"}
         owner={db.settings.ownerName}
         action={
           <div className="flex flex-wrap items-center gap-2">
@@ -1109,14 +1015,6 @@ function Dashboard() {
               editing={editingLayout}
               onToggle={() => setEditingLayout((e) => !e)}
             />
-            <Btn
-              type="button"
-              onClick={() => openNewExpense("Personal")}
-              className="whitespace-nowrap shrink-0"
-            >
-              <Plus className="h-4 w-4" />
-              Add expense
-            </Btn>
             <Link to="/invoices/$id" params={{ id: "new" }}>
               <Btn variant="gold" className="whitespace-nowrap shrink-0">
                 <Plus className="h-4 w-4" />
@@ -1137,13 +1035,13 @@ function Dashboard() {
               setEditingLayout(false);
             }}
             className={cn(
-              "rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors",
+              "rounded-full border px-3.5 py-1.5 text-xs font-medium whitespace-nowrap shrink-0 transition-colors",
               activeTab === "overview"
                 ? "border-primary bg-primary text-primary-foreground shadow-sm"
                 : "border-border bg-muted/60 text-muted-foreground hover:text-foreground",
             )}
           >
-            Dashboard
+            Studio Dashboard
           </button>
           {tabs.map((tab) => (
             <div
@@ -1161,7 +1059,7 @@ function Dashboard() {
                   setActiveTab(tab.id);
                   setEditingLayout(false);
                 }}
-                className="px-3.5 py-1.5"
+                className="px-3.5 py-1.5 whitespace-nowrap"
               >
                 {tab.label}
               </button>
@@ -1186,7 +1084,7 @@ function Dashboard() {
           <button
             type="button"
             onClick={() => setNewTabOpen(true)}
-            className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-primary/60 hover:text-foreground"
+            className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/60 hover:text-foreground"
           >
             <Plus className="h-3.5 w-3.5" />
             New tab
@@ -1203,52 +1101,27 @@ function Dashboard() {
 
       <CategoryInspectorDrawer
         db={db}
-        account="Personal"
+        account="Studio"
         category={inspectedCategory}
         month={thisMonth}
         onClose={() => setInspectedCategory(null)}
-        onAddExpense={(acc, cat) => openNewExpense(acc, cat)}
+        onAddExpense={(_acc, cat) => openNewStudioExpense(cat)}
         onEditExpense={(exp) => setExpenseDraft(exp)}
       />
 
       <EditModal
         item={expenseDraft}
         onClose={() => setExpenseDraft(null)}
-        title={
-          expenseDraft && expenseAccount(expenseDraft) === "Personal"
-            ? "Personal Expense"
-            : "Studio Expense"
-        }
-        subtitle={
-          expenseDraft && expenseAccount(expenseDraft) === "Personal"
-            ? "Personal ledger"
-            : "RothVan Design"
-        }
+        title="Studio Expense"
+        subtitle="RothVan Design"
         presentation="drawer"
         side="right"
-        fields={expenseFields}
-        onFieldChange={(next, key) => {
-          if (key === "account") {
-            const acc = expenseAccount(next);
-            const cats = expenseCategoriesFor(acc);
-            return {
-              ...next,
-              category: cats.includes(next.category)
-                ? next.category
-                : (cats[0] ?? "Other"),
-              vendor:
-                acc === "Personal" && !next.vendor
-                  ? "Debit"
-                  : acc === "Studio" &&
-                      (next.vendor === "Debit" || next.vendor === "Credit")
-                    ? ""
-                    : next.vendor,
-            };
-          }
-          return next;
-        }}
+        fields={studioExpenseFields()}
         onSave={(v) =>
-          setDB((d) => ({ ...d, expenses: upsert(d.expenses, v) }))
+          setDB((d) => ({
+            ...d,
+            expenses: upsert(d.expenses, { ...v, account: "Studio" }),
+          }))
         }
         onDelete={
           expenseDraft && db.expenses.some((e) => e.id === expenseDraft.id)
@@ -1261,11 +1134,36 @@ function Dashboard() {
         }
       />
 
+      <EditModal
+        item={goalDraft}
+        onClose={() => setGoalDraft(null)}
+        title="Studio Goal"
+        subtitle="RothVan Design"
+        presentation="drawer"
+        side="right"
+        fields={studioGoalFields()}
+        onSave={(v) =>
+          setDB((d) => ({
+            ...d,
+            goals: upsert(d.goals, { ...v, account: "Studio" }),
+          }))
+        }
+        onDelete={
+          goalDraft && db.goals.some((g) => g.id === goalDraft.id)
+            ? (v) =>
+                setDB((d) => ({
+                  ...d,
+                  goals: d.goals.filter((x) => x.id !== v.id),
+                }))
+            : undefined
+        }
+      />
+
       <SlideDrawer
         open={newTabOpen}
         onClose={() => setNewTabOpen(false)}
-        title="Add dashboard tab"
-        subtitle="Custom workspace"
+        title="Add studio tab"
+        subtitle="Custom RothVan workspace"
       >
         <form
           className="space-y-4"
@@ -1281,7 +1179,7 @@ function Dashboard() {
             <label className="label-mono mb-1.5 block">Tab name</label>
             <input
               className="field"
-              placeholder="e.g. Daily Personal & Goals"
+              placeholder="e.g. Client Billing & Pipeline"
               value={newTabName}
               onChange={(e) => setNewTabName(e.target.value)}
               required
@@ -1289,7 +1187,7 @@ function Dashboard() {
           </div>
           <div>
             <p className="label-mono mb-2">
-              Choose system widgets ({newTabWidgets.length} selected)
+              Choose RothVan Studio widgets ({newTabWidgets.length} selected)
             </p>
             <div className="space-y-2">
               {SYSTEM_WIDGET_CATALOG.map((w) => {

@@ -645,7 +645,7 @@ export function Stat({
       <p className="label-mono truncate">{label}</p>
       <p
         className={cn(
-          "font-display text-lg font-bold leading-tight tabular-nums sm:text-xl",
+          "font-num text-lg font-bold leading-tight sm:text-xl",
           t === "pos" && "text-positive",
           t === "neg" && "text-destructive",
         )}

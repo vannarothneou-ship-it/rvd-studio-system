@@ -79,18 +79,35 @@ function Page() {
   const [editingLayout, setEditingLayout] = useState(false);
   const [edit, setEdit] = useState<Client | null>(null);
 
-  const stats = (c: Client) => {
-    const inv = db.invoices
-      .filter((i) => i.clientId === c.id)
-      .map((i) => invoiceView(i, db));
-    return {
-      billed: inv.reduce((a, v) => a + v.totalUSD, 0),
-      owed: inv
-        .filter((v) => v.status !== "Draft")
-        .reduce((a, v) => a + v.balanceUSD, 0),
-      projects: db.projects.filter((p) => p.clientId === c.id).length,
+  const statsMap = useMemo(() => {
+    const map = new Map<
+      string,
+      { billed: number; owed: number; projects: number }
+    >();
+    const ensure = (id: string) => {
+      let cur = map.get(id);
+      if (!cur) {
+        cur = { billed: 0, owed: 0, projects: 0 };
+        map.set(id, cur);
+      }
+      return cur;
     };
-  };
+    for (const i of db.invoices) {
+      if (!i.clientId) continue;
+      const v = invoiceView(i, db);
+      const cur = ensure(i.clientId);
+      cur.billed += v.totalUSD;
+      if (v.status !== "Draft") cur.owed += v.balanceUSD;
+    }
+    for (const p of db.projects) {
+      if (!p.clientId) continue;
+      ensure(p.clientId).projects += 1;
+    }
+    return map;
+  }, [db]);
+
+  const stats = (c: Client) =>
+    statsMap.get(c.id) ?? { billed: 0, owed: 0, projects: 0 };
 
   const rows = useMemo(
     () =>

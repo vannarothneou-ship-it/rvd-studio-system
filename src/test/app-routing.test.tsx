@@ -16,5 +16,7 @@ describe("App routing", () => {
     const matches = router.matchRoutes("/");
 
     expect(matches.at(-1)?.routeId).not.toBe(rootRouteId);
+    expect(router.matchRoutes("/personal").at(-1)?.routeId).toBe("/personal");
+    expect(router.matchRoutes("/finance").at(-1)?.routeId).toBe("/finance");
   });
 });

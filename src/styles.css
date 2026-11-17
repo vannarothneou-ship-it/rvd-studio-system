@@ -60,7 +60,7 @@
   --color-positive: var(--positive);
   --font-display: "Merriweather", Georgia, serif;
   --font-sans: "Inter", "Noto Sans Khmer", system-ui, sans-serif;
-  --font-mono: "Space Mono", ui-monospace, monospace;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-khmer: "Noto Sans Khmer", "Inter", sans-serif;
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);
@@ -191,7 +191,6 @@
   }
   body {
     background: var(--bg-gradient);
-    background-attachment: fixed;
     min-height: 100vh;
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
@@ -255,15 +254,23 @@
 @utility glass {
   background: var(--glass);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(24px) saturate(140%);
+  backdrop-filter: blur(14px) saturate(125%);
   box-shadow: var(--shadow-glass);
   border-radius: var(--radius);
 }
 @utility glass-strong {
   background: var(--glass-strong);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(28px) saturate(150%);
+  backdrop-filter: blur(18px) saturate(135%);
   box-shadow: var(--shadow-glass);
+}
+@utility font-num {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings:
+    "tnum" 1,
+    "cv05" 1;
+  letter-spacing: -0.02em;
 }
 @utility field {
   width: 100%;
@@ -284,12 +291,12 @@
 @utility label-mono {
   font-family: var(--font-mono);
   font-size: 0.68rem;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted-foreground);
 }
 @utility rise {
-  animation: rise 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 @keyframes rise {
   from {
@@ -349,7 +356,7 @@
   animation: backdropIn 0.25s ease-out both;
 }
 @utility jar-sheen {
-  animation: jarSheen 3.2s ease-in-out infinite;
+  opacity: 0.32;
 }
 
 /* Invoice paper */

@@ -112,7 +112,10 @@ function Page() {
     try {
       const p = JSON.parse(await f.text());
       if (!p.settings) throw 0;
-      setDB(() => p);
+      setDB(() => ({
+        ...p,
+        personalIncome: Array.isArray(p.personalIncome) ? p.personalIncome : [],
+      }));
       alert("Backup restored.");
     } catch {
       alert("That file isn't a RothVan backup.");
