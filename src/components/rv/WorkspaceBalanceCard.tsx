@@ -1,5 +1,4 @@
-import { Link } from "@tanstack/react-router";
-import { ArrowRight, Briefcase, Layers, Wallet } from "lucide-react";
+import { Briefcase, Layers, Wallet } from "lucide-react";
 import { Glass, Stat } from "@/components/rv/ui";
 import { AnimatedNumber } from "@/components/rv/FinanceVisuals";
 import {
@@ -67,17 +66,7 @@ export function WorkspaceBalanceCard({
             value={String(output.totalArtworks)}
             tone="pos"
           />
-          <div className="flex flex-col justify-between">
-            <Stat label="Mockups & PDFs" value={String(output.mediaCount)} />
-            <Link
-              to="/finance"
-              search={{ view: "combined" }}
-              className="mt-1 inline-flex items-center gap-1 text-[0.72rem] font-medium text-primary hover:underline"
-            >
-              <span>All cash flow</span>
-              <ArrowRight className="h-3 w-3" />
-            </Link>
-          </div>
+          <Stat label="Mockups & PDFs" value={String(output.mediaCount)} />
         </div>
       </Glass>
     );
@@ -111,15 +100,7 @@ export function WorkspaceBalanceCard({
             <AnimatedNumber value={bal.personalBalance} />
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Personal Income minus Personal Expenses · Combined Studio +
-            Personal:{" "}
-            <Link
-              to="/finance"
-              search={{ view: "combined" }}
-              className="font-num font-semibold text-primary hover:underline"
-            >
-              {money(bal.combinedBalance)}
-            </Link>
+            Personal Income minus Personal Expenses across your personal ledger
           </p>
         </div>
 
@@ -142,22 +123,12 @@ export function WorkspaceBalanceCard({
             fullValue={money(bal.personalMonthNet, "USD", true)}
             tone={bal.personalMonthNet >= 0 ? "pos" : "neg"}
           />
-          <div className="flex flex-col justify-between">
-            <Stat
-              label="Saved goals"
-              value={compactMoney(bal.personalGoalsSaved)}
-              fullValue={money(bal.personalGoalsSaved)}
-              tone="pos"
-            />
-            <Link
-              to="/finance"
-              search={{ view: "combined" }}
-              className="mt-1 inline-flex items-center gap-1 text-[0.72rem] font-medium text-primary hover:underline"
-            >
-              <span>Combined cash flow</span>
-              <ArrowRight className="h-3 w-3" />
-            </Link>
-          </div>
+          <Stat
+            label="Saved goals"
+            value={compactMoney(bal.personalGoalsSaved)}
+            fullValue={money(bal.personalGoalsSaved)}
+            tone="pos"
+          />
         </div>
       </Glass>
     );
@@ -182,15 +153,8 @@ export function WorkspaceBalanceCard({
           <AnimatedNumber value={bal.studioBalance} />
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Paid Studio Invoices minus Studio Operating Expenses · Combined Studio
-          + Personal:{" "}
-          <Link
-            to="/finance"
-            search={{ view: "combined" }}
-            className="font-num font-semibold text-primary hover:underline"
-          >
-            {money(bal.combinedBalance)}
-          </Link>
+          Paid Studio Invoices minus Studio Operating Expenses across RothVan
+          Studio
         </p>
       </div>
 
@@ -211,22 +175,12 @@ export function WorkspaceBalanceCard({
           value={compactMoney(bal.openAR)}
           fullValue={money(bal.openAR)}
         />
-        <div className="flex flex-col justify-between">
-          <Stat
-            label="This month net"
-            value={compactMoney(bal.studioMonthNet, "USD", true)}
-            fullValue={money(bal.studioMonthNet, "USD", true)}
-            tone={bal.studioMonthNet >= 0 ? "pos" : "neg"}
-          />
-          <Link
-            to="/finance"
-            search={{ view: "combined" }}
-            className="mt-1 inline-flex items-center gap-1 text-[0.72rem] font-medium text-primary hover:underline"
-          >
-            <span>Studio + Personal</span>
-            <ArrowRight className="h-3 w-3" />
-          </Link>
-        </div>
+        <Stat
+          label="This month net"
+          value={compactMoney(bal.studioMonthNet, "USD", true)}
+          fullValue={money(bal.studioMonthNet, "USD", true)}
+          tone={bal.studioMonthNet >= 0 ? "pos" : "neg"}
+        />
       </div>
     </Glass>
   );

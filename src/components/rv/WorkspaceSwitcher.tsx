@@ -1,19 +1,25 @@
 import { motion } from "motion/react";
-import { Briefcase, Layers3, PiggyBank } from "lucide-react";
+import { Briefcase, Home, Layers3, PiggyBank } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type WorkspaceMode = "studio" | "work" | "personal";
+export type WorkspaceMode = "dashboard" | "studio" | "work" | "personal";
 
 const WORKSPACES: {
   id: WorkspaceMode;
   label: string;
   subtitle: string;
-  icon: typeof Briefcase;
+  icon: typeof Home;
 }[] = [
+  {
+    id: "dashboard",
+    label: "Dashboard",
+    subtitle: "Unified command center across Studio, Work & Personal",
+    icon: Home,
+  },
   {
     id: "studio",
     label: "Studio",
-    subtitle: "Freelance clients, projects & invoices",
+    subtitle: "Freelance clients, projects, quotations & invoices",
     icon: Briefcase,
   },
   {
@@ -25,7 +31,7 @@ const WORKSPACES: {
   {
     id: "personal",
     label: "Personal",
-    subtitle: "Personal income, daily spending & savings",
+    subtitle: "Personal income, daily spending, cards & saving goals",
     icon: PiggyBank,
   },
 ];
@@ -48,7 +54,7 @@ export function WorkspaceSwitcher({
       role="tablist"
       aria-label="Workspace context switcher"
       className={cn(
-        "inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/75 p-1",
+        "no-scrollbar inline-flex max-w-full shrink-0 items-center gap-0.5 overflow-x-auto rounded-full border border-border bg-muted/75 p-1 sm:gap-1",
         className,
       )}
     >
@@ -66,8 +72,8 @@ export function WorkspaceSwitcher({
             className={cn(
               "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full font-medium transition-colors",
               compact
-                ? "px-2.5 py-1.5 text-xs"
-                : "px-3 py-1.5 text-xs sm:text-sm",
+                ? "min-h-[36px] px-2.5 py-1.5 text-[0.72rem]"
+                : "min-h-[38px] px-3 py-1.5 text-xs sm:text-sm",
               active
                 ? "text-primary-foreground"
                 : "text-muted-foreground hover:text-foreground",

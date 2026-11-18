@@ -105,7 +105,13 @@ export function incomeSourceIcon(source: string): LucideIcon {
 export function paymentCardIcon(method: string): LucideIcon {
   const m = method.trim().toLowerCase();
   if (m.includes("credit")) return CreditCard;
-  if (m.includes("debit") || m.includes("aba")) return Landmark;
+  if (
+    m.includes("debit") ||
+    m.includes("aba") ||
+    m.includes("acleda") ||
+    m.includes("canadia")
+  )
+    return Landmark;
   if (m.includes("khqr") || m.includes("wing")) return Smartphone;
   if (m.includes("cash")) return Wallet;
   return CreditCard;

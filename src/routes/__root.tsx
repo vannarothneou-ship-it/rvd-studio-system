@@ -87,17 +87,30 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       // twitter:image here: every page without its own would inherit the root's preview image.
       meta: [
         { charSet: "utf-8" },
-        { name: "viewport", content: "width=device-width, initial-scale=1" },
-        { title: "RothVan Studio" },
+        {
+          name: "viewport",
+          content: "width=device-width, initial-scale=1, viewport-fit=cover",
+        },
+        { title: "RothVan Ledger" },
         {
           name: "description",
-          content: "Projects, invoices and finance for RothVan Design.",
+          content:
+            "Unified command dashboard across RothVan Studio, full-time design work, and personal money with AI receipt scanning.",
         },
+        { name: "theme-color", content: "#111114" },
+        { name: "mobile-web-app-capable", content: "yes" },
+        { name: "apple-mobile-web-app-capable", content: "yes" },
+        {
+          name: "apple-mobile-web-app-status-bar-style",
+          content: "black-translucent",
+        },
+        { name: "apple-mobile-web-app-title", content: "RothVan" },
         { name: "author", content: "RothVan Design" },
-        { property: "og:title", content: "RothVan Studio" },
+        { property: "og:title", content: "RothVan Ledger" },
         {
           property: "og:description",
-          content: "Projects, invoices and finance for RothVan Design.",
+          content:
+            "Unified command dashboard across RothVan Studio, full-time design work, and personal money.",
         },
         { property: "og:type", content: "website" },
         { name: "twitter:card", content: "summary_large_image" },
@@ -108,6 +121,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           rel: "stylesheet",
           href: appCss,
         },
+        { rel: "manifest", href: "/manifest.json" },
+        { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
+        { rel: "icon", type: "image/svg+xml", href: "/icon.svg" },
         { rel: "preconnect", href: "https://fonts.googleapis.com" },
         {
           rel: "preconnect",
@@ -144,6 +160,14 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && "serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(() => {
+        /* ignore registration failures in constrained iframes */
+      });
+    }
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>

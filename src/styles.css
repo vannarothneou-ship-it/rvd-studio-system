@@ -190,10 +190,12 @@
 @layer base {
   html {
     background: var(--background);
+    overflow-x: clip;
   }
   body {
     background: var(--bg-gradient);
     min-height: 100vh;
+    overflow-x: clip;
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
@@ -360,6 +362,13 @@
 @utility jar-sheen {
   opacity: 0.32;
 }
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
 
 /* Invoice paper */
 :root {
@@ -484,10 +493,17 @@
   --fc-event-border-color: var(--primary);
   --fc-event-text-color: var(--primary-foreground);
 }
+.project-calendar .fc-scrollgrid {
+  border-radius: 1rem;
+  overflow: hidden;
+}
 .project-calendar .fc-toolbar-title {
   font-family: var(--font-display);
   font-size: 1.1rem;
   font-weight: 700;
+}
+.project-calendar .fc-button-group {
+  gap: 4px;
 }
 .project-calendar .fc-button {
   border-radius: 9999px !important;
@@ -507,6 +523,9 @@
   cursor: grabbing;
 }
 .project-calendar .fc-daygrid-day-number {
+  font-family:
+    "Inter", "Plus Jakarta Sans", "Noto Sans Khmer", system-ui, sans-serif;
+  font-variant-numeric: tabular-nums;
   padding: 6px;
   font-size: 0.8rem;
   color: var(--muted-foreground);
@@ -519,6 +538,26 @@
   letter-spacing: 0.08em;
   color: var(--muted-foreground);
   padding: 8px 4px;
+}
+.project-calendar .fc-popover {
+  background: var(--popover);
+  color: var(--popover-foreground);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: 0 20px 50px -15px oklch(0 0 0 / 55%);
+  overflow: hidden;
+}
+.project-calendar .fc-popover-header {
+  background: var(--muted);
+  color: var(--foreground);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.project-calendar .fc-more-link {
+  color: var(--primary);
+  font-weight: 600;
+  font-size: 0.72rem;
 }
 @media (max-width: 640px) {
   .project-calendar .fc-toolbar {

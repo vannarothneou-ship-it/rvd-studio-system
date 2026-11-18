@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   ArrowDownLeft,
@@ -28,11 +28,13 @@ import {
 } from "@/components/rv/FinanceVisuals";
 import {
   BreakdownPieCard,
+  CHART_LENS_OPTIONS,
   CHART_MODE_OPTIONS,
   CardSpendingChartCard,
   PeriodBarPulseCard,
   SparklineWithDates,
   TrendChartCanvas,
+  type ChartLens,
   type ChartMode,
 } from "@/components/rv/Charts";
 import {
@@ -40,6 +42,7 @@ import {
   EditableBentoGrid,
   type BentoWidgetDef,
 } from "@/components/rv/BentoGrid";
+import { MonthPicker } from "@/components/rv/MonthPicker";
 import { WorkspaceBalanceCard } from "@/components/rv/WorkspaceBalanceCard";
 import {
   CARD_METHODS,
@@ -50,6 +53,7 @@ import {
   expenseAccount,
   goalAccount,
   money,
+  periodBreakdownBars,
   personalCategoryTotals,
   personalIncomeSourceTotals,
   personalIncomeTotal,
@@ -90,9 +94,11 @@ export const Route = createFileRoute("/personal")({
 });
 
 const PERSONAL_RANGES: { id: PersonalRange; label: string; desc: string }[] = [
-  { id: "1m", label: "This month", desc: "this month" },
-  { id: "6m", label: "6 months", desc: "last 6 months" },
-  { id: "12m", label: "12 months", desc: "last 12 months" },
+  { id: "today", label: "Today", desc: "today" },
+  { id: "week", label: "Week", desc: "last 7 days" },
+  { id: "1m", label: "Month", desc: "this month" },
+  { id: "6m", label: "6M", desc: "last 6 months" },
+  { id: "12m", label: "12M", desc: "last 12 months" },
 ];
 
 type LedgerView = "all" | "spending" | "income";
@@ -102,6 +108,7 @@ function PersonalPage() {
   const r = db.settings.khrRate;
   const [personalRange, setPersonalRange] = useState<PersonalRange>("1m");
   const [chartMode, setChartMode] = useState<ChartMode>("area");
+  const [chartLens, setChartLens] = useState<ChartLens>("flow");
   const [month, setMonth] = useState(() => today().slice(0, 7));
   const [ledgerView, setLedgerView] = useState<LedgerView>("all");
   const [catFilter, setCatFilter] = useState<string>("All");
@@ -166,10 +173,23 @@ function PersonalPage() {
     });
   }, [pPts, personalInRangeTotal]);
 
+  const breakdownBars = useMemo(
+    () =>
+      periodBreakdownBars(
+        db,
+        "Personal",
+        personalRange,
+        month,
+        chartLens === "method" ? "method" : "category",
+        "spending",
+      ),
+    [db, personalRange, month, chartLens],
+  );
+
   const openNewExpense = (category?: string) => {
     setExpenseDraft({
       id: uid(),
-      date: today().startsWith(month) ? today() : `${month}-01`,
+      date: today().startsWith(month) ? today() : pAgg.anchorDay,
       projectId: "",
       category:
         category && PERSONAL_CATEGORIES.includes(category)
@@ -187,7 +207,7 @@ function PersonalPage() {
   const openNewIncome = (source?: string) => {
     setIncomeDraft({
       id: uid(),
-      date: today().startsWith(month) ? today() : `${month}-01`,
+      date: today().startsWith(month) ? today() : pAgg.anchorDay,
       source: source ?? "Salary",
       accountMethod: "ABA Bank",
       description: "",
@@ -310,12 +330,17 @@ function PersonalPage() {
       };
 
   const ledgerRows = useMemo<LedgerRow[]>(() => {
+    const matchesPeriod = (date: string) =>
+      pAgg.dateSet
+        ? pAgg.dateSet.has(date)
+        : pAgg.monthSet.has(date.slice(0, 7));
+
     const outRows: LedgerRow[] =
       ledgerView === "income"
         ? []
         : db.expenses
             .filter((e) => expenseAccount(e) === "Personal")
-            .filter((e) => (q ? true : pAgg.monthSet.has(e.date.slice(0, 7))))
+            .filter((e) => (q ? true : matchesPeriod(e.date)))
             .map((e) => ({
               kind: "expense" as const,
               id: `exp-${e.id}`,
@@ -333,9 +358,7 @@ function PersonalPage() {
       ledgerView === "spending"
         ? []
         : (db.personalIncome ?? [])
-            .filter((inc) =>
-              q ? true : pAgg.monthSet.has(inc.date.slice(0, 7)),
-            )
+            .filter((inc) => (q ? true : matchesPeriod(inc.date)))
             .map((inc) => ({
               kind: "income" as const,
               id: `inc-${inc.id}`,
@@ -366,6 +389,7 @@ function PersonalPage() {
     db.expenses,
     db.personalIncome,
     ledgerView,
+    pAgg.dateSet,
     pAgg.monthSet,
     catFilter,
     q,
@@ -450,63 +474,126 @@ function PersonalPage() {
         id: "personalFlowChart",
         title: "Personal income vs spending",
         defaultSpan: 7,
-        render: () => (
-          <Glass delay={80} className="h-full">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-medium">Personal income vs spending</h2>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <SlidingTabs
-                  size="xs"
-                  layoutGroup="pers-chart-mode"
-                  value={chartMode}
-                  onChange={setChartMode}
-                  options={CHART_MODE_OPTIONS}
+        render: () => {
+          const isGrouped = chartLens === "category" || chartLens === "method";
+          return (
+            <Glass delay={80} className="h-full">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="font-medium">
+                    {chartLens === "net"
+                      ? "Personal net cash flow"
+                      : chartLens === "category"
+                        ? "Spending by category"
+                        : chartLens === "method"
+                          ? "Cash by bank & card"
+                          : "Personal income vs spending"}
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    {pAgg.scopeLabel}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <SlidingTabs
+                    size="xs"
+                    tone="invert"
+                    layoutGroup="pers-chart-lens"
+                    value={chartLens}
+                    onChange={setChartLens}
+                    options={CHART_LENS_OPTIONS}
+                  />
+                  <SlidingTabs
+                    size="xs"
+                    layoutGroup="pers-chart-mode"
+                    value={chartMode}
+                    onChange={setChartMode}
+                    options={CHART_MODE_OPTIONS}
+                  />
+                </div>
+              </div>
+
+              <div className="mb-3 grid grid-cols-3 gap-3">
+                <Stat
+                  label="● Income"
+                  value={compactMoney(personalInRangeTotal)}
+                  fullValue={money(personalInRangeTotal)}
+                  tone={personalInRangeTotal > 0 ? "pos" : undefined}
                 />
-                <SlidingTabs
-                  size="xs"
-                  tone="invert"
-                  layoutGroup="pers-range"
-                  value={personalRange}
-                  onChange={setPersonalRange}
-                  options={PERSONAL_RANGES.map((o) => ({
-                    id: o.id,
-                    label: o.label,
-                  }))}
+                <Stat
+                  label="○ Spending"
+                  value={compactMoney(personalOutRangeTotal)}
+                  fullValue={money(personalOutRangeTotal)}
+                />
+                <Stat
+                  label={
+                    personalRange === "today" || personalRange === "week"
+                      ? "Period net"
+                      : "Avg spend / mo"
+                  }
+                  value={compactMoney(
+                    personalRange === "today" || personalRange === "week"
+                      ? personalNetRange
+                      : personalAvgSpend,
+                    "USD",
+                    personalRange === "today" || personalRange === "week",
+                  )}
+                  fullValue={money(
+                    personalRange === "today" || personalRange === "week"
+                      ? personalNetRange
+                      : personalAvgSpend,
+                    "USD",
+                    personalRange === "today" || personalRange === "week",
+                  )}
+                  tone={
+                    personalRange === "today" || personalRange === "week"
+                      ? personalNetRange >= 0
+                        ? "pos"
+                        : "neg"
+                      : undefined
+                  }
                 />
               </div>
-            </div>
 
-            <div className="mb-3 grid grid-cols-3 gap-3">
-              <Stat
-                label="● Income"
-                value={compactMoney(personalInRangeTotal)}
-                fullValue={money(personalInRangeTotal)}
-                tone={personalInRangeTotal > 0 ? "pos" : undefined}
-              />
-              <Stat
-                label="○ Spending"
-                value={compactMoney(personalOutRangeTotal)}
-                fullValue={money(personalOutRangeTotal)}
-              />
-              <Stat
-                label="Avg spend / mo"
-                value={compactMoney(personalAvgSpend)}
-                fullValue={money(personalAvgSpend)}
-              />
-            </div>
-
-            <TrendChartCanvas
-              mode={chartMode}
-              data={chartData}
-              primaryKey="personalIn"
-              primaryName="Personal income"
-              secondaryKey="personalOut"
-              secondaryName="Personal spending"
-              gradientId="pers-cf"
-              xInterval={personalRange === "1m" ? 4 : 0}
-            />
-          </Glass>
-        ),
+              {isGrouped ? (
+                <TrendChartCanvas
+                  mode={chartMode}
+                  data={breakdownBars}
+                  primaryKey="primary"
+                  primaryName="Spending"
+                  secondaryKey="secondary"
+                  secondaryName="Income"
+                  gradientId="pers-cf-grouped"
+                  hideSecondary={chartLens === "category"}
+                  xInterval={0}
+                />
+              ) : chartLens === "net" ? (
+                <TrendChartCanvas
+                  mode={chartMode}
+                  data={chartData}
+                  primaryKey="net"
+                  primaryName="Net flow"
+                  secondaryKey="personalOut"
+                  secondaryName="Spending"
+                  gradientId="pers-cf-net"
+                  isNetMetric
+                  hideSecondary
+                  xInterval={personalRange === "1m" ? 4 : 0}
+                />
+              ) : (
+                <TrendChartCanvas
+                  mode={chartMode}
+                  data={chartData}
+                  primaryKey="personalIn"
+                  primaryName="Personal income"
+                  secondaryKey="personalOut"
+                  secondaryName="Personal spending"
+                  gradientId="pers-cf"
+                  xInterval={personalRange === "1m" ? 4 : 0}
+                />
+              )}
+            </Glass>
+          );
+        },
       },
       {
         id: "personalPie",
@@ -520,7 +607,12 @@ function PersonalPage() {
             studioItems={[]}
             personalIncomeItems={incAgg}
             scopeLabel={pAgg.scopeLabel}
+            dateSet={pAgg.dateSet}
+            monthSet={pAgg.monthSet}
             onSelectCategory={(_acc, cat) => setInspectedCategory(cat)}
+            onEmptyAction={(m) =>
+              m === "income" ? openNewIncome() : openNewExpense()
+            }
           />
         ),
       },
@@ -529,19 +621,23 @@ function PersonalPage() {
         title: "Personal spending pulse",
         defaultSpan: 6,
         render: () => {
-          const activeDays =
+          const pulseData =
             personalRange === "1m"
               ? chartData.filter((d) => d.personalOut > 0).slice(-7)
-              : chartData.slice(-6);
+              : chartData.slice(-7);
+          const pulseTitle =
+            personalRange === "today"
+              ? "Today spending by slot"
+              : personalRange === "week"
+                ? "7-day spending pulse"
+                : personalRange === "1m"
+                  ? "Active spending days"
+                  : "Monthly spending bars";
           return (
             <PeriodBarPulseCard
-              title={
-                personalRange === "1m"
-                  ? "Active spending days"
-                  : "Monthly spending bars"
-              }
+              title={pulseTitle}
               subtitle={`Comparison across ${pAgg.scopeLabel}`}
-              data={activeDays.length > 0 ? activeDays : chartData.slice(-7)}
+              data={pulseData.length > 0 ? pulseData : chartData.slice(-7)}
               valueKey="personalOut"
             />
           );
@@ -555,7 +651,11 @@ function PersonalPage() {
           <CardSpendingChartCard
             db={db}
             month={month}
-            defaultRange={personalRange}
+            range={personalRange}
+            onRangeChange={(next) => {
+              setPersonalRange(next);
+              setVisibleCount(40);
+            }}
             layoutIdPrefix="pers-card-spend"
           />
         ),
@@ -867,6 +967,8 @@ function PersonalPage() {
       pAgg,
       personalNetRange,
       chartData,
+      breakdownBars,
+      chartLens,
       personalInRangeTotal,
       personalOutRangeTotal,
       personalSavedTotal,
@@ -924,29 +1026,33 @@ function PersonalPage() {
 
       <WorkspaceBalanceCard workspace="personal" />
 
-      {/* Personal Scope Bar */}
+      {/* Personal Scope Bar: Month Picker + Synced Time Range */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-muted-foreground">
-          Dedicated personal wallet for tracking your income, everyday spending,
-          Debit &amp; Credit cards, and saving goals —{" "}
-          <Link
-            to="/finance"
-            search={{ view: "combined" }}
-            className="text-primary hover:underline"
-          >
-            View combined Studio + Personal cash flow →
-          </Link>
+          Dedicated personal wallet for daily spending, income, bank cards, and
+          saving goals
         </p>
-        <div className="flex items-center gap-2">
-          <span className="label-mono">Month</span>
-          <input
-            type="month"
-            className="field w-auto py-1.5 text-xs"
+        <div className="flex flex-wrap items-center gap-2">
+          <MonthPicker
             value={month}
-            onChange={(e) => {
-              setMonth(e.target.value || today().slice(0, 7));
+            onChange={(next) => {
+              setMonth(next);
               setVisibleCount(40);
             }}
+          />
+          <SlidingTabs
+            size="xs"
+            tone="invert"
+            layoutGroup="pers-top-range"
+            value={personalRange}
+            onChange={(next) => {
+              setPersonalRange(next);
+              setVisibleCount(40);
+            }}
+            options={PERSONAL_RANGES.map((o) => ({
+              id: o.id,
+              label: o.label,
+            }))}
           />
         </div>
       </div>

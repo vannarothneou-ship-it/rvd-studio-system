@@ -1368,7 +1368,8 @@ function Page() {
                         source: "studio",
                         code: proj.code,
                         title: proj.name || proj.code || "Project",
-                        subtitle: client?.name || "RothVan Studio",
+                        subtitle: client?.name || "Freelance Studio",
+                        projectGroup: client?.name || "Freelance Studio",
                         designType: inferStudioDesignType(proj, svc),
                         status: proj.status,
                         completed:
@@ -1381,6 +1382,7 @@ function Page() {
                         ),
                         media: proj.media ?? [],
                         notes: "",
+                        featured: Boolean(proj.featured),
                       },
                     })
                   }

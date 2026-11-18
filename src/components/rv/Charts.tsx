@@ -17,16 +17,19 @@ import {
   YAxis,
 } from "recharts";
 import {
+  Activity,
   BarChart3,
   CreditCard,
   Landmark,
   PieChart as PieIcon,
+  Plus,
   TrendingUp,
 } from "lucide-react";
-import { Glass, SlidingTabs } from "@/components/rv/ui";
+import { Btn, Glass, SlidingTabs } from "@/components/rv/ui";
 import {
   categoryIcon,
   incomeSourceIcon,
+  paymentCardIcon,
   type CategoryStatItem,
 } from "@/components/rv/FinanceVisuals";
 import {
@@ -45,11 +48,19 @@ import {
 import { cn } from "@/lib/utils";
 
 export type ChartMode = "area" | "line" | "bar";
+export type ChartLens = "flow" | "net" | "category" | "method";
 
 export const CHART_MODE_OPTIONS = [
   { id: "area" as const, label: "Area", icon: TrendingUp },
-  { id: "line" as const, label: "Line", icon: TrendingUp },
+  { id: "line" as const, label: "Line", icon: Activity },
   { id: "bar" as const, label: "Bar", icon: BarChart3 },
+];
+
+export const CHART_LENS_OPTIONS: { id: ChartLens; label: string }[] = [
+  { id: "flow", label: "In vs Out" },
+  { id: "net", label: "Net Flow" },
+  { id: "category", label: "Category" },
+  { id: "method", label: "Bank & Card" },
 ];
 
 const PIE_PALETTE = [
@@ -175,6 +186,8 @@ export function TrendChartCanvas({
   gradientId = "rv-cf",
   xInterval,
   height = 224,
+  isNetMetric = false,
+  hideSecondary = false,
 }: {
   mode: ChartMode;
   data: readonly TrendRow[];
@@ -183,8 +196,10 @@ export function TrendChartCanvas({
   secondaryKey: string;
   secondaryName: string;
   gradientId?: string;
-  xInterval?: number | "preserveStartEnd";
+  xInterval?: number | "preserveStartEnd" | undefined;
   height?: number;
+  isNetMetric?: boolean | undefined;
+  hideSecondary?: boolean | undefined;
 }) {
   const chartData = useMemo(() => [...data], [data]);
   const resolvedInterval: number | "preserveStartEnd" =
@@ -225,22 +240,44 @@ export function TrendChartCanvas({
             <div className="mt-1.5 space-y-1">
               <div className="flex items-center justify-between gap-4">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className="h-2 w-2 rounded-full bg-primary" />
+                  <span
+                    className="h-2 w-2 rounded-full"
+                    style={{
+                      background: isNetMetric
+                        ? primaryVal >= 0
+                          ? "var(--positive)"
+                          : "var(--destructive)"
+                        : "var(--primary)",
+                    }}
+                  />
                   {primaryName}
                 </span>
-                <span className="font-num font-semibold text-primary">
-                  {money(primaryVal)}
+                <span
+                  className={cn(
+                    "font-num font-semibold",
+                    isNetMetric
+                      ? primaryVal >= 0
+                        ? "text-positive"
+                        : "text-destructive"
+                      : "text-primary",
+                  )}
+                >
+                  {isNetMetric
+                    ? money(primaryVal, "USD", true)
+                    : money(primaryVal)}
                 </span>
               </div>
-              <div className="flex items-center justify-between gap-4">
-                <span className="flex items-center gap-1.5 text-muted-foreground">
-                  <span className="h-2 w-2 rounded-full bg-muted-foreground" />
-                  {secondaryName}
-                </span>
-                <span className="font-num text-foreground">
-                  {money(secondaryVal)}
-                </span>
-              </div>
+              {!hideSecondary && (
+                <div className="flex items-center justify-between gap-4">
+                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                    <span className="h-2 w-2 rounded-full bg-muted-foreground" />
+                    {secondaryName}
+                  </span>
+                  <span className="font-num text-foreground">
+                    {money(secondaryVal)}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -261,13 +298,21 @@ export function TrendChartCanvas({
               strokeDasharray="3 6"
               vertical={false}
             />
+            {isNetMetric && (
+              <ReferenceLine
+                y={0}
+                stroke="var(--muted-foreground)"
+                strokeDasharray="4 4"
+                strokeOpacity={0.55}
+              />
+            )}
             <XAxis
               dataKey="label"
               tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
               tickMargin={6}
-              minTickGap={38}
+              minTickGap={34}
               interval={resolvedInterval}
             />
             <YAxis
@@ -283,16 +328,30 @@ export function TrendChartCanvas({
               dataKey={primaryKey}
               fill="var(--primary)"
               radius={[6, 6, 0, 0]}
-              animationDuration={550}
-            />
-            <Bar
-              name={secondaryName}
-              dataKey={secondaryKey}
-              fill="var(--muted-foreground)"
-              fillOpacity={0.55}
-              radius={[6, 6, 0, 0]}
-              animationDuration={550}
-            />
+              animationDuration={450}
+            >
+              {isNetMetric &&
+                chartData.map((entry, idx) => {
+                  const v = numField(entry, primaryKey);
+                  return (
+                    <Cell
+                      key={`${entry.label}-${idx}`}
+                      fill={v >= 0 ? "var(--positive)" : "var(--destructive)"}
+                      fillOpacity={0.85}
+                    />
+                  );
+                })}
+            </Bar>
+            {!hideSecondary && (
+              <Bar
+                name={secondaryName}
+                dataKey={secondaryKey}
+                fill="var(--muted-foreground)"
+                fillOpacity={0.55}
+                radius={[6, 6, 0, 0]}
+                animationDuration={450}
+              />
+            )}
           </BarChart>
         ) : mode === "line" ? (
           <LineChart
@@ -304,13 +363,21 @@ export function TrendChartCanvas({
               strokeDasharray="3 6"
               vertical={false}
             />
+            {isNetMetric && (
+              <ReferenceLine
+                y={0}
+                stroke="var(--muted-foreground)"
+                strokeDasharray="4 4"
+                strokeOpacity={0.55}
+              />
+            )}
             <XAxis
               dataKey="label"
               tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
               tickMargin={6}
-              minTickGap={38}
+              minTickGap={34}
               interval={resolvedInterval}
             />
             <YAxis
@@ -325,32 +392,38 @@ export function TrendChartCanvas({
               name={primaryName}
               dataKey={primaryKey}
               type="monotone"
-              stroke="var(--primary)"
+              stroke={isNetMetric ? "var(--positive)" : "var(--primary)"}
               strokeWidth={2.5}
               dot={
-                chartData.length <= 24
-                  ? { r: 2.5, fill: "var(--primary)", strokeWidth: 0 }
+                chartData.length <= 32
+                  ? {
+                      r: 2.5,
+                      fill: isNetMetric ? "var(--positive)" : "var(--primary)",
+                      strokeWidth: 0,
+                    }
                   : false
               }
               activeDot={{
                 r: 5,
-                fill: "var(--primary)",
+                fill: isNetMetric ? "var(--positive)" : "var(--primary)",
                 stroke: "var(--background)",
                 strokeWidth: 2,
               }}
-              animationDuration={650}
+              animationDuration={480}
             />
-            <Line
-              name={secondaryName}
-              dataKey={secondaryKey}
-              type="monotone"
-              stroke="var(--muted-foreground)"
-              strokeWidth={1.75}
-              strokeDasharray="5 5"
-              dot={false}
-              activeDot={{ r: 4, fill: "var(--muted-foreground)" }}
-              animationDuration={650}
-            />
+            {!hideSecondary && (
+              <Line
+                name={secondaryName}
+                dataKey={secondaryKey}
+                type="monotone"
+                stroke="var(--muted-foreground)"
+                strokeWidth={1.75}
+                strokeDasharray="5 5"
+                dot={false}
+                activeDot={{ r: 4, fill: "var(--muted-foreground)" }}
+                animationDuration={480}
+              />
+            )}
           </LineChart>
         ) : (
           <AreaChart
@@ -361,10 +434,32 @@ export function TrendChartCanvas({
               <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
                 <stop
                   offset="0"
-                  stopColor="var(--primary)"
-                  stopOpacity={0.35}
+                  stopColor={isNetMetric ? "var(--positive)" : "var(--primary)"}
+                  stopOpacity={0.38}
                 />
-                <stop offset="1" stopColor="var(--primary)" stopOpacity={0} />
+                <stop
+                  offset="1"
+                  stopColor={isNetMetric ? "var(--positive)" : "var(--primary)"}
+                  stopOpacity={0}
+                />
+              </linearGradient>
+              <linearGradient
+                id={`${gradientId}-sec`}
+                x1="0"
+                y1="0"
+                x2="0"
+                y2="1"
+              >
+                <stop
+                  offset="0"
+                  stopColor="var(--muted-foreground)"
+                  stopOpacity={0.18}
+                />
+                <stop
+                  offset="1"
+                  stopColor="var(--muted-foreground)"
+                  stopOpacity={0}
+                />
               </linearGradient>
             </defs>
             <CartesianGrid
@@ -372,13 +467,21 @@ export function TrendChartCanvas({
               strokeDasharray="3 6"
               vertical={false}
             />
+            {isNetMetric && (
+              <ReferenceLine
+                y={0}
+                stroke="var(--muted-foreground)"
+                strokeDasharray="4 4"
+                strokeOpacity={0.55}
+              />
+            )}
             <XAxis
               dataKey="label"
               tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
               axisLine={false}
               tickLine={false}
               tickMargin={6}
-              minTickGap={38}
+              minTickGap={34}
               interval={resolvedInterval}
             />
             <YAxis
@@ -393,28 +496,30 @@ export function TrendChartCanvas({
               name={primaryName}
               dataKey={primaryKey}
               type="monotone"
-              stroke="var(--primary)"
+              stroke={isNetMetric ? "var(--positive)" : "var(--primary)"}
               strokeWidth={2}
               fill={`url(#${gradientId})`}
               activeDot={{
                 r: 4.5,
-                fill: "var(--primary)",
+                fill: isNetMetric ? "var(--positive)" : "var(--primary)",
                 stroke: "var(--background)",
                 strokeWidth: 2,
               }}
               animationDuration={360}
               animationEasing="ease-out"
             />
-            <Area
-              name={secondaryName}
-              dataKey={secondaryKey}
-              type="monotone"
-              stroke="var(--muted-foreground)"
-              strokeDasharray="5 5"
-              fill="transparent"
-              animationDuration={360}
-              animationEasing="ease-out"
-            />
+            {!hideSecondary && (
+              <Area
+                name={secondaryName}
+                dataKey={secondaryKey}
+                type="monotone"
+                stroke="var(--muted-foreground)"
+                strokeDasharray="5 5"
+                fill={`url(#${gradientId}-sec)`}
+                animationDuration={360}
+                animationEasing="ease-out"
+              />
+            )}
           </AreaChart>
         )}
       </ResponsiveContainer>
@@ -422,7 +527,8 @@ export function TrendChartCanvas({
   );
 }
 
-type PieMode = "expenses" | "revenue" | "income";
+export type PieMode = "expenses" | "revenue" | "income";
+type PieGroupBy = "category" | "method";
 
 export function BreakdownPieCard({
   db,
@@ -431,7 +537,10 @@ export function BreakdownPieCard({
   studioItems,
   personalIncomeItems,
   scopeLabel,
+  dateSet,
+  monthSet,
   onSelectCategory,
+  onEmptyAction,
   delay = 140,
 }: {
   db: DB;
@@ -440,12 +549,16 @@ export function BreakdownPieCard({
   studioItems: CategoryStatItem[];
   personalIncomeItems?: { source: string; totalUSD: number; count: number }[];
   scopeLabel: string;
-  onSelectCategory?: (acc: Account, category: string) => void;
+  dateSet?: Set<string> | null | undefined;
+  monthSet?: Set<string> | null | undefined;
+  onSelectCategory?: ((acc: Account, category: string) => void) | undefined;
+  onEmptyAction?: ((mode: PieMode) => void) | undefined;
   delay?: number;
 }) {
   const [pieMode, setPieMode] = useState<PieMode>(
     account === "Studio" ? "revenue" : "expenses",
   );
+  const [groupBy, setGroupBy] = useState<PieGroupBy>("category");
 
   const effectiveMode: PieMode =
     account === "Personal" && pieMode === "revenue"
@@ -454,7 +567,20 @@ export function BreakdownPieCard({
         ? "expenses"
         : pieMode;
 
+  const canGroupMethod =
+    account === "Personal" &&
+    (effectiveMode === "expenses" || effectiveMode === "income");
+
+  const effectiveGroup: PieGroupBy = canGroupMethod ? groupBy : "category";
+
   const slices = useMemo(() => {
+    const r = db.settings.khrRate;
+    const matchesPeriod = (dt: string) => {
+      if (dateSet) return dateSet.has(dt);
+      if (monthSet) return monthSet.has(dt.slice(0, 7));
+      return true;
+    };
+
     if (effectiveMode === "revenue" && account !== "Personal") {
       return revenueByPillar(db).map((x, idx) => ({
         name: x.label,
@@ -467,6 +593,29 @@ export function BreakdownPieCard({
     }
 
     if (effectiveMode === "income" && account === "Personal") {
+      if (effectiveGroup === "method") {
+        const mMap = new Map<string, { usd: number; count: number }>();
+        for (const inc of db.personalIncome ?? []) {
+          if (!matchesPeriod(inc.date)) continue;
+          const k = inc.accountMethod?.trim() || "Bank";
+          const cur = mMap.get(k) ?? { usd: 0, count: 0 };
+          cur.usd += toUSD(inc.amount, inc.currency, r);
+          cur.count += 1;
+          mMap.set(k, cur);
+        }
+        return Array.from(mMap.entries())
+          .sort((a, b) => b[1].usd - a[1].usd)
+          .slice(0, 7)
+          .map(([name, val], idx) => ({
+            name,
+            value: Math.round(val.usd * 100) / 100,
+            count: val.count,
+            color: PIE_PALETTE[idx % PIE_PALETTE.length]!,
+            account: "Personal" as Account,
+            clickable: false,
+          }));
+      }
+
       return (personalIncomeItems ?? []).slice(0, 7).map((x, idx) => ({
         name: x.source,
         value: Math.round(x.totalUSD * 100) / 100,
@@ -475,6 +624,30 @@ export function BreakdownPieCard({
         account: "Personal" as Account,
         clickable: false,
       }));
+    }
+
+    if (effectiveGroup === "method" && account === "Personal") {
+      const mMap = new Map<string, { usd: number; count: number }>();
+      for (const e of db.expenses) {
+        if (expenseAccount(e) !== "Personal") continue;
+        if (!matchesPeriod(e.date)) continue;
+        const k = e.vendor?.trim() || "Other";
+        const cur = mMap.get(k) ?? { usd: 0, count: 0 };
+        cur.usd += toUSD(e.amount, e.currency, r);
+        cur.count += 1;
+        mMap.set(k, cur);
+      }
+      return Array.from(mMap.entries())
+        .sort((a, b) => b[1].usd - a[1].usd)
+        .slice(0, 8)
+        .map(([name, val], idx) => ({
+          name,
+          value: Math.round(val.usd * 100) / 100,
+          count: val.count,
+          color: PIE_PALETTE[idx % PIE_PALETTE.length]!,
+          account: "Personal" as Account,
+          clickable: false,
+        }));
     }
 
     const source =
@@ -500,180 +673,241 @@ export function BreakdownPieCard({
     }));
   }, [
     effectiveMode,
+    effectiveGroup,
     db,
     account,
     personalItems,
     studioItems,
     personalIncomeItems,
+    dateSet,
+    monthSet,
   ]);
 
   const total = slices.reduce((s, x) => s + x.value, 0);
 
   return (
     <Glass delay={delay} className="flex h-full flex-col justify-between">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <PieIcon className="h-4 w-4 text-primary" />
-          <div>
-            <h2 className="font-medium leading-tight">
-              {effectiveMode === "revenue"
-                ? "Studio revenue by pillar"
-                : effectiveMode === "income"
-                  ? `Personal income · ${scopeLabel}`
-                  : `${
-                      account === "Personal"
-                        ? "Personal spending"
-                        : account === "Combined"
-                          ? "Combined expense"
-                          : "Studio expense"
-                    } breakdown · ${scopeLabel}`}
-            </h2>
-          </div>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <PieIcon className="h-4 w-4 shrink-0 text-primary" />
+          <h2 className="truncate font-medium leading-tight">
+            {effectiveMode === "revenue"
+              ? "Revenue by pillar"
+              : effectiveMode === "income"
+                ? `Income · ${scopeLabel}`
+                : `${
+                    account === "Personal"
+                      ? "Spending"
+                      : account === "Combined"
+                        ? "Combined spend"
+                        : "Studio costs"
+                  } · ${scopeLabel}`}
+          </h2>
         </div>
-        <SlidingTabs
-          size="xs"
-          tone="invert"
-          layoutGroup={`pie-mode-${account}`}
-          value={effectiveMode}
-          onChange={setPieMode}
-          options={
-            account === "Personal"
-              ? [
-                  { id: "expenses", label: "Spending" },
-                  { id: "income", label: "Income" },
-                ]
-              : [
-                  { id: "expenses", label: "Expenses" },
-                  { id: "revenue", label: "Revenue" },
-                ]
-          }
-        />
+        <div className="shrink-0">
+          <SlidingTabs
+            size="xs"
+            tone="invert"
+            layoutGroup={`pie-mode-${account}`}
+            value={effectiveMode}
+            onChange={setPieMode}
+            options={
+              account === "Personal"
+                ? [
+                    { id: "expenses", label: "Spending" },
+                    { id: "income", label: "Income" },
+                  ]
+                : [
+                    { id: "expenses", label: "Expenses" },
+                    { id: "revenue", label: "Revenue" },
+                  ]
+            }
+          />
+        </div>
       </div>
 
-      {slices.length === 0 || total <= 0 ? (
-        <p className="py-10 text-center text-sm text-muted-foreground">
-          No breakdown data in this range.
-        </p>
-      ) : (
-        <div className="grid flex-1 items-center gap-4 sm:grid-cols-[200px_minmax(0,1fr)]">
-          <div className="relative mx-auto h-48 w-48 shrink-0">
-            <ResponsiveContainer width={192} height={192}>
-              <PieChart>
-                <Pie
-                  data={slices}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={54}
-                  outerRadius={84}
-                  paddingAngle={3}
-                  cornerRadius={5}
-                  stroke="none"
-                  animationDuration={360}
-                  onClick={(entry) => {
-                    if (
-                      entry &&
-                      entry.clickable &&
-                      onSelectCategory &&
-                      entry.name &&
-                      entry.account
-                    ) {
-                      onSelectCategory(entry.account, entry.name);
-                    }
-                  }}
-                >
-                  {slices.map((s) => (
-                    <Cell
-                      key={s.name}
-                      fill={s.color}
-                      className={cn(s.clickable && "cursor-pointer")}
-                    />
-                  ))}
-                </Pie>
-                <Tooltip
-                  content={({ active, payload }) => {
-                    if (!active || !payload?.length) return null;
-                    const s = payload[0]?.payload as
-                      (typeof slices)[number] | undefined;
-                    if (!s) return null;
-                    const pct =
-                      total > 0 ? Math.round((s.value / total) * 100) : 0;
-                    return (
-                      <div className="rounded-xl border border-border bg-popover/95 px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-md">
-                        <p className="font-medium text-foreground">{s.name}</p>
-                        <p className="font-num mt-0.5 font-semibold text-primary">
-                          {money(s.value)} ({pct}%)
-                        </p>
-                        <p className="font-num text-[0.68rem] text-muted-foreground">
-                          {s.count} {s.count === 1 ? "item" : "items"}
-                        </p>
-                      </div>
-                    );
-                  }}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-              <span className="label-mono text-[0.6rem]">Total</span>
-              <span
-                className="font-num text-xl font-bold tracking-tight text-foreground"
-                title={money(total)}
-              >
-                {compactMoney(total)}
-              </span>
-              <span className="font-num text-[0.68rem] text-muted-foreground">
-                {slices.length} {slices.length === 1 ? "slice" : "slices"}
-              </span>
-            </div>
+      {canGroupMethod && (
+        <div className="mb-2.5 flex items-center justify-between gap-2 text-[0.7rem]">
+          <span className="text-muted-foreground">
+            {effectiveGroup === "method"
+              ? "Grouped by bank & card"
+              : effectiveMode === "income"
+                ? "Grouped by source"
+                : "Grouped by category"}
+          </span>
+          <div className="inline-flex items-center gap-1 rounded-full border border-border/75 bg-muted/40 p-0.5">
+            <button
+              type="button"
+              onClick={() => setGroupBy("category")}
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[0.68rem] font-medium transition-colors",
+                effectiveGroup === "category"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {effectiveMode === "income" ? "By Source" : "By Category"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setGroupBy("method")}
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[0.68rem] font-medium transition-colors",
+                effectiveGroup === "method"
+                  ? "bg-background text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              By Card / Bank
+            </button>
           </div>
-
-          <ul className="space-y-1.5">
-            {slices.map((s) => {
-              const pct = total > 0 ? Math.round((s.value / total) * 100) : 0;
-              const CatIcon =
-                effectiveMode === "income"
-                  ? incomeSourceIcon(s.name)
-                  : categoryIcon(s.name);
-              const content = (
-                <>
-                  <span className="flex min-w-0 items-center gap-2">
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ background: s.color }}
-                    />
-                    <CatIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate text-xs font-medium text-foreground">
-                      {s.name}
-                    </span>
-                  </span>
-                  <span className="font-num flex shrink-0 items-center gap-2 text-xs">
-                    <span className="text-muted-foreground">{pct}%</span>
-                    <span className="font-semibold text-foreground">
-                      {compactMoney(s.value)}
-                    </span>
-                  </span>
-                </>
-              );
-              return (
-                <li key={s.name}>
-                  {s.clickable && onSelectCategory ? (
-                    <button
-                      type="button"
-                      onClick={() => onSelectCategory(s.account, s.name)}
-                      className="flex w-full items-center justify-between gap-2 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-muted"
-                    >
-                      {content}
-                    </button>
-                  ) : (
-                    <div className="flex items-center justify-between gap-2 rounded-xl px-2 py-1.5">
-                      {content}
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
         </div>
       )}
+
+      <div className="flex min-h-[248px] flex-1 flex-col justify-center">
+        {slices.length === 0 || total <= 0 ? (
+          <div className="flex flex-col items-center justify-center gap-3 py-8 text-center">
+            <p className="text-sm text-muted-foreground">
+              {effectiveMode === "income"
+                ? `No personal income logged in ${scopeLabel}.`
+                : `No breakdown data in ${scopeLabel}.`}
+            </p>
+            {onEmptyAction && (
+              <Btn
+                type="button"
+                onClick={() => onEmptyAction(effectiveMode)}
+                className="px-3.5 py-1.5 text-xs"
+              >
+                <Plus className="h-3.5 w-3.5 text-primary" />
+                {effectiveMode === "income" ? "Log income" : "Add expense"}
+              </Btn>
+            )}
+          </div>
+        ) : (
+          <div className="grid items-center gap-4 sm:grid-cols-[200px_minmax(0,1fr)]">
+            <div className="relative mx-auto h-48 w-48 shrink-0">
+              <ResponsiveContainer width={192} height={192}>
+                <PieChart>
+                  <Pie
+                    data={slices}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={54}
+                    outerRadius={84}
+                    paddingAngle={3}
+                    cornerRadius={5}
+                    stroke="none"
+                    animationDuration={360}
+                    onClick={(entry) => {
+                      if (
+                        entry &&
+                        entry.clickable &&
+                        onSelectCategory &&
+                        entry.name &&
+                        entry.account
+                      ) {
+                        onSelectCategory(entry.account, entry.name);
+                      }
+                    }}
+                  >
+                    {slices.map((s) => (
+                      <Cell
+                        key={s.name}
+                        fill={s.color}
+                        className={cn(s.clickable && "cursor-pointer")}
+                      />
+                    ))}
+                  </Pie>
+                  <Tooltip
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const s = payload[0]?.payload as
+                        (typeof slices)[number] | undefined;
+                      if (!s) return null;
+                      const pct =
+                        total > 0 ? Math.round((s.value / total) * 100) : 0;
+                      return (
+                        <div className="rounded-xl border border-border bg-popover/95 px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-md">
+                          <p className="font-medium text-foreground">
+                            {s.name}
+                          </p>
+                          <p className="font-num mt-0.5 font-semibold text-primary">
+                            {money(s.value)} ({pct}%)
+                          </p>
+                          <p className="font-num text-[0.68rem] text-muted-foreground">
+                            {s.count} {s.count === 1 ? "item" : "items"}
+                          </p>
+                        </div>
+                      );
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span className="label-mono text-[0.6rem]">Total</span>
+                <span
+                  className="font-num text-xl font-bold tracking-tight text-foreground"
+                  title={money(total)}
+                >
+                  {compactMoney(total)}
+                </span>
+                <span className="font-num text-[0.68rem] text-muted-foreground">
+                  {slices.length} {slices.length === 1 ? "slice" : "slices"}
+                </span>
+              </div>
+            </div>
+
+            <ul className="space-y-1.5">
+              {slices.map((s) => {
+                const pct = total > 0 ? Math.round((s.value / total) * 100) : 0;
+                const CatIcon =
+                  effectiveGroup === "method"
+                    ? paymentCardIcon(s.name)
+                    : effectiveMode === "income"
+                      ? incomeSourceIcon(s.name)
+                      : categoryIcon(s.name);
+                const content = (
+                  <>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span
+                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ background: s.color }}
+                      />
+                      <CatIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="truncate text-xs font-medium text-foreground">
+                        {s.name}
+                      </span>
+                    </span>
+                    <span className="font-num flex shrink-0 items-center gap-2 text-xs">
+                      <span className="text-muted-foreground">{pct}%</span>
+                      <span className="font-semibold text-foreground">
+                        {compactMoney(s.value)}
+                      </span>
+                    </span>
+                  </>
+                );
+                return (
+                  <li key={s.name}>
+                    {s.clickable && onSelectCategory ? (
+                      <button
+                        type="button"
+                        onClick={() => onSelectCategory(s.account, s.name)}
+                        className="flex w-full items-center justify-between gap-2 rounded-xl px-2 py-1.5 text-left transition-colors hover:bg-muted"
+                      >
+                        {content}
+                      </button>
+                    ) : (
+                      <div className="flex items-center justify-between gap-2 rounded-xl px-2 py-1.5">
+                        {content}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </div>
     </Glass>
   );
 }
@@ -795,9 +1029,11 @@ export function PeriodBarPulseCard({
 }
 
 const CARD_RANGE_OPTIONS: { id: PersonalRange; label: string }[] = [
-  { id: "1m", label: "This month" },
-  { id: "6m", label: "6 months" },
-  { id: "12m", label: "12 months" },
+  { id: "today", label: "Today" },
+  { id: "week", label: "Week" },
+  { id: "1m", label: "Month" },
+  { id: "6m", label: "6M" },
+  { id: "12m", label: "12M" },
 ];
 
 type CardFilter = "both" | "debit" | "credit";
@@ -806,16 +1042,27 @@ export function CardSpendingChartCard({
   db,
   month,
   defaultRange = "1m",
+  range: controlledRange,
+  onRangeChange,
   layoutIdPrefix = "card-spend",
   delay = 160,
 }: {
   db: DB;
   month?: string;
   defaultRange?: PersonalRange;
+  range?: PersonalRange | undefined;
+  onRangeChange?: ((next: PersonalRange) => void) | undefined;
   layoutIdPrefix?: string;
   delay?: number;
 }) {
-  const [range, setRange] = useState<PersonalRange>(defaultRange);
+  const [uncontrolledRange, setUncontrolledRange] =
+    useState<PersonalRange>(defaultRange);
+  const range = controlledRange ?? uncontrolledRange;
+  const setRange = (next: PersonalRange) => {
+    setUncontrolledRange(next);
+    onRangeChange?.(next);
+  };
+
   const [mode, setMode] = useState<ChartMode>("bar");
   const [cardFilter, setCardFilter] = useState<CardFilter>("both");
   const anchorMonth = month || today().slice(0, 7);
@@ -827,6 +1074,7 @@ export function CardSpendingChartCard({
 
   const insights = useMemo(() => {
     const pointKeys = new Set(agg.points.map((p) => p.key));
+    const anchorDay = agg.points[0]?.key.slice(0, 10) ?? "";
     const r = db.settings.khrRate;
     const catByCard = {
       debit: new Map<string, number>(),
@@ -835,8 +1083,13 @@ export function CardSpendingChartCard({
 
     for (const e of db.expenses) {
       if (expenseAccount(e) !== "Personal") continue;
-      const k = range === "1m" ? e.date : e.date.slice(0, 7);
-      if (!pointKeys.has(k)) continue;
+      const match =
+        range === "today"
+          ? e.date === anchorDay
+          : range === "week" || range === "1m"
+            ? pointKeys.has(e.date)
+            : pointKeys.has(e.date.slice(0, 7));
+      if (!match) continue;
       const ck = cardKind(e.vendor);
       if (ck === "Other") continue;
       const usd = toUSD(e.amount, e.currency, r);
@@ -898,7 +1151,21 @@ export function CardSpendingChartCard({
         ? agg.creditUSD
         : agg.totalUSD;
   const periodAvg = activePeriods > 0 ? selectedTotal / activePeriods : 0;
-  const xInterval: number | "preserveStartEnd" = range === "1m" ? 3 : 0;
+  const xInterval: number | "preserveStartEnd" =
+    range === "1m" ? "preserveStartEnd" : 0;
+
+  const periodNounPlural =
+    range === "today"
+      ? "slots"
+      : range === "week" || range === "1m"
+        ? "active days"
+        : "active months";
+  const periodNounSingular =
+    range === "today"
+      ? "slot"
+      : range === "week" || range === "1m"
+        ? "active day"
+        : "mo";
 
   const toggleCardFilter = (target: "debit" | "credit") =>
     setCardFilter((cur) => (cur === target ? "both" : target));
@@ -1094,8 +1361,7 @@ export function CardSpendingChartCard({
                 {cardFilter === "both" ? "Total & pace" : `${cardFilter} total`}
               </span>
               <span className="font-num text-[0.68rem] text-muted-foreground">
-                {activePeriods}{" "}
-                {range === "1m" ? "active days" : "active months"}
+                {activePeriods} {periodNounPlural}
               </span>
             </div>
             <p
@@ -1105,8 +1371,7 @@ export function CardSpendingChartCard({
               {compactMoney(selectedTotal)}
             </p>
             <p className="font-num mt-0.5 truncate text-[0.68rem] text-muted-foreground">
-              Avg {compactMoney(periodAvg)} /{" "}
-              {range === "1m" ? "active day" : "mo"}
+              Avg {compactMoney(periodAvg)} / {periodNounSingular}
               {insights.peak && insights.peak.total > 0
                 ? ` · Peak ${insights.peak.label} (${compactMoney(
                     cardFilter === "debit"

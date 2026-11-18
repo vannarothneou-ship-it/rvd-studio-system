@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   ArrowDownLeft,
+  ArrowLeft,
   ArrowUpRight,
   Briefcase,
   Layers,
@@ -29,10 +30,12 @@ import {
 } from "@/components/rv/FinanceVisuals";
 import {
   BreakdownPieCard,
+  CHART_LENS_OPTIONS,
   CHART_MODE_OPTIONS,
   PeriodBarPulseCard,
   SparklineWithDates,
   TrendChartCanvas,
+  type ChartLens,
   type ChartMode,
 } from "@/components/rv/Charts";
 import {
@@ -40,6 +43,7 @@ import {
   EditableBentoGrid,
   type BentoWidgetDef,
 } from "@/components/rv/BentoGrid";
+import { MonthPicker } from "@/components/rv/MonthPicker";
 import { WorkspaceBalanceCard } from "@/components/rv/WorkspaceBalanceCard";
 import {
   EXPENSE_CATEGORIES,
@@ -54,6 +58,7 @@ import {
   invoiceView,
   isInvoice,
   money,
+  periodBreakdownBars,
   setDB,
   shortDate,
   toUSD,
@@ -99,9 +104,10 @@ export const Route = createFileRoute("/finance")({
 });
 
 const STUDIO_RANGES: { id: CashRange; label: string; desc: string }[] = [
-  { id: "6m", label: "6 months", desc: "last 6 months" },
-  { id: "12m", label: "12 months", desc: "last 12 months" },
-  { id: "all", label: "All time", desc: "all time" },
+  { id: "week", label: "Week", desc: "last 7 days" },
+  { id: "6m", label: "6M", desc: "last 6 months" },
+  { id: "12m", label: "12M", desc: "last 12 months" },
+  { id: "all", label: "All", desc: "all time" },
 ];
 
 type FinanceView = "studio" | "combined";
@@ -122,6 +128,7 @@ function Page() {
 
   const [studioRange, setStudioRange] = useState<CashRange>("all");
   const [chartMode, setChartMode] = useState<ChartMode>("area");
+  const [chartLens, setChartLens] = useState<ChartLens>("flow");
   const [month, setMonth] = useState(() => today().slice(0, 7));
   const [catFilter, setCatFilter] = useState<string>("All");
   const [query, setQuery] = useState("");
@@ -142,9 +149,12 @@ function Page() {
     { month: "long", year: "numeric", timeZone: "UTC" },
   );
 
-  const pts = useMemo(() => cashFlowSeries(db, studioRange), [db, studioRange]);
+  const pts = useMemo(
+    () => cashFlowSeries(db, studioRange, month),
+    [db, studioRange, month],
+  );
   const studioRangeMeta =
-    STUDIO_RANGES.find((o) => o.id === studioRange) ?? STUDIO_RANGES[2]!;
+    STUDIO_RANGES.find((o) => o.id === studioRange) ?? STUDIO_RANGES[3]!;
 
   const studioInRange = useMemo(
     () => pts.reduce((a, x) => a + x.inn, 0),
@@ -166,6 +176,19 @@ function Page() {
       };
     });
   }, [pts]);
+
+  const studioBreakdownBars = useMemo(
+    () =>
+      periodBreakdownBars(
+        db,
+        "Studio",
+        studioRange,
+        month,
+        "category",
+        "spending",
+      ),
+    [db, studioRange, month],
+  );
 
   const studioInYear = useMemo(() => cashReceived(db, year), [db, year]);
   const studioOutYear = useMemo(
@@ -479,62 +502,110 @@ function Page() {
         id: "trendChart",
         title: "Studio cash flow",
         defaultSpan: 7,
-        render: () => (
-          <Glass delay={80} className="h-full">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-medium">Studio cash flow</h2>
-              <div className="flex flex-wrap items-center gap-1.5">
-                <SlidingTabs
-                  size="xs"
-                  layoutGroup="fin-chart-mode"
-                  value={chartMode}
-                  onChange={setChartMode}
-                  options={CHART_MODE_OPTIONS}
+        render: () => {
+          const studioLens = chartLens === "method" ? "category" : chartLens;
+          return (
+            <Glass delay={80} className="h-full">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="font-medium">
+                    {studioLens === "net"
+                      ? "Studio net cash flow"
+                      : studioLens === "category"
+                        ? "Studio costs by category"
+                        : "Studio cash flow"}
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    {studioRangeMeta.desc}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <SlidingTabs
+                    size="xs"
+                    tone="invert"
+                    layoutGroup="fin-chart-lens"
+                    value={studioLens}
+                    onChange={setChartLens}
+                    options={CHART_LENS_OPTIONS.slice(0, 3)}
+                  />
+                  <SlidingTabs
+                    size="xs"
+                    layoutGroup="fin-chart-mode"
+                    value={chartMode}
+                    onChange={setChartMode}
+                    options={CHART_MODE_OPTIONS}
+                  />
+                  <SlidingTabs
+                    size="xs"
+                    tone="invert"
+                    layoutGroup="fin-studio-range"
+                    value={studioRange}
+                    onChange={setStudioRange}
+                    options={STUDIO_RANGES.map((o) => ({
+                      id: o.id,
+                      label: o.label,
+                    }))}
+                  />
+                </div>
+              </div>
+
+              <div className="mb-3 grid grid-cols-3 gap-3">
+                <Stat
+                  label="● Cash in"
+                  value={compactMoney(studioInRange)}
+                  fullValue={money(studioInRange)}
                 />
-                <SlidingTabs
-                  size="xs"
-                  tone="invert"
-                  layoutGroup="fin-studio-range"
-                  value={studioRange}
-                  onChange={setStudioRange}
-                  options={STUDIO_RANGES.map((o) => ({
-                    id: o.id,
-                    label: o.label,
-                  }))}
+                <Stat
+                  label="○ Studio out"
+                  value={compactMoney(studioOutRange)}
+                  fullValue={money(studioOutRange)}
+                />
+                <Stat
+                  label="Net"
+                  value={compactMoney(studioNetRange, "USD", true)}
+                  fullValue={money(studioNetRange, "USD", true)}
+                  tone={studioNetRange >= 0 ? "pos" : "neg"}
                 />
               </div>
-            </div>
 
-            <div className="mb-3 grid grid-cols-3 gap-3">
-              <Stat
-                label="● Cash in"
-                value={compactMoney(studioInRange)}
-                fullValue={money(studioInRange)}
-              />
-              <Stat
-                label="○ Studio out"
-                value={compactMoney(studioOutRange)}
-                fullValue={money(studioOutRange)}
-              />
-              <Stat
-                label="Net"
-                value={compactMoney(studioNetRange, "USD", true)}
-                fullValue={money(studioNetRange, "USD", true)}
-                tone={studioNetRange >= 0 ? "pos" : "neg"}
-              />
-            </div>
-
-            <TrendChartCanvas
-              mode={chartMode}
-              data={studioChartData}
-              primaryKey="inn"
-              primaryName="Client cash in"
-              secondaryKey="out"
-              secondaryName="Studio expenses"
-              gradientId="fin-cf-studio"
-            />
-          </Glass>
-        ),
+              {studioLens === "category" ? (
+                <TrendChartCanvas
+                  mode={chartMode}
+                  data={studioBreakdownBars}
+                  primaryKey="primary"
+                  primaryName="Studio costs"
+                  secondaryKey="secondary"
+                  secondaryName="Income"
+                  gradientId="fin-cf-studio-cat"
+                  hideSecondary
+                  xInterval={0}
+                />
+              ) : studioLens === "net" ? (
+                <TrendChartCanvas
+                  mode={chartMode}
+                  data={studioChartData}
+                  primaryKey="net"
+                  primaryName="Studio net"
+                  secondaryKey="out"
+                  secondaryName="Studio expenses"
+                  gradientId="fin-cf-studio-net"
+                  isNetMetric
+                  hideSecondary
+                />
+              ) : (
+                <TrendChartCanvas
+                  mode={chartMode}
+                  data={studioChartData}
+                  primaryKey="inn"
+                  primaryName="Client cash in"
+                  secondaryKey="out"
+                  secondaryName="Studio expenses"
+                  gradientId="fin-cf-studio"
+                />
+              )}
+            </Glass>
+          );
+        },
       },
       {
         id: "breakdownPie",
@@ -852,6 +923,8 @@ function Page() {
       studioRangeMeta,
       studioNetRange,
       studioChartData,
+      studioBreakdownBars,
+      chartLens,
       unpaidInvoicesUSD,
       year,
       studioInYear,
@@ -905,43 +978,30 @@ function Page() {
         }
       />
 
-      {/* Mode Switcher & Month Scope Bar */}
+      {/* Studio Scope & Month Bar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <SlidingTabs
-          layoutGroup="finance-top-view"
-          value={financeView}
-          onChange={setFinanceView}
-          options={[
-            { id: "studio", label: "Studio Finance", icon: Briefcase },
-            {
-              id: "combined",
-              label: "Combined (Studio + Personal)",
-              icon: Layers,
-            },
-          ]}
+        {financeView === "combined" ? (
+          <Btn
+            type="button"
+            onClick={() => setFinanceView("studio")}
+            className="px-3.5 py-1.5 text-xs"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Back to Studio Finance
+          </Btn>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            RothVan Design studio cash flow, invoice payments, operating costs,
+            and studio savings goals
+          </p>
+        )}
+        <MonthPicker
+          value={month}
+          onChange={(next) => {
+            setMonth(next);
+            setVisibleCount(40);
+          }}
         />
-        <div className="flex flex-wrap items-center gap-3">
-          {financeView === "studio" && (
-            <Link
-              to="/personal"
-              className="text-xs text-muted-foreground hover:text-primary hover:underline"
-            >
-              Open Personal Money →
-            </Link>
-          )}
-          <div className="flex items-center gap-2">
-            <span className="label-mono">Month</span>
-            <input
-              type="month"
-              className="field w-auto py-1.5 text-xs"
-              value={month}
-              onChange={(e) => {
-                setMonth(e.target.value || today().slice(0, 7));
-                setVisibleCount(40);
-              }}
-            />
-          </div>
-        </div>
       </div>
 
       {financeView === "studio" ? (
@@ -1082,7 +1142,7 @@ function Page() {
                         Studio
                       </span>
                       <Link
-                        to="/"
+                        to="/studio"
                         className="text-[0.7rem] text-primary hover:underline"
                       >
                         Open →

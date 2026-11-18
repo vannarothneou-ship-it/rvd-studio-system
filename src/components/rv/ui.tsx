@@ -109,7 +109,7 @@ export function Glass({
 }) {
   return (
     <section
-      className={cn("glass rise p-5 sm:p-6", className)}
+      className={cn("glass rise p-4 sm:p-6", className)}
       style={{ animationDelay: `${delay}ms` }}
     >
       {children}
@@ -131,15 +131,17 @@ export function PageHeader({
     year: "numeric",
   });
   return (
-    <header className="rise mb-6 grid grid-cols-[minmax(0,1fr)_auto] items-end gap-4">
+    <header className="rise mb-5 flex flex-col gap-3 sm:mb-6 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:gap-4">
       <div className="min-w-0">
-        <p className="text-sm text-muted-foreground">Welcome back, {owner}.</p>
-        <h1 className="truncate font-display text-3xl font-bold sm:text-4xl">
+        <p className="text-xs text-muted-foreground sm:text-sm">
+          Welcome back, {owner}.
+        </p>
+        <h1 className="truncate font-display text-2xl font-bold sm:text-4xl">
           {title}
         </h1>
       </div>
-      <div className="flex shrink-0 flex-col items-end gap-2">
-        <span className="hidden text-sm text-muted-foreground sm:block">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 sm:flex-col sm:items-end">
+        <span className="text-xs text-muted-foreground sm:text-sm">
           {month}
         </span>
         {action}
@@ -159,7 +161,7 @@ export function Btn({
     <button
       {...p}
       className={cn(
-        "inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all active:scale-95 disabled:opacity-50",
+        "inline-flex min-h-[42px] items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all active:scale-95 disabled:opacity-50 sm:min-h-[38px]",
         variant === "gold" &&
           "bg-primary text-primary-foreground shadow-[0_8px_24px_-8px_var(--primary)] hover:brightness-110",
         variant === "ghost" &&
@@ -200,7 +202,7 @@ export function Modal({
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "glass-strong max-h-[92vh] w-full overflow-y-auto rounded-t-3xl p-5 animate-in slide-in-from-bottom-8 sm:rounded-3xl sm:p-6",
+          "glass-strong max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl p-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] animate-in slide-in-from-bottom-8 sm:rounded-3xl sm:p-6",
           wide ? "sm:max-w-3xl" : "sm:max-w-lg",
         )}
       >
@@ -208,7 +210,7 @@ export function Modal({
           <h2 className="font-display text-xl font-bold">{title}</h2>
           <button
             onClick={onClose}
-            className="rounded-full p-2 hover:bg-accent"
+            className="grid h-10 w-10 place-items-center rounded-full hover:bg-accent"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -247,8 +249,8 @@ export function SlideDrawer({
   return (
     <div
       className={cn(
-        "fixed inset-0 z-50 flex",
-        side === "left" ? "justify-start" : "justify-end",
+        "fixed inset-0 z-50 flex items-end sm:items-stretch",
+        side === "left" ? "sm:justify-start" : "sm:justify-end",
       )}
       role="dialog"
       aria-modal="true"
@@ -258,30 +260,37 @@ export function SlideDrawer({
         type="button"
         aria-label={`Close ${title}`}
         onClick={onClose}
-        className="backdrop-in fixed inset-0 bg-black/35 backdrop-blur-[2px]"
+        className="backdrop-in fixed inset-0 bg-black/45 backdrop-blur-[2px]"
       />
       <aside
         className={cn(
-          "drawer-in glass-strong relative z-10 flex h-full w-full flex-col shadow-2xl",
+          "drawer-in glass-strong relative z-10 flex max-h-[92dvh] w-full flex-col rounded-t-3xl border-t border-border shadow-2xl sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0",
           widthClass,
-          side === "left" ? "border-r border-border" : "border-l border-border",
+          side === "left"
+            ? "sm:border-r sm:border-border"
+            : "sm:border-l sm:border-border",
         )}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
+        <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-border sm:hidden" />
+        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-5 sm:py-4">
           <div className="min-w-0">
             {subtitle ? <span className="label-mono">{subtitle}</span> : null}
-            <h2 className="truncate font-display text-xl font-bold">{title}</h2>
+            <h2 className="truncate font-display text-lg font-bold sm:text-xl">
+              {title}
+            </h2>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
         </div>
-        <div className="flex-1 overflow-y-auto px-5 py-5">{children}</div>
+        <div className="flex-1 overflow-y-auto px-4 py-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:px-5 sm:py-5">
+          {children}
+        </div>
       </aside>
     </div>
   );

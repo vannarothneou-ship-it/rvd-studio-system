@@ -54,9 +54,12 @@ export function normalizeServicePillar(pillar: string): string {
 export const PRICING_UNITS = ["Fixed fee", "Per item", "Per hour", "Per sqm"];
 export const PAY_METHODS = ["Bank transfer", "KHQR", "Wing", "Cash", "Other"];
 export const CARD_METHODS = [
+  "ABA Bank",
+  "ACLEDA",
+  "Canadia",
+  "KHQR",
   "Debit",
   "Credit",
-  "KHQR",
   "Cash",
   "Other",
 ] as const;
@@ -70,9 +73,11 @@ export const PERSONAL_INCOME_SOURCES = [
   "Other",
 ] as const;
 export const PERSONAL_INCOME_METHODS = [
-  "Debit",
   "ABA Bank",
+  "ACLEDA",
+  "Canadia",
   "KHQR",
+  "Debit",
   "Wing",
   "Cash",
   "Other",
@@ -190,6 +195,8 @@ export interface DesignMedia {
   createdAt: string;
 }
 
+export const DEFAULT_WORK_PROJECTS = ["DBG", "Connexion", "OCIC"] as const;
+
 export interface WorkTask {
   id: string;
   code: string;
@@ -197,11 +204,14 @@ export interface WorkTask {
   status: WorkStatus;
   designType: string;
   artworkCount: number;
+  projectName?: string;
   company: string;
+  startDate?: string;
   dueDate: string;
   completedDate: string;
   notes: string;
   media: DesignMedia[];
+  featured?: boolean;
 }
 
 export interface Project {
@@ -217,6 +227,7 @@ export interface Project {
   quote: number;
   artworkCount?: number;
   media?: DesignMedia[];
+  featured?: boolean;
 }
 export interface Item {
   id: string;
@@ -325,7 +336,48 @@ export interface Settings {
   extraRates: { label: string; detail: string; price: string }[];
   thankYou: string;
   ownerName: string;
+  workProjects?: string[];
+  portfolioHeadline?: string;
+  portfolioBio?: string;
 }
+export type CaseStudyTheme = "obsidian" | "paper" | "slate";
+export type CaseStudyAspect =
+  "sheet" | "social-4x5" | "square-1x1" | "slide-16x9";
+export type CaseStudyBlockType =
+  | "header"
+  | "subheader"
+  | "paragraph"
+  | "divider"
+  | "image"
+  | "gallery"
+  | "metrics"
+  | "quote";
+
+export interface CaseStudyBlock {
+  id: string;
+  type: CaseStudyBlockType;
+  title?: string;
+  text?: string;
+  caption?: string;
+  mediaIds?: string[];
+  stats?: { label: string; value: string }[];
+  align?: "left" | "center";
+}
+
+export interface CaseStudyDoc {
+  id: string;
+  itemId: string;
+  source: "work" | "studio";
+  title: string;
+  subtitle: string;
+  projectGroup: string;
+  designType: string;
+  theme: CaseStudyTheme;
+  aspect: CaseStudyAspect;
+  blocks: CaseStudyBlock[];
+  updatedAt: string;
+}
+
 export interface DB {
   clients: Client[];
   services: Service[];
@@ -338,6 +390,7 @@ export interface DB {
   goals: Goal[];
   settings: Settings;
   categoryLimits?: Record<string, number>;
+  caseStudies?: Record<string, CaseStudyDoc>;
 }
 
 export const uid = () =>
@@ -412,6 +465,10 @@ const defaultSettings: Settings = {
   ],
   thankYou:
     "Thank you for choosing RothVan Design. We're proud to support your brand with design excellence.",
+  workProjects: [...DEFAULT_WORK_PROJECTS],
+  portfolioHeadline: "Visual & Brand Design Portfolio",
+  portfolioBio:
+    "Selected commercial branding, packaging, campaign visuals, and spatial design delivered across full-time teams and independent studio engagements.",
 };
 
 function seed(): DB {
@@ -438,6 +495,7 @@ function seed(): DB {
     goals: rothvanGoals.map((g) => ({ ...g })),
     settings: { ...defaultSettings },
     categoryLimits: {},
+    caseStudies: {},
   };
 }
 
@@ -468,6 +526,9 @@ function load() {
         workTasks: Array.isArray(p.workTasks)
           ? (p.workTasks as WorkTask[]).map((t) => ({
               ...t,
+              projectName: t.projectName ?? t.company ?? "",
+              startDate: t.startDate ?? "",
+              featured: Boolean(t.featured),
               media: Array.isArray(t.media) ? t.media : [],
               artworkCount: Math.max(1, Number(t.artworkCount) || 1),
             }))
@@ -476,8 +537,20 @@ function load() {
           ...s,
           pillar: normalizeServicePillar(s.pillar),
         })),
-        settings: { ...defaultSettings, ...p.settings },
+        settings: {
+          ...defaultSettings,
+          ...p.settings,
+          workProjects:
+            Array.isArray(p.settings?.workProjects) &&
+            p.settings.workProjects.length > 0
+              ? (p.settings.workProjects as string[])
+              : [...DEFAULT_WORK_PROJECTS],
+        },
         categoryLimits: { ...(p.categoryLimits ?? {}) },
+        caseStudies:
+          p.caseStudies && typeof p.caseStudies === "object"
+            ? (p.caseStudies as Record<string, CaseStudyDoc>)
+            : {},
       };
       return;
     }
@@ -729,8 +802,8 @@ export function previousMonth(ym: string) {
   const d = new Date(Date.UTC(y, m - 2, 1));
   return d.toISOString().slice(0, 7);
 }
-export type CashRange = "1m" | "6m" | "12m" | "all";
-export type PersonalRange = "1m" | "6m" | "12m";
+export type CashRange = "week" | "1m" | "6m" | "12m" | "all";
+export type PersonalRange = "today" | "week" | "1m" | "6m" | "12m";
 export interface CashFlowPoint {
   m: string;
   label: string;
@@ -759,6 +832,36 @@ function trailingMonths(n: number, anchorMonth?: string) {
   return out;
 }
 
+function resolveAnchorDay(db: DB, anchorMonth: string): string {
+  const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
+    ? anchorMonth
+    : today().slice(0, 7);
+  const nowDay = today();
+  if (nowDay.startsWith(ym)) return nowDay;
+  let latest = "";
+  for (const e of db.expenses) {
+    if (e.date.startsWith(ym) && e.date > latest) latest = e.date;
+  }
+  for (const inc of db.personalIncome ?? []) {
+    if (inc.date.startsWith(ym) && inc.date > latest) latest = inc.date;
+  }
+  for (const p of db.payments) {
+    if (p.date.startsWith(ym) && p.date > latest) latest = p.date;
+  }
+  if (latest) return latest;
+  const [y, m] = ym.split("-").map(Number);
+  const lastDay = y && m ? new Date(Date.UTC(y, m, 0)).getUTCDate() : 28;
+  return `${ym}-${String(lastDay).padStart(2, "0")}`;
+}
+
+function trailingDays(endDay: string, count: number): string[] {
+  const out: string[] = [];
+  for (let i = count - 1; i >= 0; i--) {
+    out.push(addDays(endDay, -i));
+  }
+  return out;
+}
+
 export interface PersonalSeriesPoint {
   key: string;
   label: string;
@@ -777,20 +880,49 @@ export function personalIncomeTotal(db: DB, period: string) {
     .reduce((s, i) => s + toUSD(i.amount, i.currency, db.settings.khrRate), 0);
 }
 
+function personalDateMatch(
+  date: string,
+  range: PersonalRange,
+  anchorMonth: string,
+  anchorDay: string,
+  weekSet: Set<string>,
+  monthSet: Set<string>,
+): boolean {
+  if (range === "today") return date === anchorDay;
+  if (range === "week") return weekSet.has(date);
+  return monthSet.has(date.slice(0, 7));
+}
+
 export function personalIncomeSourceTotals(
   db: DB,
   range: PersonalRange,
   anchorMonth = today().slice(0, 7),
 ) {
-  const monthsCount = range === "1m" ? 1 : range === "6m" ? 6 : 12;
+  const anchorDay = resolveAnchorDay(db, anchorMonth);
+  const weekSet = new Set(trailingDays(anchorDay, 7));
+  const monthsCount =
+    range === "today" || range === "week" || range === "1m"
+      ? 1
+      : range === "6m"
+        ? 6
+        : 12;
   const monthSet = new Set(trailingMonths(monthsCount, anchorMonth));
   const map = new Map<
     string,
     { source: string; totalUSD: number; count: number }
   >();
   for (const inc of db.personalIncome ?? []) {
-    const ym = inc.date.slice(0, 7);
-    if (!monthSet.has(ym)) continue;
+    if (
+      !personalDateMatch(
+        inc.date,
+        range,
+        anchorMonth,
+        anchorDay,
+        weekSet,
+        monthSet,
+      )
+    )
+      continue;
     const key = inc.source || "Other";
     const prev = map.get(key) ?? { source: key, totalUSD: 0, count: 0 };
     prev.totalUSD += toUSD(inc.amount, inc.currency, db.settings.khrRate);
@@ -807,10 +939,112 @@ export function personalSeries(
 ): PersonalSeriesPoint[] {
   const r = db.settings.khrRate;
   const incomes = db.personalIncome ?? [];
+  const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
+    ? anchorMonth
+    : today().slice(0, 7);
+  const anchorDay = resolveAnchorDay(db, ym);
+
+  if (range === "today") {
+    const dayExpenses = db.expenses.filter(
+      (e) => expenseAccount(e) === "Personal" && e.date === anchorDay,
+    );
+    const dayIncomes = incomes.filter((inc) => inc.date === anchorDay);
+    const slots = [
+      { key: `${anchorDay}-01`, label: "Morning", out: 0, inn: 0, c: 0, ic: 0 },
+      { key: `${anchorDay}-02`, label: "Midday", out: 0, inn: 0, c: 0, ic: 0 },
+      {
+        key: `${anchorDay}-03`,
+        label: "Afternoon",
+        out: 0,
+        inn: 0,
+        c: 0,
+        ic: 0,
+      },
+      { key: `${anchorDay}-04`, label: "Evening", out: 0, inn: 0, c: 0, ic: 0 },
+    ];
+    dayExpenses.forEach((e, idx) => {
+      const slot = slots[idx % slots.length]!;
+      slot.out += toUSD(e.amount, e.currency, r);
+      slot.c += 1;
+    });
+    dayIncomes.forEach((inc, idx) => {
+      const slot = slots[idx % slots.length]!;
+      slot.inn += toUSD(inc.amount, inc.currency, r);
+      slot.ic += 1;
+    });
+    const fullDay = new Date(anchorDay + "T00:00:00Z").toLocaleDateString(
+      "en-US",
+      {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC",
+      },
+    );
+    return slots.map((s) => ({
+      key: s.key,
+      label: s.label,
+      fullDate: `${fullDay} · ${s.label}`,
+      personalIn: s.inn,
+      personalOut: s.out,
+      studioOut: 0,
+      net: s.inn - s.out,
+      inCount: s.ic,
+      count: s.c,
+    }));
+  }
+
+  if (range === "week") {
+    const days = trailingDays(anchorDay, 7);
+    const daySet = new Set(days);
+    const outByDay = new Map<string, { usd: number; count: number }>();
+    const inByDay = new Map<string, { usd: number; count: number }>();
+    for (const e of db.expenses) {
+      if (expenseAccount(e) !== "Personal" || !daySet.has(e.date)) continue;
+      const prev = outByDay.get(e.date) ?? { usd: 0, count: 0 };
+      prev.usd += toUSD(e.amount, e.currency, r);
+      prev.count += 1;
+      outByDay.set(e.date, prev);
+    }
+    for (const inc of incomes) {
+      if (!daySet.has(inc.date)) continue;
+      const prev = inByDay.get(inc.date) ?? { usd: 0, count: 0 };
+      prev.usd += toUSD(inc.amount, inc.currency, r);
+      prev.count += 1;
+      inByDay.set(inc.date, prev);
+    }
+    return days.map((iso) => {
+      const dt = new Date(iso + "T00:00:00Z");
+      const outAgg = outByDay.get(iso);
+      const inAgg = inByDay.get(iso);
+      const personalOut = outAgg?.usd ?? 0;
+      const personalIn = inAgg?.usd ?? 0;
+      return {
+        key: iso,
+        label: dt.toLocaleDateString("en-US", {
+          weekday: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        }),
+        fullDate: dt.toLocaleDateString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          timeZone: "UTC",
+        }),
+        personalIn,
+        personalOut,
+        studioOut: 0,
+        net: personalIn - personalOut,
+        inCount: inAgg?.count ?? 0,
+        count: outAgg?.count ?? 0,
+      };
+    });
+  }
+
   if (range === "1m") {
-    const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
-      ? anchorMonth
-      : today().slice(0, 7);
     const [y, m] = ym.split("-").map(Number);
     const daysInMonth = y && m ? new Date(Date.UTC(y, m, 0)).getUTCDate() : 30;
     const outByDay = new Map<string, { usd: number; count: number }>();
@@ -864,27 +1098,27 @@ export function personalSeries(
     return pts;
   }
 
-  const months = trailingMonths(range === "6m" ? 6 : 12, anchorMonth);
+  const months = trailingMonths(range === "6m" ? 6 : 12, ym);
   const monthSet = new Set(months);
   const outByMonth = new Map<string, { usd: number; count: number }>();
   const inByMonth = new Map<string, { usd: number; count: number }>();
 
   for (const e of db.expenses) {
     if (expenseAccount(e) !== "Personal") continue;
-    const ym = e.date.slice(0, 7);
-    if (!monthSet.has(ym)) continue;
-    const prev = outByMonth.get(ym) ?? { usd: 0, count: 0 };
+    const eym = e.date.slice(0, 7);
+    if (!monthSet.has(eym)) continue;
+    const prev = outByMonth.get(eym) ?? { usd: 0, count: 0 };
     prev.usd += toUSD(e.amount, e.currency, r);
     prev.count += 1;
-    outByMonth.set(ym, prev);
+    outByMonth.set(eym, prev);
   }
   for (const inc of incomes) {
-    const ym = inc.date.slice(0, 7);
-    if (!monthSet.has(ym)) continue;
-    const prev = inByMonth.get(ym) ?? { usd: 0, count: 0 };
+    const iym = inc.date.slice(0, 7);
+    if (!monthSet.has(iym)) continue;
+    const prev = inByMonth.get(iym) ?? { usd: 0, count: 0 };
     prev.usd += toUSD(inc.amount, inc.currency, r);
     prev.count += 1;
-    inByMonth.set(ym, prev);
+    inByMonth.set(iym, prev);
   }
 
   return months.map((m) => {
@@ -919,16 +1153,33 @@ export function personalCategoryTotals(
   range: PersonalRange,
   anchorMonth = today().slice(0, 7),
 ) {
-  const monthsCount = range === "1m" ? 1 : range === "6m" ? 6 : 12;
-  const monthSet = new Set(trailingMonths(monthsCount, anchorMonth));
+  const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
+    ? anchorMonth
+    : today().slice(0, 7);
+  const anchorDay = resolveAnchorDay(db, ym);
+  const weekDays = trailingDays(anchorDay, 7);
+  const weekSet = new Set(weekDays);
+  const monthsCount =
+    range === "today" || range === "week" || range === "1m"
+      ? 1
+      : range === "6m"
+        ? 6
+        : 12;
+  const monthSet = new Set(trailingMonths(monthsCount, ym));
+  const dateSet =
+    range === "today"
+      ? new Set([anchorDay])
+      : range === "week"
+        ? weekSet
+        : null;
   const map = new Map<
     string,
     { category: string; totalUSD: number; count: number }
   >();
   for (const e of db.expenses) {
     if (expenseAccount(e) !== "Personal") continue;
-    const ym = e.date.slice(0, 7);
-    if (!monthSet.has(ym)) continue;
+    if (!personalDateMatch(e.date, range, ym, anchorDay, weekSet, monthSet))
+      continue;
     const prev = map.get(e.category) ?? {
       category: e.category || "Other",
       totalUSD: 0,
@@ -938,21 +1189,28 @@ export function personalCategoryTotals(
     prev.count += 1;
     map.set(e.category, prev);
   }
-  const monthLabel = new Date(anchorMonth + "-01T00:00:00Z").toLocaleDateString(
+  const monthLabel = new Date(ym + "-01T00:00:00Z").toLocaleDateString(
     "en-US",
     { month: "long", year: "numeric", timeZone: "UTC" },
   );
+  const dayLabel = shortDate(anchorDay);
   const scopeLabel =
-    range === "1m"
-      ? monthLabel
-      : range === "6m"
-        ? "last 6 months"
-        : "last 12 months";
+    range === "today"
+      ? dayLabel
+      : range === "week"
+        ? `7 days to ${dayLabel}`
+        : range === "1m"
+          ? monthLabel
+          : range === "6m"
+            ? "last 6 months"
+            : "last 12 months";
   return {
     items: Array.from(map.values()).sort((a, b) => b.totalUSD - a.totalUSD),
     monthsCount,
     scopeLabel,
     monthSet,
+    dateSet,
+    anchorDay,
   };
 }
 
@@ -983,6 +1241,10 @@ export function cardSpendSeries(
 ) {
   const r = db.settings.khrRate;
   let points: CardSpendPoint[];
+  const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
+    ? anchorMonth
+    : today().slice(0, 7);
+  const anchorDay = resolveAnchorDay(db, ym);
 
   type Bucket = {
     debit: number;
@@ -1001,10 +1263,104 @@ export function cardSpendSeries(
     count: 0,
   });
 
-  if (range === "1m") {
-    const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
-      ? anchorMonth
-      : today().slice(0, 7);
+  if (range === "today") {
+    const slotDefs = [
+      { key: `${anchorDay}-01`, label: "Morning", ...emptyBucket() },
+      { key: `${anchorDay}-02`, label: "Midday", ...emptyBucket() },
+      { key: `${anchorDay}-03`, label: "Afternoon", ...emptyBucket() },
+      { key: `${anchorDay}-04`, label: "Evening", ...emptyBucket() },
+    ];
+    const dayExps = db.expenses.filter(
+      (e) => expenseAccount(e) === "Personal" && e.date === anchorDay,
+    );
+    dayExps.forEach((e, idx) => {
+      const b = slotDefs[idx % slotDefs.length]!;
+      const usd = toUSD(e.amount, e.currency, r);
+      const kind = cardKind(e.vendor);
+      if (kind === "Debit") {
+        b.debit += usd;
+        b.debitCount += 1;
+      } else if (kind === "Credit") {
+        b.credit += usd;
+        b.creditCount += 1;
+      } else {
+        b.other += usd;
+      }
+      b.count += 1;
+    });
+    const fullDay = new Date(anchorDay + "T00:00:00Z").toLocaleDateString(
+      "en-US",
+      {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC",
+      },
+    );
+    points = slotDefs.map((b) => ({
+      key: b.key,
+      label: b.label,
+      fullDate: `${fullDay} · ${b.label}`,
+      debit: b.debit,
+      credit: b.credit,
+      other: b.other,
+      total: b.debit + b.credit + b.other,
+      debitCount: b.debitCount,
+      creditCount: b.creditCount,
+      count: b.count,
+    }));
+  } else if (range === "week") {
+    const days = trailingDays(anchorDay, 7);
+    const daySet = new Set(days);
+    const byDay = new Map<string, Bucket>();
+    for (const e of db.expenses) {
+      if (expenseAccount(e) !== "Personal" || !daySet.has(e.date)) continue;
+      const b = byDay.get(e.date) ?? emptyBucket();
+      const usd = toUSD(e.amount, e.currency, r);
+      const kind = cardKind(e.vendor);
+      if (kind === "Debit") {
+        b.debit += usd;
+        b.debitCount += 1;
+      } else if (kind === "Credit") {
+        b.credit += usd;
+        b.creditCount += 1;
+      } else {
+        b.other += usd;
+      }
+      b.count += 1;
+      byDay.set(e.date, b);
+    }
+    points = days.map((iso) => {
+      const dt = new Date(iso + "T00:00:00Z");
+      const b = byDay.get(iso);
+      const debit = b?.debit ?? 0;
+      const credit = b?.credit ?? 0;
+      const other = b?.other ?? 0;
+      return {
+        key: iso,
+        label: dt.toLocaleDateString("en-US", {
+          weekday: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        }),
+        fullDate: dt.toLocaleDateString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          timeZone: "UTC",
+        }),
+        debit,
+        credit,
+        other,
+        total: debit + credit + other,
+        debitCount: b?.debitCount ?? 0,
+        creditCount: b?.creditCount ?? 0,
+        count: b?.count ?? 0,
+      };
+    });
+  } else if (range === "1m") {
     const [y, m] = ym.split("-").map(Number);
     const daysInMonth = y && m ? new Date(Date.UTC(y, m, 0)).getUTCDate() : 30;
     const byDay = new Map<string, Bucket>();
@@ -1059,15 +1415,15 @@ export function cardSpendSeries(
       });
     }
   } else {
-    const months = trailingMonths(range === "6m" ? 6 : 12, anchorMonth);
+    const months = trailingMonths(range === "6m" ? 6 : 12, ym);
     const monthSet = new Set(months);
     const byMonth = new Map<string, Bucket>();
 
     for (const e of db.expenses) {
       if (expenseAccount(e) !== "Personal") continue;
-      const ym = e.date.slice(0, 7);
-      if (!monthSet.has(ym)) continue;
-      const b = byMonth.get(ym) ?? emptyBucket();
+      const eym = e.date.slice(0, 7);
+      if (!monthSet.has(eym)) continue;
+      const b = byMonth.get(eym) ?? emptyBucket();
       const usd = toUSD(e.amount, e.currency, r);
       const kind = cardKind(e.vendor);
       if (kind === "Debit") {
@@ -1080,7 +1436,7 @@ export function cardSpendSeries(
         b.other += usd;
       }
       b.count += 1;
-      byMonth.set(ym, b);
+      byMonth.set(eym, b);
     }
 
     points = months.map((m) => {
@@ -1116,16 +1472,20 @@ export function cardSpendSeries(
   const otherUSD = points.reduce((s, x) => s + x.other, 0);
   const debitCount = points.reduce((s, x) => s + x.debitCount, 0);
   const creditCount = points.reduce((s, x) => s + x.creditCount, 0);
-  const monthLabel = new Date(anchorMonth + "-01T00:00:00Z").toLocaleDateString(
+  const monthLabel = new Date(ym + "-01T00:00:00Z").toLocaleDateString(
     "en-US",
     { month: "long", year: "numeric", timeZone: "UTC" },
   );
   const scopeLabel =
-    range === "1m"
-      ? monthLabel
-      : range === "6m"
-        ? "last 6 months"
-        : "last 12 months";
+    range === "today"
+      ? `Today (${shortDate(anchorDay)})`
+      : range === "week"
+        ? `7 days to ${shortDate(anchorDay)}`
+        : range === "1m"
+          ? monthLabel
+          : range === "6m"
+            ? "last 6 months"
+            : "last 12 months";
 
   return {
     points,
@@ -1137,6 +1497,111 @@ export function cardSpendSeries(
     creditCount,
     scopeLabel,
   };
+}
+
+export interface PeriodBreakdownPoint {
+  label: string;
+  fullDate: string;
+  primary: number;
+  secondary: number;
+  net: number;
+  count: number;
+}
+
+export function periodBreakdownBars(
+  db: DB,
+  scope: "Personal" | "Studio" | "Combined",
+  range: PersonalRange | CashRange,
+  anchorMonth = today().slice(0, 7),
+  groupBy: "category" | "method" = "category",
+  direction: "spending" | "income" = "spending",
+): PeriodBreakdownPoint[] {
+  const r = db.settings.khrRate;
+  const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
+    ? anchorMonth
+    : today().slice(0, 7);
+  const anchorDay = resolveAnchorDay(db, ym);
+  const weekSet = new Set(trailingDays(anchorDay, 7));
+  const monthCount =
+    range === "all" ? 120 : range === "12m" ? 12 : range === "6m" ? 6 : 1;
+  const monthSet =
+    range === "all" ? null : new Set(trailingMonths(monthCount, ym));
+
+  const matchesDate = (date: string) => {
+    if (!date) return false;
+    if (range === "today") return date === anchorDay;
+    if (range === "week") return weekSet.has(date);
+    if (!monthSet) return true;
+    return monthSet.has(date.slice(0, 7));
+  };
+
+  const buckets = new Map<
+    string,
+    { inUsd: number; outUsd: number; count: number }
+  >();
+  const add = (key: string, kind: "in" | "out", usd: number) => {
+    const clean = key.trim() || "Other";
+    const b = buckets.get(clean) ?? { inUsd: 0, outUsd: 0, count: 0 };
+    if (kind === "in") b.inUsd += usd;
+    else b.outUsd += usd;
+    b.count += 1;
+    buckets.set(clean, b);
+  };
+
+  if (direction === "spending") {
+    for (const e of db.expenses) {
+      const acc = expenseAccount(e);
+      if (scope !== "Combined" && acc !== scope) continue;
+      if (!matchesDate(e.date)) continue;
+      const usd = toUSD(e.amount, e.currency, r);
+      const key =
+        groupBy === "method" ? e.vendor || "Other" : e.category || "Other";
+      add(key, "out", usd);
+    }
+  }
+
+  if (direction === "income" || groupBy === "method") {
+    if (scope !== "Studio") {
+      for (const inc of db.personalIncome ?? []) {
+        if (!matchesDate(inc.date)) continue;
+        const usd = toUSD(inc.amount, inc.currency, r);
+        const key =
+          groupBy === "method"
+            ? inc.accountMethod || "Bank"
+            : inc.source || "Other";
+        add(key, "in", usd);
+      }
+    }
+    if (scope !== "Personal") {
+      const invIds = new Set(db.invoices.filter(isInvoice).map((i) => i.id));
+      for (const p of db.payments) {
+        if (!invIds.has(p.invoiceId) || !matchesDate(p.date)) continue;
+        const usd = toUSD(p.amount, p.currency, r);
+        const key =
+          groupBy === "method" ? p.method || "Bank" : "Client invoices";
+        add(key, "in", usd);
+      }
+    }
+  }
+
+  return Array.from(buckets.entries())
+    .map(([label, b]) => {
+      const primary = direction === "income" ? b.inUsd : b.outUsd;
+      const secondary = direction === "income" ? b.outUsd : b.inUsd;
+      return {
+        label: label.length > 14 ? `${label.slice(0, 12)}…` : label,
+        fullDate: label,
+        primary: Math.round(primary * 100) / 100,
+        secondary: Math.round(secondary * 100) / 100,
+        net: Math.round((b.inUsd - b.outUsd) * 100) / 100,
+        count: b.count,
+      };
+    })
+    .sort(
+      (a, b) =>
+        Math.max(b.primary, b.secondary) - Math.max(a.primary, a.secondary),
+    )
+    .slice(0, 8);
 }
 
 export function revenueByPillar(db: DB) {
@@ -1164,13 +1629,77 @@ export function revenueByPillar(db: DB) {
   return Array.from(map.values()).sort((a, b) => b.totalUSD - a.totalUSD);
 }
 
-export function cashFlowSeries(db: DB, range: CashRange): CashFlowPoint[] {
+export function cashFlowSeries(
+  db: DB,
+  range: CashRange,
+  anchorMonth = today().slice(0, 7),
+): CashFlowPoint[] {
   const r = db.settings.khrRate;
   const invIds = new Set(db.invoices.filter(isInvoice).map((i) => i.id));
+
+  if (range === "week") {
+    const anchorDay = resolveAnchorDay(db, anchorMonth);
+    const days = trailingDays(anchorDay, 7);
+    const daySet = new Set(days);
+    const inByDay = new Map<string, { usd: number; count: number }>();
+    const studioByDay = new Map<string, { usd: number; count: number }>();
+    const personalByDay = new Map<string, number>();
+
+    for (const p of db.payments) {
+      if (!invIds.has(p.invoiceId) || !daySet.has(p.date)) continue;
+      const prev = inByDay.get(p.date) ?? { usd: 0, count: 0 };
+      prev.usd += toUSD(p.amount, p.currency, r);
+      prev.count += 1;
+      inByDay.set(p.date, prev);
+    }
+    for (const e of db.expenses) {
+      if (!daySet.has(e.date)) continue;
+      const usd = toUSD(e.amount, e.currency, r);
+      if (expenseAccount(e) === "Studio") {
+        const prev = studioByDay.get(e.date) ?? { usd: 0, count: 0 };
+        prev.usd += usd;
+        prev.count += 1;
+        studioByDay.set(e.date, prev);
+      } else {
+        personalByDay.set(e.date, (personalByDay.get(e.date) ?? 0) + usd);
+      }
+    }
+    return days.map((iso) => {
+      const inAgg = inByDay.get(iso);
+      const studioAgg = studioByDay.get(iso);
+      const inn = inAgg?.usd ?? 0;
+      const out = studioAgg?.usd ?? 0;
+      const personalOut = personalByDay.get(iso) ?? 0;
+      const dt = new Date(iso + "T00:00:00Z");
+      return {
+        m: iso,
+        label: dt.toLocaleDateString("en-US", {
+          weekday: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        }),
+        fullDate: dt.toLocaleDateString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          timeZone: "UTC",
+        }),
+        inn,
+        out,
+        personalOut,
+        net: inn - out,
+        combinedNet: inn - out - personalOut,
+        inCount: inAgg?.count ?? 0,
+        outCount: studioAgg?.count ?? 0,
+      };
+    });
+  }
+
   const inByMonth = new Map<string, { usd: number; count: number }>();
   const studioByMonth = new Map<string, { usd: number; count: number }>();
   const personalByMonth = new Map<string, number>();
-  let earliest = today().slice(0, 7);
+  let earliest = anchorMonth || today().slice(0, 7);
 
   for (const p of db.payments) {
     if (!invIds.has(p.invoiceId) || !/^\d{4}-\d{2}/.test(p.date)) continue;
@@ -1216,7 +1745,10 @@ export function cashFlowSeries(db: DB, range: CashRange): CashFlowPoint[] {
       }
     }
   } else {
-    months = trailingMonths(range === "1m" ? 1 : range === "6m" ? 6 : 12);
+    months = trailingMonths(
+      range === "1m" ? 1 : range === "6m" ? 6 : 12,
+      anchorMonth,
+    );
   }
   const showYear = range === "all";
   return months.map((m) => {
@@ -1270,14 +1802,93 @@ export interface CombinedCashPoint {
 export function combinedCashFlowSeries(
   db: DB,
   range: CashRange,
+  anchorMonth = today().slice(0, 7),
 ): CombinedCashPoint[] {
   const r = db.settings.khrRate;
   const invIds = new Set(db.invoices.filter(isInvoice).map((i) => i.id));
+
+  if (range === "week") {
+    const anchorDay = resolveAnchorDay(db, anchorMonth);
+    const days = trailingDays(anchorDay, 7);
+    const daySet = new Set(days);
+    const studioInMap = new Map<string, { usd: number; count: number }>();
+    const personalInMap = new Map<string, { usd: number; count: number }>();
+    const studioOutMap = new Map<string, { usd: number; count: number }>();
+    const personalOutMap = new Map<string, { usd: number; count: number }>();
+
+    for (const p of db.payments) {
+      if (!invIds.has(p.invoiceId) || !daySet.has(p.date)) continue;
+      const prev = studioInMap.get(p.date) ?? { usd: 0, count: 0 };
+      prev.usd += toUSD(p.amount, p.currency, r);
+      prev.count += 1;
+      studioInMap.set(p.date, prev);
+    }
+    for (const inc of db.personalIncome ?? []) {
+      if (!daySet.has(inc.date)) continue;
+      const prev = personalInMap.get(inc.date) ?? { usd: 0, count: 0 };
+      prev.usd += toUSD(inc.amount, inc.currency, r);
+      prev.count += 1;
+      personalInMap.set(inc.date, prev);
+    }
+    for (const e of db.expenses) {
+      if (!daySet.has(e.date)) continue;
+      const usd = toUSD(e.amount, e.currency, r);
+      const map =
+        expenseAccount(e) === "Studio" ? studioOutMap : personalOutMap;
+      const prev = map.get(e.date) ?? { usd: 0, count: 0 };
+      prev.usd += usd;
+      prev.count += 1;
+      map.set(e.date, prev);
+    }
+    return days.map((iso) => {
+      const sIn = studioInMap.get(iso);
+      const pIn = personalInMap.get(iso);
+      const sOut = studioOutMap.get(iso);
+      const pOut = personalOutMap.get(iso);
+      const studioIn = sIn?.usd ?? 0;
+      const personalIn = pIn?.usd ?? 0;
+      const studioOut = sOut?.usd ?? 0;
+      const personalOut = pOut?.usd ?? 0;
+      const totalIn = studioIn + personalIn;
+      const totalOut = studioOut + personalOut;
+      const dt = new Date(iso + "T00:00:00Z");
+      return {
+        m: iso,
+        label: dt.toLocaleDateString("en-US", {
+          weekday: "short",
+          day: "numeric",
+          timeZone: "UTC",
+        }),
+        fullDate: dt.toLocaleDateString("en-US", {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+          timeZone: "UTC",
+        }),
+        studioIn,
+        personalIn,
+        totalIn,
+        studioOut,
+        personalOut,
+        totalOut,
+        studioNet: studioIn - studioOut,
+        personalNet: personalIn - personalOut,
+        combinedNet: totalIn - totalOut,
+        count:
+          (sIn?.count ?? 0) +
+          (pIn?.count ?? 0) +
+          (sOut?.count ?? 0) +
+          (pOut?.count ?? 0),
+      };
+    });
+  }
+
   const studioInMap = new Map<string, { usd: number; count: number }>();
   const personalInMap = new Map<string, { usd: number; count: number }>();
   const studioOutMap = new Map<string, { usd: number; count: number }>();
   const personalOutMap = new Map<string, { usd: number; count: number }>();
-  let earliest = today().slice(0, 7);
+  let earliest = anchorMonth || today().slice(0, 7);
 
   for (const p of db.payments) {
     if (!invIds.has(p.invoiceId) || !/^\d{4}-\d{2}/.test(p.date)) continue;
@@ -1330,7 +1941,10 @@ export function combinedCashFlowSeries(
       }
     }
   } else {
-    months = trailingMonths(range === "1m" ? 1 : range === "6m" ? 6 : 12);
+    months = trailingMonths(
+      range === "1m" ? 1 : range === "6m" ? 6 : 12,
+      anchorMonth,
+    );
   }
 
   const showYear = range === "all";
@@ -1486,6 +2100,7 @@ export interface ShowcaseWorkItem {
   code: string;
   title: string;
   subtitle: string;
+  projectGroup: string;
   designType: string;
   status: string;
   completed: boolean;
@@ -1493,6 +2108,7 @@ export interface ShowcaseWorkItem {
   artworkCount: number;
   media: DesignMedia[];
   notes: string;
+  featured: boolean;
 }
 
 export function designOutputSummary(db: DB) {
@@ -1501,19 +2117,25 @@ export function designOutputSummary(db: DB) {
   const items: ShowcaseWorkItem[] = [];
 
   for (const t of db.workTasks ?? []) {
+    const projectGroup = (t.projectName || t.company || "General").trim();
     items.push({
       id: t.id,
       source: "work",
       code: t.code,
       title: t.title || "Untitled task",
-      subtitle: t.company || "Full-time design",
+      subtitle:
+        t.projectName && t.company && t.projectName !== t.company
+          ? `${t.projectName} · ${t.company}`
+          : projectGroup,
+      projectGroup,
       designType: t.designType || "Other",
       status: t.status,
       completed: t.status === "Completed",
-      date: t.completedDate || t.dueDate || "",
+      date: t.completedDate || t.dueDate || t.startDate || "",
       artworkCount: Math.max(1, Number(t.artworkCount) || 1),
       media: Array.isArray(t.media) ? t.media : [],
       notes: t.notes || "",
+      featured: Boolean(t.featured),
     });
   }
 
@@ -1522,12 +2144,14 @@ export function designOutputSummary(db: DB) {
     const svc = p.serviceId ? svcMap.get(p.serviceId) : undefined;
     const client = p.clientId ? clientMap.get(p.clientId) : undefined;
     const completed = p.status === "Delivered" || p.status === "Closed";
+    const clientLabel = client?.name || "Freelance Studio";
     items.push({
       id: p.id,
       source: "studio",
       code: p.code,
       title: p.name || p.code,
-      subtitle: client?.name || "Freelance studio client",
+      subtitle: clientLabel,
+      projectGroup: clientLabel,
       designType: inferStudioDesignType(p, svc),
       status: p.status,
       completed,
@@ -1535,6 +2159,7 @@ export function designOutputSummary(db: DB) {
       artworkCount: Math.max(1, Number(p.artworkCount) || 1),
       media: Array.isArray(p.media) ? p.media : [],
       notes: svc?.name ?? "",
+      featured: Boolean(p.featured),
     });
   }
 
@@ -1550,6 +2175,20 @@ export function designOutputSummary(db: DB) {
     }
   >();
 
+  const byProjectMap = new Map<
+    string,
+    {
+      projectGroup: string;
+      workProjects: number;
+      studioProjects: number;
+      totalProjects: number;
+      completedProjects: number;
+      artworkCount: number;
+      mediaCount: number;
+      latestDate: string;
+    }
+  >();
+
   let completedTotal = 0;
   let activeTotal = 0;
   let totalArtworks = 0;
@@ -1558,10 +2197,12 @@ export function designOutputSummary(db: DB) {
   let workActive = 0;
   let studioCompleted = 0;
   let studioActive = 0;
+  let featuredCount = 0;
 
   for (const it of items) {
     totalArtworks += it.artworkCount;
     mediaCount += it.media.length;
+    if (it.featured) featuredCount += 1;
     if (it.completed) {
       completedTotal += 1;
       if (it.source === "work") workCompleted += 1;
@@ -1586,6 +2227,27 @@ export function designOutputSummary(db: DB) {
     if (it.completed) row.completedProjects += 1;
     row.artworkCount += it.artworkCount;
     byTypeMap.set(it.designType, row);
+
+    const groupRow = byProjectMap.get(it.projectGroup) ?? {
+      projectGroup: it.projectGroup,
+      workProjects: 0,
+      studioProjects: 0,
+      totalProjects: 0,
+      completedProjects: 0,
+      artworkCount: 0,
+      mediaCount: 0,
+      latestDate: "",
+    };
+    if (it.source === "work") groupRow.workProjects += 1;
+    else groupRow.studioProjects += 1;
+    groupRow.totalProjects += 1;
+    if (it.completed) groupRow.completedProjects += 1;
+    groupRow.artworkCount += it.artworkCount;
+    groupRow.mediaCount += it.media.length;
+    if (it.date && it.date > groupRow.latestDate) {
+      groupRow.latestDate = it.date;
+    }
+    byProjectMap.set(it.projectGroup, groupRow);
   }
 
   const months = trailingMonths(12);
@@ -1632,9 +2294,18 @@ export function designOutputSummary(db: DB) {
       b.totalProjects - a.totalProjects || b.artworkCount - a.artworkCount,
   );
 
-  const sortedItems = [...items].sort((a, b) =>
-    (b.date || "").localeCompare(a.date || ""),
+  const byProjectGroup = Array.from(byProjectMap.values()).sort(
+    (a, b) =>
+      b.artworkCount - a.artworkCount || b.totalProjects - a.totalProjects,
   );
+
+  const sortedItems = [...items].sort((a, b) => {
+    if (a.featured !== b.featured) return a.featured ? -1 : 1;
+    const hasMediaA = a.media.length > 0 ? 1 : 0;
+    const hasMediaB = b.media.length > 0 ? 1 : 0;
+    if (hasMediaA !== hasMediaB) return hasMediaB - hasMediaA;
+    return (b.date || "").localeCompare(a.date || "");
+  });
 
   return {
     items: sortedItems,
@@ -1643,12 +2314,131 @@ export function designOutputSummary(db: DB) {
     totalProjects: items.length,
     totalArtworks,
     mediaCount,
+    featuredCount,
     workCompleted,
     workActive,
     studioCompleted,
     studioActive,
     byType,
+    byProjectGroup,
     monthlyTrend,
+  };
+}
+
+export function caseStudyKey(source: "work" | "studio", itemId: string) {
+  return `${source}:${itemId}`;
+}
+
+export function autoBuildCaseStudy(
+  item: ShowcaseWorkItem,
+  existing?: CaseStudyDoc,
+): CaseStudyDoc {
+  const id = caseStudyKey(item.source, item.id);
+  const imgs = item.media.filter((m) => m.kind === "image");
+  const pdfs = item.media.filter((m) => m.kind === "pdf");
+  const blocks: CaseStudyBlock[] = [
+    {
+      id: uid(),
+      type: "header",
+      title: item.title || "Design Case Study",
+      text: `${item.projectGroup} · ${item.designType}`,
+      align: "left",
+    },
+    {
+      id: uid(),
+      type: "metrics",
+      stats: [
+        { label: "Client / Brand", value: item.projectGroup || "RothVan" },
+        { label: "Discipline", value: item.designType },
+        {
+          label: "Deliverables",
+          value: `${item.artworkCount} ${item.artworkCount === 1 ? "piece" : "pieces"}`,
+        },
+        {
+          label: "Status",
+          value: item.date ? shortDate(item.date) : item.status,
+        },
+      ],
+    },
+    {
+      id: uid(),
+      type: "subheader",
+      title: "Project Brief & Creative Direction",
+      text: "Overview & Visual Execution",
+    },
+    {
+      id: uid(),
+      type: "paragraph",
+      text:
+        item.notes.trim() ||
+        `Crafted for ${item.projectGroup} under ${item.designType}, delivering ${item.artworkCount} production-ready ${item.artworkCount === 1 ? "asset" : "assets"} aligned with brand consistency and campaign impact.`,
+    },
+    { id: uid(), type: "divider" },
+  ];
+
+  if (imgs.length === 1) {
+    blocks.push({
+      id: uid(),
+      type: "image",
+      mediaIds: [imgs[0]!.id],
+      caption: imgs[0]!.name.replace(/\.[^.]+$/, ""),
+    });
+  } else if (imgs.length === 2) {
+    blocks.push({
+      id: uid(),
+      type: "gallery",
+      mediaIds: imgs.map((m) => m.id),
+      caption: "Visual Showcase",
+    });
+  } else if (imgs.length > 2) {
+    blocks.push({
+      id: uid(),
+      type: "image",
+      mediaIds: [imgs[0]!.id],
+      caption: `Hero Visual — ${imgs[0]!.name.replace(/\.[^.]+$/, "")}`,
+    });
+    for (let i = 1; i < imgs.length; i += 2) {
+      const pair = imgs.slice(i, i + 2);
+      blocks.push({
+        id: uid(),
+        type: pair.length > 1 ? "gallery" : "image",
+        mediaIds: pair.map((m) => m.id),
+        caption: pair.map((m) => m.name.replace(/\.[^.]+$/, "")).join(" · "),
+      });
+    }
+  }
+
+  if (pdfs.length > 0) {
+    blocks.push({
+      id: uid(),
+      type: "quote",
+      title: "Attached Documentation",
+      text: `${pdfs.length} print/presentation PDF ${pdfs.length === 1 ? "document" : "documents"} included: ${pdfs.map((p) => p.name).join(", ")}`,
+    });
+  }
+
+  return {
+    id,
+    itemId: item.id,
+    source: item.source,
+    title: existing?.title || item.title || "Design Case Study",
+    subtitle: existing?.subtitle || `${item.projectGroup} · ${item.designType}`,
+    projectGroup: item.projectGroup,
+    designType: item.designType,
+    theme: existing?.theme ?? "obsidian",
+    aspect: existing?.aspect ?? "sheet",
+    blocks,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+export function saveCaseStudy(db: DB, doc: CaseStudyDoc): DB {
+  return {
+    ...db,
+    caseStudies: {
+      ...(db.caseStudies ?? {}),
+      [doc.id]: { ...doc, updatedAt: new Date().toISOString() },
+    },
   };
 }
 export function serviceItem(

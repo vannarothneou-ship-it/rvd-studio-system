@@ -2,8 +2,15 @@ import { describe, expect, it } from "vitest";
 import { agreementPages } from "@/components/rv/AgreementDoc";
 import { packBentoItems } from "@/components/rv/BentoGrid";
 import {
+  insertCaseStudyBlockAt,
+  reorderCaseStudyBlocks,
+} from "@/components/rv/CaseStudyBuilder";
+import { buildPdfFromJpegs } from "@/lib/case-study-export";
+import {
   PILLARS,
+  autoBuildCaseStudy,
   cardSpendSeries,
+  caseStudyKey,
   cashFlowSeries,
   cashReceived,
   categoryLimit,
@@ -27,12 +34,14 @@ import {
   nextInvoiceNo,
   normalizeServicePillar,
   parseTimelineDays,
+  periodBreakdownBars,
   personalCategoryTotals,
   personalIncomeSourceTotals,
   personalIncomeTotal,
   personalSeries,
   recordPayment,
   revenueByPillar,
+  saveCaseStudy,
   saveDocument,
   serviceItem,
   setCategoryLimit,
@@ -515,13 +524,16 @@ describe("bento dense packing and service tags", () => {
           id: "wt-1",
           code: "WRK-01",
           title: "Campaign Key Visual",
-          company: "Full-time",
+          projectName: "DBG",
+          company: "DBG",
           designType: "Social & Campaign",
           status: "Completed",
           artworkCount: 6,
+          startDate: "2026-11-05",
           dueDate: "2026-11-10",
           completedDate: "2026-11-09",
           notes: "Approved by brand lead",
+          featured: true,
           media: [
             {
               id: "m-1",
@@ -537,13 +549,16 @@ describe("bento dense packing and service tags", () => {
           id: "wt-2",
           code: "WRK-02",
           title: "Sales Deck Refresh",
-          company: "Full-time",
+          projectName: "Connexion",
+          company: "Connexion",
           designType: "Presentation & Deck",
           status: "Current",
           artworkCount: 12,
+          startDate: "2026-11-18",
           dueDate: "2026-11-20",
           completedDate: "",
           notes: "",
+          featured: false,
           media: [],
         },
       ],
@@ -586,10 +601,153 @@ describe("bento dense packing and service tags", () => {
     expect(summary.completedTotal).toBe(1 + summary.studioCompleted);
     expect(summary.totalArtworks).toBeGreaterThanOrEqual(18);
     expect(summary.mediaCount).toBe(1);
+    expect(summary.featuredCount).toBe(1);
     expect(
       summary.byType.some((t) => t.designType === "Social & Campaign"),
     ).toBe(true);
+    expect(
+      summary.byProjectGroup.some(
+        (g) => g.projectGroup === "DBG" && g.artworkCount === 6,
+      ),
+    ).toBe(true);
+    expect(
+      summary.byProjectGroup.some(
+        (g) => g.projectGroup === "Connexion" && g.artworkCount === 12,
+      ),
+    ).toBe(true);
 
     setDB(() => base);
+  });
+
+  it("supports today and week personal ranges, period breakdown bars, case study generation, and PDF byte output", () => {
+    const db = getDB();
+
+    const todaySeries = personalSeries(db, "today", "2026-11");
+    expect(todaySeries).toHaveLength(4);
+    expect(todaySeries.map((p) => p.label)).toEqual([
+      "Morning",
+      "Midday",
+      "Afternoon",
+      "Evening",
+    ]);
+
+    const weekSeries = personalSeries(db, "week", "2026-11");
+    expect(weekSeries).toHaveLength(7);
+
+    const catToday = personalCategoryTotals(db, "today", "2026-11");
+    expect(catToday.dateSet?.size).toBe(1);
+    const catWeek = personalCategoryTotals(db, "week", "2026-11");
+    expect(catWeek.dateSet?.size).toBe(7);
+
+    const cardToday = cardSpendSeries(db, "today", "2026-11");
+    expect(cardToday.points).toHaveLength(4);
+    const cardWeek = cardSpendSeries(db, "week", "2026-11");
+    expect(cardWeek.points).toHaveLength(7);
+
+    const byCat = periodBreakdownBars(
+      db,
+      "Personal",
+      "1m",
+      "2026-11",
+      "category",
+      "spending",
+    );
+    expect(byCat.length).toBeGreaterThan(0);
+    expect(byCat[0]!.primary).toBeGreaterThan(0);
+
+    const byMethod = periodBreakdownBars(
+      db,
+      "Personal",
+      "1m",
+      "2026-11",
+      "method",
+      "spending",
+    );
+    expect(byMethod.length).toBeGreaterThan(0);
+
+    const sampleWork: Parameters<typeof autoBuildCaseStudy>[0] = {
+      id: "work-cs-1",
+      source: "work",
+      code: "WRK-99",
+      title: "OCIC Wayfinding System",
+      subtitle: "OCIC",
+      projectGroup: "OCIC",
+      designType: "Spatial & Signage",
+      status: "Completed",
+      completed: true,
+      date: "2026-11-18",
+      artworkCount: 4,
+      media: [
+        {
+          id: "img-a",
+          name: "pylon-hero.png",
+          kind: "image",
+          mimeType: "image/png",
+          size: 2048,
+          createdAt: "2026-11-18",
+        },
+        {
+          id: "img-b",
+          name: "signage-detail.jpg",
+          kind: "image",
+          mimeType: "image/jpeg",
+          size: 2048,
+          createdAt: "2026-11-18",
+        },
+        {
+          id: "pdf-c",
+          name: "spec-sheet.pdf",
+          kind: "pdf",
+          mimeType: "application/pdf",
+          size: 4096,
+          createdAt: "2026-11-18",
+        },
+      ],
+      notes: "Outdoor directional signage and podium monoliths.",
+      featured: true,
+    };
+
+    const doc = autoBuildCaseStudy(sampleWork);
+    expect(doc.id).toBe(caseStudyKey("work", "work-cs-1"));
+    expect(doc.blocks.some((b) => b.type === "gallery")).toBe(true);
+    expect(doc.blocks.some((b) => b.type === "quote")).toBe(true);
+
+    const updatedDb = saveCaseStudy(db, doc);
+    expect(updatedDb.caseStudies?.[doc.id]?.title).toBe(
+      "OCIC Wayfinding System",
+    );
+
+    const fakeJpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+    const pdfBytes = buildPdfFromJpegs([
+      { jpegBytes: fakeJpeg, width: 1080, height: 1350 },
+    ]);
+    const header = new TextDecoder().decode(pdfBytes.slice(0, 8));
+    const tail = new TextDecoder().decode(pdfBytes.slice(-8));
+    expect(header.startsWith("%PDF-1.4")).toBe(true);
+    expect(tail).toContain("%%EOF");
+
+    // Drag-and-drop case study block reordering & insertion helpers
+    const b1 = doc.blocks[0]!;
+    const b2 = doc.blocks[1]!;
+    const reordered = reorderCaseStudyBlocks(doc.blocks, 0, 1);
+    expect(reordered[0]!.id).toBe(b2.id);
+    expect(reordered[1]!.id).toBe(b1.id);
+    expect(reorderCaseStudyBlocks(doc.blocks, -1, 1)).toEqual(doc.blocks);
+    expect(reorderCaseStudyBlocks(doc.blocks, 0, 99)).toEqual(doc.blocks);
+
+    const inserted = insertCaseStudyBlockAt(
+      doc.blocks,
+      { id: "div-new", type: "divider" },
+      1,
+    );
+    expect(inserted[1]!.id).toBe("div-new");
+    expect(inserted.length).toBe(doc.blocks.length + 1);
+
+    const clampedTail = insertCaseStudyBlockAt(
+      doc.blocks,
+      { id: "div-end", type: "divider" },
+      999,
+    );
+    expect(clampedTail[clampedTail.length - 1]!.id).toBe("div-end");
   });
 });
