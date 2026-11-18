@@ -60,7 +60,7 @@ export const CHART_LENS_OPTIONS: { id: ChartLens; label: string }[] = [
   { id: "flow", label: "In vs Out" },
   { id: "net", label: "Net Flow" },
   { id: "category", label: "Category" },
-  { id: "method", label: "Bank & Card" },
+  { id: "method", label: "Card" },
 ];
 
 const PIE_PALETTE = [
@@ -735,7 +735,7 @@ export function BreakdownPieCard({
         <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 text-[0.7rem]">
           <span className="text-muted-foreground">
             {effectiveGroup === "method"
-              ? "Grouped by bank & card"
+              ? "Grouped by card"
               : effectiveMode === "income"
                 ? "Grouped by source"
                 : "Grouped by category"}
@@ -763,7 +763,7 @@ export function BreakdownPieCard({
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              By Card / Bank
+              By Card
             </button>
           </div>
         </div>
@@ -1048,7 +1048,7 @@ type CardFilter = "both" | "debit" | "credit";
 export function CardSpendingChartCard({
   db,
   month,
-  defaultRange = "1m",
+  defaultRange = "today",
   range: controlledRange,
   onRangeChange,
   layoutIdPrefix = "card-spend",

@@ -66,9 +66,9 @@ function Page() {
     </F>
   );
   const img = (k: "logo" | "khqr" | "signature", label: string) => (
-    <F label={label}>
-      <div className="flex items-center gap-3">
-        <div className="grid h-20 w-20 shrink-0 place-items-center overflow-hidden rounded-xl border border-dashed border-border bg-muted">
+    <F label={label} className="min-w-0">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl border border-dashed border-border bg-muted sm:h-20 sm:w-20">
           {s[k] ? (
             <img
               src={s[k]}
@@ -79,19 +79,25 @@ function Page() {
             <Upload className="h-4 w-4 text-muted-foreground" />
           )}
         </div>
-        <div className="flex flex-col gap-1.5">
-          <input
-            type="file"
-            accept="image/*"
-            className="text-xs file:mr-2 file:rounded-full file:border-0 file:bg-secondary file:px-3 file:py-1 file:text-foreground"
-            onChange={async (e) => {
-              const f = e.target.files?.[0];
-              if (f) set(k, await fileToDataUrl(f, 600));
-            }}
-          />
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <label className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-full border border-border bg-secondary px-3.5 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent active:scale-95">
+            <Upload className="h-3.5 w-3.5 shrink-0 text-primary" />
+            <span>{s[k] ? "Replace" : "Upload"}</span>
+            <input
+              type="file"
+              accept="image/*"
+              className="sr-only"
+              onChange={async (e) => {
+                const f = e.target.files?.[0];
+                if (f) set(k, await fileToDataUrl(f, 600));
+                e.target.value = "";
+              }}
+            />
+          </label>
           {s[k] && (
             <button
-              className="self-start text-xs text-destructive"
+              type="button"
+              className="inline-flex min-h-[36px] items-center rounded-full px-2.5 text-xs font-medium text-destructive hover:bg-destructive/10"
               onClick={() => set(k, "")}
             >
               Remove
@@ -126,10 +132,10 @@ function Page() {
   return (
     <>
       <PageHeader title="Settings" owner={s.ownerName} />
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Glass>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Glass className="min-w-0">
           <h2 className="mb-4 font-display text-lg font-bold">Business</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             {txt("businessName", "Business name")}
             {txt("ownerName", "Your first name")}
             {txt("phones", "Phone numbers", true)}
@@ -139,11 +145,11 @@ function Page() {
             {img("logo", "Logo")}
           </div>
         </Glass>
-        <Glass delay={60}>
+        <Glass delay={60} className="min-w-0">
           <h2 className="mb-4 font-display text-lg font-bold">
-            Payment & signature
+            Payment &amp; signature
           </h2>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             {txt("abaName", "ABA account name")}
             {txt("abaNumber", "ABA account number")}
             <F label="Due after (days)">
@@ -213,8 +219,8 @@ function Page() {
           ))}
         </div>
       </Glass>
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <Glass delay={180}>
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Glass delay={180} className="min-w-0">
           <h2 className="mb-3 font-display text-lg font-bold">Design terms</h2>
           <div className="space-y-3">
             {s.designTerms.map((t, i) => (
@@ -247,7 +253,7 @@ function Page() {
             ))}
           </div>
         </Glass>
-        <Glass delay={240}>
+        <Glass delay={240} className="min-w-0">
           <h2 className="mb-3 font-display text-lg font-bold">
             Payment terms & message
           </h2>

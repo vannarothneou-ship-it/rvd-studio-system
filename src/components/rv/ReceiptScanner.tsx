@@ -170,7 +170,7 @@ function persistRecordToStore(rec: RecordedRecord, previousId?: string) {
         )
           ? rec.category
           : "Other",
-        accountMethod: rec.method || "ABA Bank",
+        accountMethod: rec.method || "Debit",
         description: buildDescription(rec),
         amount: Math.max(0, Number(rec.amount) || 0),
         currency: rec.currency,
@@ -189,7 +189,7 @@ function persistRecordToStore(rec: RecordedRecord, previousId?: string) {
       category: rec.category || "Other",
       vendor:
         rec.account === "Personal"
-          ? rec.method || "ABA Bank"
+          ? rec.method || "Debit"
           : rec.merchantOrPayer || rec.method || "Vendor",
       description:
         rec.account === "Personal"
@@ -459,8 +459,8 @@ export function ReceiptScannerDrawer({
     <SlideDrawer
       open={open}
       onClose={handleClose}
-      title="Scan Receipt or Bank Slip"
-      subtitle="ABA · ACLEDA · Canadia · KHQR · Photo Receipt"
+      title="Scan Receipt"
+      subtitle="Debit · Credit · Photo Slip"
       widthClass="max-w-lg"
     >
       <div className="space-y-4">
@@ -527,11 +527,11 @@ export function ReceiptScannerDrawer({
                 <ScanLine className="h-7 w-7" />
               </div>
               <h3 className="font-display text-base font-bold text-foreground">
-                Snap receipt or upload bank slip
+                Snap receipt or upload slip
               </h3>
               <p className="mx-auto mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">
-                Reads ABA Mobile, ACLEDA ToanChet, Canadia, KHQR transfers,
-                fuel/coffee receipts, and USD/KHR amounts automatically.
+                Reads receipts, transfer slips, fuel/coffee bills, and USD/KHR
+                amounts automatically.
               </p>
 
               <div className="mt-4 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
@@ -576,7 +576,7 @@ export function ReceiptScannerDrawer({
             )}
             <div className="flex items-center justify-center gap-2 text-sm font-semibold text-primary">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span>Reading receipt amount, bank channel &amp; category…</span>
+              <span>Reading receipt amount, card &amp; category…</span>
             </div>
           </div>
         )}
@@ -753,7 +753,7 @@ export function ReceiptScannerDrawer({
                     onChange={(e) => updateRecord({ date: e.target.value })}
                   />
                 </F>
-                <F label="Bank / Channel" className="col-span-1">
+                <F label="Card" className="col-span-1">
                   <Sel
                     value={record.method}
                     onChange={(v) => updateRecord({ method: v })}

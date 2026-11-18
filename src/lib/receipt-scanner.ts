@@ -10,15 +10,7 @@ export interface ScannedReceiptResult {
   date: string;
   merchantOrPayer: string;
   description: string;
-  method:
-    | "ABA Bank"
-    | "ACLEDA"
-    | "Canadia"
-    | "KHQR"
-    | "Debit"
-    | "Credit"
-    | "Cash"
-    | "Other";
+  method: "Debit" | "Credit";
   category: string;
   reference: string;
   confidence: "high" | "medium" | "low";
@@ -60,16 +52,16 @@ const INCOME_SOURCES = [
   "Other",
 ] as const;
 
-const ALLOWED_METHODS = [
-  "ABA Bank",
-  "ACLEDA",
-  "Canadia",
-  "KHQR",
-  "Debit",
-  "Credit",
-  "Cash",
-  "Other",
-] as const;
+const ALLOWED_METHODS = ["Debit", "Credit"] as const;
+
+const ALLOWED_IMAGE_MIMES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/heic",
+  "image/heif",
+]);
 
 const RESPONSE_SCHEMA = {
   type: Type.OBJECT,
@@ -82,7 +74,7 @@ const RESPONSE_SCHEMA = {
     account: {
       type: Type.STRING,
       description:
-        "Workspace: 'Personal' for everyday food/fuel/family/medical/utilities/personal bank transfers, or 'Studio' for graphic design business costs (software, fonts, printing, fabrication, studio equipment, client invoices).",
+        "Workspace: 'Personal' for everyday food/fuel/family/medical/utilities/personal transfers, or 'Studio' for graphic design business costs (software, fonts, printing, fabrication, studio equipment, client invoices).",
     },
     amount: {
       type: Type.NUMBER,
@@ -101,7 +93,7 @@ const RESPONSE_SCHEMA = {
     merchantOrPayer: {
       type: Type.STRING,
       description:
-        "Short vendor, store, recipient, or sender name (e.g. 'Brown Coffee', 'Aeon Mall', 'Adobe', 'ABA Transfer · Piseth').",
+        "Short vendor, store, recipient, or sender name (e.g. 'Brown Coffee', 'Aeon Mall', 'Adobe').",
     },
     description: {
       type: Type.STRING,
@@ -111,7 +103,7 @@ const RESPONSE_SCHEMA = {
     method: {
       type: Type.STRING,
       description:
-        "Payment channel: one of 'ABA Bank', 'ACLEDA', 'Canadia', 'KHQR', 'Debit', 'Credit', 'Cash', 'Other'. Detect Cambodian bank UI branding (ABA Mobile/Pay -> 'ABA Bank', ACLEDA/ToanChet -> 'ACLEDA', Canadia Bank -> 'Canadia', generic Bakong KHQR -> 'KHQR').",
+        "Card / account type: strictly 'Debit' or 'Credit'. Use 'Credit' only if receipt/alert clearly indicates a credit card (Credit / Visa Credit / Mastercard Credit); use 'Debit' for debit cards, bank transfers, KHQR, or receipts without credit card branding.",
     },
     category: {
       type: Type.STRING,
@@ -121,7 +113,7 @@ const RESPONSE_SCHEMA = {
     reference: {
       type: Type.STRING,
       description:
-        "Bank transaction ID, reference code, or receipt number if visible; otherwise empty string.",
+        "Transaction ID, reference code, or receipt number if visible; otherwise empty string.",
     },
     confidence: {
       type: Type.STRING,
@@ -130,7 +122,7 @@ const RESPONSE_SCHEMA = {
     notes: {
       type: Type.STRING,
       description:
-        "Optional brief context (items summary, bank remark, or KHR/USD note).",
+        "Optional brief context (items summary, remark, or KHR/USD note).",
     },
   },
   required: [
@@ -151,16 +143,9 @@ const RESPONSE_SCHEMA = {
 
 function sanitizeMethod(raw: string): ScannedReceiptResult["method"] {
   const s = raw.trim().toLowerCase();
-  if (s.includes("aba")) return "ABA Bank";
-  if (s.includes("acleda") || s.includes("toanchet")) return "ACLEDA";
-  if (s.includes("canadia")) return "Canadia";
-  if (s.includes("khqr") || s.includes("bakong") || s.includes("qr"))
-    return "KHQR";
   if (s.includes("credit")) return "Credit";
-  if (s.includes("debit")) return "Debit";
-  if (s.includes("cash")) return "Cash";
   const exact = ALLOWED_METHODS.find((m) => m.toLowerCase() === s);
-  return exact ?? "Other";
+  return exact ?? "Debit";
 }
 
 function sanitizeCategory(
@@ -237,16 +222,24 @@ export async function scanReceiptWithGemini({
   mimeType,
   defaultAccount = "Personal",
   fallbackDate,
+  apiKeyOverride,
 }: {
   imageBase64: string;
   mimeType: string;
   defaultAccount?: "Personal" | "Studio";
   fallbackDate?: string | undefined;
+  apiKeyOverride?: string | undefined;
 }): Promise<ScannedReceiptResult> {
-  const apiKey = process.env["GEMINI_API_KEY"];
+  const apiKey = (
+    apiKeyOverride ||
+    process.env["GEMINI_API_KEY"] ||
+    process.env["GOOGLE_GENERATIVE_AI_API_KEY"] ||
+    ""
+  ).trim();
+
   if (!apiKey) {
     const err = new Error(
-      "Receipt scanner needs a Gemini API key. Check Settings > Secrets.",
+      "Gemini API key not configured on server. Add GEMINI_API_KEY in Vercel Environment Variables (or AI Studio Settings > Secrets) and redeploy.",
     );
     (err as Error & { status?: number }).status = 503;
     throw err;
@@ -266,7 +259,7 @@ export async function scanReceiptWithGemini({
     },
   });
 
-  const systemInstruction = `You extract structured bookkeeping transactions from Cambodian and international receipts, KHQR payment confirmations, and mobile banking app screenshots (ABA Bank / ABA Pay, ACLEDA ToanChet, Canadia Bank, Wing, Bakong KHQR, Visa/Mastercard alerts, cafe/restaurant/fuel/grocery receipts, and design software/vendor invoices).
+  const systemInstruction = `You extract structured bookkeeping transactions from receipts, transfer slips, payment confirmations, and banking screenshots (Visa/Mastercard alerts, cafe/restaurant/fuel/grocery receipts, and design software/vendor invoices).
 
 Rules:
 1. Extract the exact FINAL TOTAL paid or received as numeric \`amount\` and pick \`currency\` ('USD' or 'KHR'). If the receipt shows KHR (e.g. ៛20,500 or 20,500 KHR), return amount 20500 and currency 'KHR'. If both USD and KHR appear on a dual-currency Cambodian receipt, prefer USD as primary amount.
@@ -276,9 +269,9 @@ Rules:
    - If expense & Personal: ${EXPENSE_PERSONAL.join(", ")}
    - If expense & Studio: ${EXPENSE_STUDIO.join(", ")}
    - If income: ${INCOME_SOURCES.join(", ")}
-5. Detect \`method\` strictly from: ${ALLOWED_METHODS.join(", ")}. Identify ABA Bank (dark navy/cyan ABA Mobile UI), ACLEDA (navy/gold ToanChet), Canadia Bank (red/navy UI), Bakong KHQR (red KHQR header), Credit/Debit card, or paper Cash receipt.
+5. Detect \`method\` strictly as 'Debit' or 'Credit'. Pick 'Credit' only when a credit card is indicated; otherwise pick 'Debit'.
 6. Format \`date\` as YYYY-MM-DD. If no complete date is printed, use '${todayIso}'.
-7. Keep \`description\` crisp and human-readable (e.g., "Coffee & pastry at Brown", "ABA KHQR to Lucky Market", "Fuel refill at PTT").`;
+7. Keep \`description\` crisp and human-readable (e.g., "Coffee & pastry at Brown", "Groceries at Lucky Market", "Fuel refill at PTT").`;
 
   let lastError: unknown;
   for (let attempt = 0; attempt < 2; attempt++) {
@@ -294,7 +287,7 @@ Rules:
               },
             },
             {
-              text: `Read this receipt, invoice, or bank slip screenshot and return the transaction JSON. Fallback date if missing: ${todayIso}.`,
+              text: `Read this receipt, invoice, or payment slip and return the transaction JSON. Fallback date if missing: ${todayIso}.`,
             },
           ],
         },
@@ -371,4 +364,112 @@ Rules:
   throw lastError instanceof Error
     ? lastError
     : new Error("Could not scan receipt image.");
+}
+
+function jsonReply(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+    },
+  });
+}
+
+function resolveUpstreamStatus(err: unknown): number {
+  if (
+    typeof err === "object" &&
+    err !== null &&
+    "status" in err &&
+    typeof (err as { status?: unknown }).status === "number"
+  ) {
+    return (err as { status: number }).status;
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/API_KEY_INVALID|invalid api key/i.test(msg)) return 400;
+  if (/PERMISSION_DENIED|403/i.test(msg)) return 403;
+  if (/RESOURCE_EXHAUSTED|429/i.test(msg)) return 429;
+  if (/NOT_FOUND|404/i.test(msg)) return 502;
+  return 500;
+}
+
+export async function handleScanReceiptRequest(
+  request: Request,
+  env?: unknown,
+): Promise<Response> {
+  if (request.method !== "POST") {
+    return jsonReply({ error: "Method not allowed." }, 405);
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = (await request.json()) as Record<string, unknown>;
+  } catch {
+    return jsonReply({ error: "Invalid JSON request body." }, 400);
+  }
+
+  const rawBase64 =
+    typeof payload["imageBase64"] === "string"
+      ? payload["imageBase64"].trim()
+      : "";
+  const mimeType =
+    typeof payload["mimeType"] === "string"
+      ? payload["mimeType"].trim().toLowerCase()
+      : "image/jpeg";
+  const defaultAccount =
+    payload["defaultAccount"] === "Studio" ? "Studio" : "Personal";
+  const fallbackDate =
+    typeof payload["fallbackDate"] === "string"
+      ? payload["fallbackDate"]
+      : undefined;
+
+  const cleanBase64 = rawBase64.replace(/^data:[^;]+;base64,/i, "");
+  if (!cleanBase64 || cleanBase64.length < 32) {
+    return jsonReply(
+      { error: "Please upload or capture a clear receipt image." },
+      400,
+    );
+  }
+  if (cleanBase64.length > 12_000_000) {
+    return jsonReply(
+      { error: "Image is too large. Please upload an image under 8 MB." },
+      413,
+    );
+  }
+  if (!ALLOWED_IMAGE_MIMES.has(mimeType)) {
+    return jsonReply(
+      { error: "Unsupported image format. Use PNG, JPEG, or WebP." },
+      400,
+    );
+  }
+
+  const envObj =
+    typeof env === "object" && env !== null
+      ? (env as Record<string, unknown>)
+      : undefined;
+  const envApiKey =
+    typeof envObj?.["GEMINI_API_KEY"] === "string"
+      ? envObj["GEMINI_API_KEY"]
+      : typeof envObj?.["GOOGLE_GENERATIVE_AI_API_KEY"] === "string"
+        ? envObj["GOOGLE_GENERATIVE_AI_API_KEY"]
+        : undefined;
+
+  try {
+    const result = await scanReceiptWithGemini({
+      imageBase64: cleanBase64,
+      mimeType: mimeType === "image/jpg" ? "image/jpeg" : mimeType,
+      defaultAccount,
+      fallbackDate,
+      apiKeyOverride: envApiKey,
+    });
+    return jsonReply({ ok: true, result }, 200);
+  } catch (err) {
+    console.error("Receipt scan error:", err);
+    const status = resolveUpstreamStatus(err);
+    const message =
+      err instanceof Error && err.message
+        ? err.message
+        : "Failed to read receipt image.";
+    return jsonReply({ error: message }, status);
+  }
 }

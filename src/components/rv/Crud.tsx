@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { LucideIcon } from "lucide-react";
+import { Upload, type LucideIcon } from "lucide-react";
 import { toast } from "sonner";
 import { Btn, F, Modal, Sel, SlideDrawer } from "@/components/rv/ui";
 import { fileToDataUrl } from "@/lib/store";
@@ -85,21 +85,26 @@ export function EditModal<T extends { id: string }>({
                     className="h-20 w-20 rounded-lg object-cover"
                   />
                 ) : null}
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="min-w-0 max-w-full text-xs"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (file) {
-                      try {
-                        set(f.k, await fileToDataUrl(file, 400));
-                      } catch {
-                        toast.error("Please choose a valid image.");
+                <label className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-full border border-border bg-secondary px-3.5 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent active:scale-95">
+                  <Upload className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  <span>{val ? "Replace image" : "Upload image"}</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="sr-only"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        try {
+                          set(f.k, await fileToDataUrl(file, 400));
+                        } catch {
+                          toast.error("Please choose a valid image.");
+                        }
                       }
-                    }
-                  }}
-                />
+                      e.target.value = "";
+                    }}
+                  />
+                </label>
                 {val ? (
                   <Btn
                     type="button"
@@ -157,7 +162,7 @@ export function EditModal<T extends { id: string }>({
                 </div>
                 {f.allowCustom && (
                   <input
-                    className="field h-8 text-xs"
+                    className="field h-9 text-base sm:h-8 sm:text-xs"
                     placeholder={f.customPlaceholder ?? "Or type custom…"}
                     value={String(val ?? "")}
                     onChange={(e) => set(f.k, e.target.value)}

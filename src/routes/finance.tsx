@@ -104,6 +104,7 @@ export const Route = createFileRoute("/finance")({
 });
 
 const STUDIO_RANGES: { id: CashRange; label: string; desc: string }[] = [
+  { id: "today", label: "Today", desc: "today" },
   { id: "week", label: "Week", desc: "last 7 days" },
   { id: "6m", label: "6M", desc: "last 6 months" },
   { id: "12m", label: "12M", desc: "last 12 months" },
@@ -126,7 +127,7 @@ function Page() {
     }
   }, [searchView]);
 
-  const [studioRange, setStudioRange] = useState<CashRange>("all");
+  const [studioRange, setStudioRange] = useState<CashRange>("today");
   const [chartMode, setChartMode] = useState<ChartMode>("area");
   const [chartLens, setChartLens] = useState<ChartLens>("flow");
   const [month, setMonth] = useState(() => today().slice(0, 7));
@@ -799,7 +800,7 @@ function Page() {
                       setVisibleCount(40);
                     }}
                     placeholder="Search vendor or item..."
-                    className="field w-full py-1.5 pl-8 text-xs sm:w-56"
+                    className="field w-full py-1.5 pl-8 text-base sm:w-56 sm:text-xs"
                   />
                 </div>
                 <Btn
@@ -990,7 +991,7 @@ function Page() {
             Back to Studio Finance
           </Btn>
         ) : (
-          <p className="text-xs text-muted-foreground">
+          <p className="hidden text-xs text-muted-foreground sm:block">
             RothVan Design studio cash flow, invoice payments, operating costs,
             and studio savings goals
           </p>

@@ -119,6 +119,7 @@ export const Route = createFileRoute("/")({
 });
 
 const CASH_RANGES: { id: CashRange; label: string }[] = [
+  { id: "today", label: "Today" },
   { id: "week", label: "Week" },
   { id: "6m", label: "6m" },
   { id: "12m", label: "12m" },
@@ -146,7 +147,7 @@ function CommandDashboard() {
   };
 
   const [cashScope, setCashScope] = useState<CashScope>("all");
-  const [cashRange, setCashRange] = useState<CashRange>("6m");
+  const [cashRange, setCashRange] = useState<CashRange>("today");
   const [cashMode, setCashMode] = useState<ChartMode>("area");
   const [cashLens, setCashLens] = useState<ChartLens>("flow");
   const [feedScope, setFeedScope] = useState<FeedScope>("all");
@@ -362,7 +363,7 @@ function CommandDashboard() {
         account === "Studio"
           ? (EXPENSE_CATEGORIES[0] ?? "Other")
           : (PERSONAL_CATEGORIES[0] ?? "Food"),
-      vendor: account === "Personal" ? "ABA Bank" : "",
+      vendor: account === "Personal" ? "Debit" : "",
       description: "",
       amount: 0,
       currency: "USD",
@@ -375,7 +376,7 @@ function CommandDashboard() {
       id: uid(),
       date: today(),
       source: "Salary",
-      accountMethod: "ABA Bank",
+      accountMethod: "Debit",
       description: "",
       amount: 0,
       currency: "USD",
@@ -465,15 +466,13 @@ function CommandDashboard() {
       ? ([
           {
             k: "vendor",
-            label: "Bank / Card Method",
+            label: "Card",
             type: "chips",
             options: CARD_METHODS.map((m) => ({
               value: m,
               label: m,
               icon: paymentCardIcon(m),
             })),
-            allowCustom: true,
-            customPlaceholder: "Or type merchant / card…",
           },
         ] as Field<Expense>[])
       : ([
@@ -512,7 +511,7 @@ function CommandDashboard() {
     },
     {
       k: "accountMethod",
-      label: "Received into",
+      label: "Card",
       type: "chips",
       options: PERSONAL_INCOME_METHODS.map((m) => ({
         value: m,
@@ -877,7 +876,7 @@ function CommandDashboard() {
                     Personal Money
                   </h2>
                   <p className="text-[0.7rem] text-muted-foreground">
-                    ABA, ACLEDA, Canadia &amp; daily spend
+                    Debit, Credit &amp; daily spending
                   </p>
                 </div>
               </div>
@@ -1073,7 +1072,7 @@ function CommandDashboard() {
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h2 className="font-medium">Cash Flow Overview</h2>
-                  <p className="text-xs text-muted-foreground">
+                  <p className="hidden text-xs text-muted-foreground sm:block">
                     Compare in vs out, net margin, and top spending categories
                     in place
                   </p>
@@ -1091,21 +1090,35 @@ function CommandDashboard() {
                 />
               </div>
 
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <SlidingTabs
-                  size="xs"
-                  layoutGroup="dash-cf-lens"
-                  value={cashLens}
-                  onChange={setCashLens}
-                  options={CHART_LENS_OPTIONS.slice(0, 3)}
-                />
-                <div className="flex flex-wrap items-center gap-1.5">
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+                <div className="flex items-center justify-between gap-2">
+                  <SlidingTabs
+                    size="xs"
+                    layoutGroup="dash-cf-lens"
+                    value={cashLens}
+                    onChange={setCashLens}
+                    options={CHART_LENS_OPTIONS.slice(0, 3)}
+                  />
                   <SlidingTabs
                     size="xs"
                     layoutGroup="dash-cf-mode"
                     value={cashMode}
                     onChange={setCashMode}
+                    options={CHART_MODE_OPTIONS.map((o) => ({
+                      ...o,
+                      label: o.label,
+                    }))}
+                    className="sm:hidden"
+                  />
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-1.5">
+                  <SlidingTabs
+                    size="xs"
+                    layoutGroup="dash-cf-mode-dt"
+                    value={cashMode}
+                    onChange={setCashMode}
                     options={CHART_MODE_OPTIONS}
+                    className="hidden sm:inline-flex"
                   />
                   <SlidingTabs
                     size="xs"

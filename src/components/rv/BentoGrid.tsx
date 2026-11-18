@@ -397,7 +397,7 @@ export function EditLayoutButton({
       type="button"
       onClick={onToggle}
       className={cn(
-        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-all",
+        "hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-all sm:inline-flex",
         editing
           ? "border-primary bg-primary text-primary-foreground shadow-sm"
           : "border-border bg-secondary/70 text-muted-foreground hover:border-primary/50 hover:text-foreground",

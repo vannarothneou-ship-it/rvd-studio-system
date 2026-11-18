@@ -47,7 +47,7 @@ export function WorkspaceBalanceCard({
               {output.totalArtworks} total artworks · {completionPct}% done
             </span>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 hidden text-xs text-muted-foreground sm:block">
             {workTaskCount} full-time tasks ({output.workCompleted} completed,{" "}
             {output.workActive} current) · {output.studioCompleted} studio
             delivered/closed
@@ -99,7 +99,7 @@ export function WorkspaceBalanceCard({
           >
             <AnimatedNumber value={bal.personalBalance} />
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 hidden text-xs text-muted-foreground sm:block">
             Personal Income minus Personal Expenses across your personal ledger
           </p>
         </div>
@@ -152,7 +152,7 @@ export function WorkspaceBalanceCard({
         >
           <AnimatedNumber value={bal.studioBalance} />
         </p>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="mt-1 hidden text-xs text-muted-foreground sm:block">
           Paid Studio Invoices minus Studio Operating Expenses across RothVan
           Studio
         </p>

@@ -106,7 +106,7 @@ type LedgerView = "all" | "spending" | "income";
 function PersonalPage() {
   const db = useDB((d) => d);
   const r = db.settings.khrRate;
-  const [personalRange, setPersonalRange] = useState<PersonalRange>("1m");
+  const [personalRange, setPersonalRange] = useState<PersonalRange>("today");
   const [chartMode, setChartMode] = useState<ChartMode>("area");
   const [chartLens, setChartLens] = useState<ChartLens>("flow");
   const [month, setMonth] = useState(() => today().slice(0, 7));
@@ -209,7 +209,7 @@ function PersonalPage() {
       id: uid(),
       date: today().startsWith(month) ? today() : pAgg.anchorDay,
       source: source ?? "Salary",
-      accountMethod: "ABA Bank",
+      accountMethod: "Debit",
       description: "",
       amount: 0,
       currency: "USD",
@@ -243,15 +243,13 @@ function PersonalPage() {
     },
     {
       k: "vendor",
-      label: "Card / Payment method",
+      label: "Card",
       type: "chips",
       options: CARD_METHODS.map((m) => ({
         value: m,
         label: m,
         icon: paymentCardIcon(m),
       })),
-      allowCustom: true,
-      customPlaceholder: "Or enter custom card / merchant…",
     },
     {
       k: "currency",
@@ -277,15 +275,13 @@ function PersonalPage() {
     },
     {
       k: "accountMethod",
-      label: "Received into",
+      label: "Card",
       type: "chips",
       options: PERSONAL_INCOME_METHODS.map((m) => ({
         value: m,
         label: m,
         icon: paymentCardIcon(m),
       })),
-      allowCustom: true,
-      customPlaceholder: "Or enter bank / wallet…",
     },
     {
       k: "currency",
@@ -486,7 +482,7 @@ function PersonalPage() {
                       : chartLens === "category"
                         ? "Spending by category"
                         : chartLens === "method"
-                          ? "Cash by bank & card"
+                          ? "Cash by Debit & Credit"
                           : "Personal income vs spending"}
                   </h2>
                   <p className="text-xs text-muted-foreground">
@@ -783,7 +779,7 @@ function PersonalPage() {
                       setVisibleCount(40);
                     }}
                     placeholder="Search note, card, source…"
-                    className="field w-full py-1.5 pl-8 text-xs sm:w-52"
+                    className="field w-full py-1.5 pl-8 text-base sm:w-52 sm:text-xs"
                   />
                 </div>
                 <Btn
@@ -1027,9 +1023,9 @@ function PersonalPage() {
       <WorkspaceBalanceCard workspace="personal" />
 
       {/* Personal Scope Bar: Month Picker + Synced Time Range */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-muted-foreground">
-          Dedicated personal wallet for daily spending, income, bank cards, and
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2.5">
+        <p className="hidden text-xs text-muted-foreground sm:block">
+          Dedicated personal wallet for daily spending, income, cards, and
           saving goals
         </p>
         <div className="flex flex-wrap items-center gap-2">

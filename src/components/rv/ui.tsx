@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Check, ChevronDown, Search, X, type LucideIcon } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  Search,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   Select,
@@ -102,10 +109,10 @@ export function PageHeader({
     year: "numeric",
   });
   return (
-    <header className="rise mb-3.5 flex flex-col gap-2 sm:mb-6 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:gap-4">
+    <header className="rise mb-3 flex flex-col gap-2 sm:mb-6 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:gap-4">
       <div className="min-w-0">
-        <p className="truncate text-xs text-muted-foreground sm:text-sm">
-          Welcome back, {owner}.<span className="sm:hidden"> · {month}</span>
+        <p className="hidden truncate text-xs text-muted-foreground sm:block sm:text-sm">
+          Welcome back, {owner}.
         </p>
         <h1 className="truncate font-display text-2xl font-bold sm:text-4xl">
           {title}
@@ -240,7 +247,7 @@ export function SlideDrawer({
       />
       <aside
         className={cn(
-          "drawer-in glass-strong relative z-10 flex max-h-[92dvh] w-full flex-col rounded-t-3xl border-t border-border shadow-2xl sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0",
+          "drawer-in glass-strong relative z-10 mt-[env(safe-area-inset-top)] flex max-h-[92dvh] w-full flex-col rounded-t-3xl border-t border-border shadow-2xl sm:mt-0 sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0 sm:pt-[env(safe-area-inset-top)]",
           widthClass,
           side === "left"
             ? "sm:border-r sm:border-border"
@@ -248,12 +255,22 @@ export function SlideDrawer({
         )}
       >
         <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-border sm:hidden" />
-        <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-5 sm:py-4">
-          <div className="min-w-0">
-            {subtitle ? <span className="label-mono">{subtitle}</span> : null}
-            <h2 className="truncate font-display text-lg font-bold sm:text-xl">
-              {title}
-            </h2>
+        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 sm:px-5 sm:py-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Back"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border bg-muted/60 text-foreground transition-transform active:scale-95 sm:hidden"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </button>
+            <div className="min-w-0">
+              {subtitle ? <span className="label-mono">{subtitle}</span> : null}
+              <h2 className="truncate font-display text-lg font-bold sm:text-xl">
+                {title}
+              </h2>
+            </div>
           </div>
           <button
             type="button"
@@ -282,7 +299,7 @@ export function F({
   className?: string;
 }) {
   return (
-    <label className={cn("block space-y-1.5", className)}>
+    <label className={cn("block min-w-0 space-y-1.5", className)}>
       <span className="label-mono">{label}</span>
       {children}
     </label>
@@ -445,7 +462,7 @@ export function Sel({
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     placeholder="Type to search…"
-                    className="field h-8 pl-8 pr-7 text-xs"
+                    className="field h-9 pl-8 pr-7 text-base sm:h-8 sm:text-xs"
                   />
                   {query && (
                     <button

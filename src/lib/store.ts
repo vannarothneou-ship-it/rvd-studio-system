@@ -53,16 +53,7 @@ export function normalizeServicePillar(pillar: string): string {
 
 export const PRICING_UNITS = ["Fixed fee", "Per item", "Per hour", "Per sqm"];
 export const PAY_METHODS = ["Bank transfer", "KHQR", "Wing", "Cash", "Other"];
-export const CARD_METHODS = [
-  "ABA Bank",
-  "ACLEDA",
-  "Canadia",
-  "KHQR",
-  "Debit",
-  "Credit",
-  "Cash",
-  "Other",
-] as const;
+export const CARD_METHODS = ["Debit", "Credit"] as const;
 export const PERSONAL_INCOME_SOURCES = [
   "Salary",
   "Studio Draw",
@@ -72,16 +63,7 @@ export const PERSONAL_INCOME_SOURCES = [
   "Gift & Refund",
   "Other",
 ] as const;
-export const PERSONAL_INCOME_METHODS = [
-  "ABA Bank",
-  "ACLEDA",
-  "Canadia",
-  "KHQR",
-  "Debit",
-  "Wing",
-  "Cash",
-  "Other",
-] as const;
+export const PERSONAL_INCOME_METHODS = ["Debit", "Credit"] as const;
 export const EXPENSE_CATEGORIES = [
   "Software and subscriptions",
   "Fonts and licenses",
@@ -960,7 +942,7 @@ export function previousMonth(ym: string) {
   const d = new Date(Date.UTC(y, m - 2, 1));
   return d.toISOString().slice(0, 7);
 }
-export type CashRange = "week" | "1m" | "6m" | "12m" | "all";
+export type CashRange = "today" | "week" | "1m" | "6m" | "12m" | "all";
 export type PersonalRange = "today" | "week" | "1m" | "6m" | "12m";
 export interface CashFlowPoint {
   m: string;
@@ -1775,6 +1757,87 @@ export function cashFlowSeries(
   const idx = getLedgerIndex(db);
   const r = db.settings.khrRate;
 
+  if (range === "today") {
+    const anchorDay = resolveAnchorDay(db, anchorMonth);
+    const pays = idx.invoicePaymentsByDay.get(anchorDay) ?? [];
+    const studioExps = idx.studioExpensesByDay.get(anchorDay) ?? [];
+    const personalExps = idx.personalExpensesByDay.get(anchorDay) ?? [];
+    const slots = [
+      {
+        key: `${anchorDay}-01`,
+        label: "Morning",
+        inn: 0,
+        out: 0,
+        personalOut: 0,
+        inCount: 0,
+        outCount: 0,
+      },
+      {
+        key: `${anchorDay}-02`,
+        label: "Midday",
+        inn: 0,
+        out: 0,
+        personalOut: 0,
+        inCount: 0,
+        outCount: 0,
+      },
+      {
+        key: `${anchorDay}-03`,
+        label: "Afternoon",
+        inn: 0,
+        out: 0,
+        personalOut: 0,
+        inCount: 0,
+        outCount: 0,
+      },
+      {
+        key: `${anchorDay}-04`,
+        label: "Evening",
+        inn: 0,
+        out: 0,
+        personalOut: 0,
+        inCount: 0,
+        outCount: 0,
+      },
+    ];
+    pays.forEach((p, i) => {
+      const s = slots[i % slots.length]!;
+      s.inn += toUSD(p.amount, p.currency, r);
+      s.inCount += 1;
+    });
+    studioExps.forEach((e, i) => {
+      const s = slots[i % slots.length]!;
+      s.out += toUSD(e.amount, e.currency, r);
+      s.outCount += 1;
+    });
+    personalExps.forEach((e, i) => {
+      const s = slots[i % slots.length]!;
+      s.personalOut += toUSD(e.amount, e.currency, r);
+    });
+    const fullDay = new Date(anchorDay + "T00:00:00Z").toLocaleDateString(
+      "en-US",
+      {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC",
+      },
+    );
+    return slots.map((s) => ({
+      m: s.key,
+      label: s.label,
+      fullDate: `${fullDay} · ${s.label}`,
+      inn: s.inn,
+      out: s.out,
+      personalOut: s.personalOut,
+      net: s.inn - s.out,
+      combinedNet: s.inn - s.out - s.personalOut,
+      inCount: s.inCount,
+      outCount: s.outCount,
+    }));
+  }
+
   if (range === "week") {
     const anchorDay = resolveAnchorDay(db, anchorMonth);
     const days = trailingDays(anchorDay, 7);
@@ -1902,6 +1965,101 @@ export function combinedCashFlowSeries(
 ): CombinedCashPoint[] {
   const idx = getLedgerIndex(db);
   const r = db.settings.khrRate;
+
+  if (range === "today") {
+    const anchorDay = resolveAnchorDay(db, anchorMonth);
+    const sPays = idx.invoicePaymentsByDay.get(anchorDay) ?? [];
+    const pIncs = idx.incomeByDay.get(anchorDay) ?? [];
+    const sExps = idx.studioExpensesByDay.get(anchorDay) ?? [];
+    const pExps = idx.personalExpensesByDay.get(anchorDay) ?? [];
+    const slots = [
+      {
+        key: `${anchorDay}-01`,
+        label: "Morning",
+        studioIn: 0,
+        personalIn: 0,
+        studioOut: 0,
+        personalOut: 0,
+        count: 0,
+      },
+      {
+        key: `${anchorDay}-02`,
+        label: "Midday",
+        studioIn: 0,
+        personalIn: 0,
+        studioOut: 0,
+        personalOut: 0,
+        count: 0,
+      },
+      {
+        key: `${anchorDay}-03`,
+        label: "Afternoon",
+        studioIn: 0,
+        personalIn: 0,
+        studioOut: 0,
+        personalOut: 0,
+        count: 0,
+      },
+      {
+        key: `${anchorDay}-04`,
+        label: "Evening",
+        studioIn: 0,
+        personalIn: 0,
+        studioOut: 0,
+        personalOut: 0,
+        count: 0,
+      },
+    ];
+    sPays.forEach((p, i) => {
+      const s = slots[i % slots.length]!;
+      s.studioIn += toUSD(p.amount, p.currency, r);
+      s.count += 1;
+    });
+    pIncs.forEach((inc, i) => {
+      const s = slots[i % slots.length]!;
+      s.personalIn += toUSD(inc.amount, inc.currency, r);
+      s.count += 1;
+    });
+    sExps.forEach((e, i) => {
+      const s = slots[i % slots.length]!;
+      s.studioOut += toUSD(e.amount, e.currency, r);
+      s.count += 1;
+    });
+    pExps.forEach((e, i) => {
+      const s = slots[i % slots.length]!;
+      s.personalOut += toUSD(e.amount, e.currency, r);
+      s.count += 1;
+    });
+    const fullDay = new Date(anchorDay + "T00:00:00Z").toLocaleDateString(
+      "en-US",
+      {
+        weekday: "short",
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        timeZone: "UTC",
+      },
+    );
+    return slots.map((s) => {
+      const totalIn = s.studioIn + s.personalIn;
+      const totalOut = s.studioOut + s.personalOut;
+      return {
+        m: s.key,
+        label: s.label,
+        fullDate: `${fullDay} · ${s.label}`,
+        studioIn: s.studioIn,
+        personalIn: s.personalIn,
+        totalIn,
+        studioOut: s.studioOut,
+        personalOut: s.personalOut,
+        totalOut,
+        studioNet: s.studioIn - s.studioOut,
+        personalNet: s.personalIn - s.personalOut,
+        combinedNet: totalIn - totalOut,
+        count: s.count,
+      };
+    });
+  }
 
   if (range === "week") {
     const anchorDay = resolveAnchorDay(db, anchorMonth);

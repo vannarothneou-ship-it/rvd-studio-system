@@ -464,7 +464,7 @@ describe("bento dense packing and service tags", () => {
           id: "inc-1",
           date: "2026-11-10",
           source: "Salary",
-          accountMethod: "ABA Bank",
+          accountMethod: "Debit",
           description: "November draw",
           amount: 1200,
           currency: "USD",
@@ -473,7 +473,7 @@ describe("bento dense packing and service tags", () => {
           id: "inc-2",
           date: "2026-10-15",
           source: "Freelance",
-          accountMethod: "KHQR",
+          accountMethod: "Credit",
           description: "Side workshop",
           amount: 410000,
           currency: "KHR",
@@ -494,6 +494,11 @@ describe("bento dense packing and service tags", () => {
     expect(novPt.personalOut).toBeCloseTo(770.59, 2);
     expect(novPt.net).toBeCloseTo(1200 - 770.59, 2);
 
+    const studioToday = cashFlowSeries(db, "today", "2026-11");
+    expect(studioToday).toHaveLength(4);
+    const combinedToday = combinedCashFlowSeries(db, "today", "2026-11");
+    expect(combinedToday).toHaveLength(4);
+
     const studioSeries = cashFlowSeries(db, "6m");
     const novStudio = studioSeries.find((pt) => pt.m === "2026-11")!;
     const novStudioExpenses = db.expenses.filter(
@@ -513,7 +518,7 @@ describe("bento dense packing and service tags", () => {
           id: "inc-w1",
           date: "2026-11-05",
           source: "Salary",
-          accountMethod: "ABA Bank",
+          accountMethod: "Debit",
           description: "Full-time salary",
           amount: 1500,
           currency: "USD",

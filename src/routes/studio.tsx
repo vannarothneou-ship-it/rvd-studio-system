@@ -96,9 +96,11 @@ export const Route = createFileRoute("/studio")({
 });
 
 const RANGE_OPTIONS: { id: CashRange; label: string; desc: string }[] = [
-  { id: "6m", label: "6 months", desc: "last 6 months" },
-  { id: "12m", label: "12 months", desc: "last 12 months" },
-  { id: "all", label: "All time", desc: "all time" },
+  { id: "today", label: "Today", desc: "today" },
+  { id: "week", label: "Week", desc: "last 7 days" },
+  { id: "6m", label: "6m", desc: "last 6 months" },
+  { id: "12m", label: "12m", desc: "last 12 months" },
+  { id: "all", label: "All", desc: "all time" },
 ];
 
 const SYSTEM_WIDGET_CATALOG: { id: string; label: string; desc: string }[] = [
@@ -162,7 +164,7 @@ const SYSTEM_WIDGET_CATALOG: { id: string; label: string; desc: string }[] = [
 function StudioDashboard() {
   const db = useDB((d) => d);
   const { openScanner } = useReceiptScanner();
-  const [range, setRange] = useState<CashRange>("all");
+  const [range, setRange] = useState<CashRange>("today");
   const [cashChartMode, setCashChartMode] = useState<ChartMode>("area");
   const [inspectedCategory, setInspectedCategory] = useState<string | null>(
     null,

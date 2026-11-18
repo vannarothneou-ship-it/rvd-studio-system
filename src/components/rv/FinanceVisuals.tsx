@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  ArrowLeft,
   Baby,
   Briefcase,
   Building2,
@@ -687,22 +688,53 @@ export function CategoryInspectorDrawer({
       />
 
       {/* Slide-Over Panel */}
-      <aside className="drawer-in glass-strong relative z-10 flex h-full w-full max-w-md flex-col border-l border-border shadow-2xl">
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3 border-b border-border px-5 py-4">
-          <div>
-            <span className="label-mono">
-              {account} · {monthLabel}
-            </span>
-            <h2 className="mt-0.5 font-display text-xl font-bold">
-              {category}
-            </h2>
+      <aside
+        onTouchStart={(e) => {
+          const t = e.touches[0];
+          if (t) {
+            e.currentTarget.dataset["swipeX"] = String(t.clientX);
+            e.currentTarget.dataset["swipeY"] = String(t.clientY);
+          }
+        }}
+        onTouchEnd={(e) => {
+          const sx = Number(e.currentTarget.dataset["swipeX"] ?? NaN);
+          const sy = Number(e.currentTarget.dataset["swipeY"] ?? NaN);
+          const t = e.changedTouches[0];
+          if (!Number.isFinite(sx) || !t) return;
+          const dx = t.clientX - sx;
+          const dy = t.clientY - sy;
+          if (dx > 72 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+            onClose();
+          }
+        }}
+        className="drawer-in glass-strong relative z-10 flex h-full w-full max-w-md flex-col border-l border-border pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-2xl"
+      >
+        {/* Header with Back & Close */}
+        <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 sm:px-5 sm:py-4">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Back"
+              className="inline-flex min-h-[38px] shrink-0 items-center gap-1 rounded-full border border-border bg-muted/60 px-3 py-1.5 text-xs font-semibold text-foreground transition-transform active:scale-95 hover:bg-accent"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              <span>Back</span>
+            </button>
+            <div className="min-w-0">
+              <span className="label-mono block truncate">
+                {account} · {monthLabel}
+              </span>
+              <h2 className="truncate font-display text-lg font-bold sm:text-xl">
+                {category}
+              </h2>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="rounded-full p-2 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
