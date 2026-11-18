@@ -351,7 +351,7 @@ function Services() {
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap items-center gap-1.5 border-t border-border/60 pt-3">
+              <div className="no-scrollbar mt-3 flex flex-nowrap items-center gap-1.5 overflow-x-auto border-t border-border/60 pt-3 pb-1 sm:flex-wrap sm:pb-0">
                 <button
                   type="button"
                   onClick={() => setPillar("All")}

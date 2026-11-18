@@ -977,7 +977,7 @@ function WorkPage() {
                       ...WORK_STATUSES.map((s) => ({ id: s, label: s })),
                     ]}
                   />
-                  <div className="w-44">
+                  <div className="w-full sm:w-44">
                     <Sel
                       value={typeFilter === "All" ? "" : typeFilter}
                       placeholder="All design types"
@@ -1245,7 +1245,7 @@ function WorkPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
-                <div className="relative min-w-44 flex-1 sm:flex-none">
+                <div className="relative w-full min-w-0 sm:w-52 sm:flex-none">
                   <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <input
                     className="field h-9 pl-8 text-xs"
@@ -1254,7 +1254,7 @@ function WorkPage() {
                     onChange={(e) => setOutQuery(e.target.value)}
                   />
                 </div>
-                <div className="w-40">
+                <div className="min-w-0 flex-1 sm:w-40 sm:flex-none">
                   <Sel
                     value={outProjectFilter === "All" ? "" : outProjectFilter}
                     placeholder="All brands/projects"
@@ -1262,7 +1262,7 @@ function WorkPage() {
                     options={output.byProjectGroup.map((g) => g.projectGroup)}
                   />
                 </div>
-                <div className="w-40">
+                <div className="min-w-0 flex-1 sm:w-40 sm:flex-none">
                   <Sel
                     value={outType === "All" ? "" : outType}
                     placeholder="All disciplines"

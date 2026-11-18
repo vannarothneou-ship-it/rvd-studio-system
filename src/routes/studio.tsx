@@ -765,11 +765,7 @@ function StudioDashboard() {
                   ? expenseItemIcon(a.expense)
                   : ArrowUpRight;
                 return (
-                  <li
-                    key={k}
-                    className="rise flex items-center gap-3 py-3"
-                    style={{ animationDelay: `${180 + k * 40}ms` }}
-                  >
+                  <li key={k} className="flex items-center gap-3 py-3">
                     <span
                       className={cn(
                         "grid h-10 w-10 shrink-0 place-items-center rounded-xl border border-border bg-muted",

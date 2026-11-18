@@ -789,7 +789,7 @@ function Page() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                <div className="relative">
+                <div className="relative min-w-0 flex-1 sm:flex-none">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <input
                     type="search"
@@ -799,7 +799,7 @@ function Page() {
                       setVisibleCount(40);
                     }}
                     placeholder="Search vendor or item..."
-                    className="field w-44 py-1.5 pl-8 text-xs sm:w-56"
+                    className="field w-full py-1.5 pl-8 text-xs sm:w-56"
                   />
                 </div>
                 <Btn
@@ -812,7 +812,7 @@ function Page() {
               </div>
             </div>
 
-            <div className="mb-3 flex flex-wrap gap-1.5">
+            <div className="no-scrollbar mb-3 flex flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0">
               <button
                 type="button"
                 onClick={() => setCatFilter("All")}
@@ -1276,7 +1276,7 @@ function Page() {
                     { id: "expense", label: "Expense" },
                   ]}
                 />
-                <div className="relative">
+                <div className="relative min-w-0 flex-1 sm:flex-none">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <input
                     type="search"
@@ -1286,7 +1286,7 @@ function Page() {
                       setCombinedVisible(50);
                     }}
                     placeholder="Search combined ledger…"
-                    className="field w-44 py-1.5 pl-8 text-xs sm:w-56"
+                    className="field w-full py-1.5 pl-8 text-xs sm:w-56"
                   />
                 </div>
               </div>

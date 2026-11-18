@@ -773,7 +773,7 @@ function PersonalPage() {
                     { id: "income", label: "Income" },
                   ]}
                 />
-                <div className="relative">
+                <div className="relative min-w-0 flex-1 sm:flex-none">
                   <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <input
                     type="search"
@@ -783,7 +783,7 @@ function PersonalPage() {
                       setVisibleCount(40);
                     }}
                     placeholder="Search note, card, source…"
-                    className="field w-44 py-1.5 pl-8 text-xs sm:w-52"
+                    className="field w-full py-1.5 pl-8 text-xs sm:w-52"
                   />
                 </div>
                 <Btn
@@ -806,7 +806,7 @@ function PersonalPage() {
               </div>
             </div>
 
-            <div className="mb-3 flex flex-wrap gap-1.5">
+            <div className="no-scrollbar mb-3 flex flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0">
               <button
                 type="button"
                 onClick={() => {

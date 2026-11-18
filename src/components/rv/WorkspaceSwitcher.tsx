@@ -1,4 +1,3 @@
-import { motion } from "motion/react";
 import { Briefcase, Home, Layers3, PiggyBank } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -39,7 +38,6 @@ const WORKSPACES: {
 export function WorkspaceSwitcher({
   activeWorkspace,
   onSwitch,
-  layoutId = "workspace-switcher-pill",
   compact = false,
   className,
 }: {
@@ -75,19 +73,12 @@ export function WorkspaceSwitcher({
                 ? "min-h-[36px] px-2.5 py-1.5 text-[0.72rem]"
                 : "min-h-[38px] px-3 py-1.5 text-xs sm:text-sm",
               active
-                ? "text-primary-foreground"
+                ? "bg-primary text-primary-foreground shadow-[0_6px_18px_-6px_var(--primary)]"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {active && (
-              <motion.span
-                layoutId={layoutId}
-                transition={{ type: "spring", stiffness: 460, damping: 34 }}
-                className="absolute inset-0 rounded-full bg-primary shadow-[0_6px_18px_-6px_var(--primary)]"
-              />
-            )}
-            <Icon className="relative z-10 h-3.5 w-3.5 shrink-0" />
-            <span className="relative z-10 whitespace-nowrap">{ws.label}</span>
+            <Icon className="h-3.5 w-3.5 shrink-0" />
+            <span className="whitespace-nowrap">{ws.label}</span>
           </button>
         );
       })}

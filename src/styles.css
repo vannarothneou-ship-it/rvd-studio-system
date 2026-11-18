@@ -106,8 +106,8 @@
   --chart-3: oklch(0.78 0.13 155);
   --chart-4: oklch(0.7 0.14 22);
   --chart-5: oklch(0.6 0.05 250);
-  --glass: oklch(1 0 0 / 5%);
-  --glass-strong: oklch(1 0 0 / 9%);
+  --glass: oklch(0.285 0.005 264 / 92%);
+  --glass-strong: oklch(0.265 0.005 264 / 94%);
   --glass-border: oklch(1 0 0 / 10%);
   --bg-gradient:
     radial-gradient(
@@ -157,9 +157,9 @@
   --positive: oklch(0.52 0.13 155);
   --border: oklch(0.255 0.004 264 / 10%);
   --input: oklch(0.255 0.004 264 / 14%);
-  --glass: oklch(1 0 0 / 50%);
-  --glass-strong: oklch(1 0 0 / 70%);
-  --glass-border: oklch(1 0 0 / 70%);
+  --glass: oklch(0.985 0.004 70 / 92%);
+  --glass-strong: oklch(0.985 0.004 70 / 94%);
+  --glass-border: oklch(0.255 0.004 264 / 10%);
   --bg-gradient:
     radial-gradient(
       60% 50% at 88% 0%,
@@ -258,14 +258,13 @@
 @utility glass {
   background: var(--glass);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(14px) saturate(125%);
   box-shadow: var(--shadow-glass);
   border-radius: var(--radius);
 }
 @utility glass-strong {
   background: var(--glass-strong);
   border: 1px solid var(--glass-border);
-  backdrop-filter: blur(18px) saturate(135%);
+  backdrop-filter: blur(12px) saturate(115%);
   box-shadow: var(--shadow-glass);
 }
 @utility font-num {
@@ -291,6 +290,11 @@
     background: var(--secondary);
   }
 }
+@media (max-width: 639px) {
+  .field {
+    font-size: 1rem;
+  }
+}
 @utility label-mono {
   font-family: var(--font-sans);
   font-size: 0.68rem;
@@ -300,12 +304,12 @@
   color: var(--muted-foreground);
 }
 @utility rise {
-  animation: rise 0.35s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: rise 0.18s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
 @keyframes rise {
   from {
     opacity: 0;
-    transform: translateY(14px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -562,10 +566,17 @@
 @media (max-width: 640px) {
   .project-calendar .fc-toolbar {
     flex-wrap: wrap;
-    gap: 10px;
+    gap: 8px;
+  }
+  .project-calendar .fc-toolbar-title {
+    font-size: 0.98rem;
+  }
+  .project-calendar .fc-button {
+    font-size: 0.72rem !important;
+    padding: 0.3rem 0.65rem !important;
   }
   .project-calendar .fc-daygrid-day-frame {
-    min-height: 76px;
+    min-height: 68px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

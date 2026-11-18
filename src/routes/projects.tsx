@@ -1044,29 +1044,31 @@ function Page() {
                       })}
                     </div>
                   </div>
-                  <div className="project-calendar">
-                    <FullCalendar
-                      plugins={[dayGridPlugin, interactionPlugin]}
-                      initialView="dayGridMonth"
-                      headerToolbar={{
-                        left: "prev,next today",
-                        center: "title",
-                        right: "",
-                      }}
-                      height="auto"
-                      editable
-                      selectable
-                      selectMirror
-                      eventStartEditable
-                      eventDurationEditable
-                      dayMaxEvents={3}
-                      events={calendarEvents}
-                      dateClick={onCalendarDateClick}
-                      select={onCalendarSelect}
-                      eventClick={onCalendarEventClick}
-                      eventDrop={onCalendarEventDrop}
-                      eventResize={onCalendarEventResize}
-                    />
+                  <div className="overflow-x-auto pb-1">
+                    <div className="project-calendar min-w-[560px] sm:min-w-0">
+                      <FullCalendar
+                        plugins={[dayGridPlugin, interactionPlugin]}
+                        initialView="dayGridMonth"
+                        headerToolbar={{
+                          left: "prev,next today",
+                          center: "title",
+                          right: "",
+                        }}
+                        height="auto"
+                        editable
+                        selectable
+                        selectMirror
+                        eventStartEditable
+                        eventDurationEditable
+                        dayMaxEvents={3}
+                        events={calendarEvents}
+                        dateClick={onCalendarDateClick}
+                        select={onCalendarSelect}
+                        eventClick={onCalendarEventClick}
+                        eventDrop={onCalendarEventDrop}
+                        eventResize={onCalendarEventResize}
+                      />
+                    </div>
                   </div>
                 </Glass>
 

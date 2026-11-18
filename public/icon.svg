@@ -1,29 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <defs>
-    <radialGradient id="rv-bg" cx="50%" cy="35%" r="70%">
-      <stop offset="0%" stop-color="#26252c" />
-      <stop offset="100%" stop-color="#111114" />
-    </radialGradient>
-    <linearGradient id="rv-gold" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#f3d380" />
-      <stop offset="100%" stop-color="#d4a23b" />
-    </linearGradient>
-  </defs>
-  <rect width="512" height="512" rx="112" fill="url(#rv-bg)" />
-  <rect
-    x="28"
-    y="28"
-    width="456"
-    height="456"
-    rx="92"
-    fill="none"
-    stroke="#e2b857"
-    stroke-opacity="0.32"
-    stroke-width="4"
-  />
-  <path
-    d="M124 358V154h88c34 0 56 20 56 50 0 24-14 42-38 48l44 106h-42l-39-100h-31v100h-38zm38-132h47c14 0 22-8 22-21s-8-21-22-21h-47v42zm114-72h41l44 152 44-152h41l-64 204h-42l-64-204z"
-    fill="url(#rv-gold)"
-  />
-  <rect x="124" y="384" width="264" height="10" rx="5" fill="url(#rv-gold)" opacity="0.85" />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">
+  <rect width="1000" height="1000" rx="220" fill="#0D0E13"/>
+  <g transform="translate(32 -24)" fill="#FFFFFF">
+    <path d="M407 223H690V415L605 500H572V382H407V545L245 707V385L407 223Z"/>
+    <path d="M517 500H690V707L572 825V707H362L467 602L517 500Z"/>
+  </g>
 </svg>

@@ -160,29 +160,31 @@ export function WorkTasksCalendar({
           </div>
         </div>
 
-        <div className="project-calendar">
-          <FullCalendar
-            plugins={[dayGridPlugin, interactionPlugin]}
-            initialView="dayGridMonth"
-            headerToolbar={{
-              left: "prev,next today",
-              center: "title",
-              right: "",
-            }}
-            height="auto"
-            editable
-            selectable
-            selectMirror
-            eventStartEditable
-            eventDurationEditable
-            dayMaxEvents={4}
-            events={scheduledEvents}
-            dateClick={onDateClick}
-            select={onSelect}
-            eventClick={onEventClick}
-            eventDrop={onEventDrop}
-            eventResize={onEventResize}
-          />
+        <div className="overflow-x-auto pb-1">
+          <div className="project-calendar min-w-[560px] sm:min-w-0">
+            <FullCalendar
+              plugins={[dayGridPlugin, interactionPlugin]}
+              initialView="dayGridMonth"
+              headerToolbar={{
+                left: "prev,next today",
+                center: "title",
+                right: "",
+              }}
+              height="auto"
+              editable
+              selectable
+              selectMirror
+              eventStartEditable
+              eventDurationEditable
+              dayMaxEvents={4}
+              events={scheduledEvents}
+              dateClick={onDateClick}
+              select={onSelect}
+              eventClick={onEventClick}
+              eventDrop={onEventDrop}
+              eventResize={onEventResize}
+            />
+          </div>
         </div>
       </Glass>
 

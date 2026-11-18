@@ -182,12 +182,8 @@ function Invoices() {
             ) : (
               <>
                 <ul className="divide-y divide-border">
-                  {visibleRows.map(({ i, v, c }, k) => (
-                    <li
-                      key={i.id}
-                      className="rise"
-                      style={{ animationDelay: `${Math.min(k, 12) * 25}ms` }}
-                    >
+                  {visibleRows.map(({ i, v, c }) => (
+                    <li key={i.id}>
                       <Link
                         to="/invoices/$id"
                         params={{ id: i.id }}
@@ -208,7 +204,7 @@ function Invoices() {
                             </p>
                           )}
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3">
                           <div className="text-right">
                             <p className="font-num text-sm">
                               {money(v.total, i.currency)}

@@ -155,8 +155,7 @@ export function SparklineWithDates({
               stroke: "var(--background)",
               strokeWidth: 2,
             }}
-            animationDuration={360}
-            animationEasing="ease-out"
+            isAnimationActive={false}
           />
         </AreaChart>
       </ResponsiveContainer>
@@ -328,7 +327,8 @@ export function TrendChartCanvas({
               dataKey={primaryKey}
               fill="var(--primary)"
               radius={[6, 6, 0, 0]}
-              animationDuration={450}
+              animationDuration={150}
+              isAnimationActive={chartData.length <= 20}
             >
               {isNetMetric &&
                 chartData.map((entry, idx) => {
@@ -349,7 +349,8 @@ export function TrendChartCanvas({
                 fill="var(--muted-foreground)"
                 fillOpacity={0.55}
                 radius={[6, 6, 0, 0]}
-                animationDuration={450}
+                animationDuration={150}
+                isAnimationActive={chartData.length <= 20}
               />
             )}
           </BarChart>
@@ -409,7 +410,8 @@ export function TrendChartCanvas({
                 stroke: "var(--background)",
                 strokeWidth: 2,
               }}
-              animationDuration={480}
+              animationDuration={150}
+              isAnimationActive={chartData.length <= 20}
             />
             {!hideSecondary && (
               <Line
@@ -421,7 +423,8 @@ export function TrendChartCanvas({
                 strokeDasharray="5 5"
                 dot={false}
                 activeDot={{ r: 4, fill: "var(--muted-foreground)" }}
-                animationDuration={480}
+                animationDuration={150}
+                isAnimationActive={chartData.length <= 20}
               />
             )}
           </LineChart>
@@ -505,7 +508,8 @@ export function TrendChartCanvas({
                 stroke: "var(--background)",
                 strokeWidth: 2,
               }}
-              animationDuration={360}
+              animationDuration={150}
+              isAnimationActive={chartData.length <= 20}
               animationEasing="ease-out"
             />
             {!hideSecondary && (
@@ -516,7 +520,8 @@ export function TrendChartCanvas({
                 stroke="var(--muted-foreground)"
                 strokeDasharray="5 5"
                 fill={`url(#${gradientId}-sec)`}
-                animationDuration={360}
+                animationDuration={150}
+                isAnimationActive={chartData.length <= 20}
                 animationEasing="ease-out"
               />
             )}
@@ -687,7 +692,7 @@ export function BreakdownPieCard({
 
   return (
     <Glass delay={delay} className="flex h-full flex-col justify-between">
-      <div className="mb-2 flex items-center justify-between gap-2">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <PieIcon className="h-4 w-4 shrink-0 text-primary" />
           <h2 className="truncate font-medium leading-tight">
@@ -704,7 +709,7 @@ export function BreakdownPieCard({
                   } · ${scopeLabel}`}
           </h2>
         </div>
-        <div className="shrink-0">
+        <div className="max-w-full shrink-0">
           <SlidingTabs
             size="xs"
             tone="invert"
@@ -727,7 +732,7 @@ export function BreakdownPieCard({
       </div>
 
       {canGroupMethod && (
-        <div className="mb-2.5 flex items-center justify-between gap-2 text-[0.7rem]">
+        <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 text-[0.7rem]">
           <span className="text-muted-foreground">
             {effectiveGroup === "method"
               ? "Grouped by bank & card"
@@ -797,7 +802,8 @@ export function BreakdownPieCard({
                     paddingAngle={3}
                     cornerRadius={5}
                     stroke="none"
-                    animationDuration={360}
+                    animationDuration={160}
+                    isAnimationActive={false}
                     onClick={(entry) => {
                       if (
                         entry &&
@@ -1007,7 +1013,8 @@ export function PeriodBarPulseCard({
             <Bar
               dataKey={valueKey}
               radius={[8, 8, 2, 2]}
-              animationDuration={600}
+              animationDuration={160}
+              isAnimationActive={chartData.length <= 20}
             >
               {data.map((entry, idx) => {
                 const val = numField(entry, valueKey);
@@ -1257,7 +1264,7 @@ export function CardSpendingChartCard({
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-1.5">
+          <div className="flex max-w-full flex-wrap items-center gap-1.5">
             <SlidingTabs
               size="xs"
               layoutGroup={`${layoutIdPrefix}-filter`}
@@ -1442,7 +1449,8 @@ export function CardSpendingChartCard({
                   dataKey="debit"
                   fill="var(--primary)"
                   radius={[5, 5, 0, 0]}
-                  animationDuration={550}
+                  animationDuration={150}
+                  isAnimationActive={chartData.length <= 20}
                 />
               )}
               {cardFilter !== "debit" && (
@@ -1451,7 +1459,8 @@ export function CardSpendingChartCard({
                   dataKey="credit"
                   fill="var(--chart-3)"
                   radius={[5, 5, 0, 0]}
-                  animationDuration={550}
+                  animationDuration={150}
+                  isAnimationActive={chartData.length <= 20}
                 />
               )}
             </BarChart>
@@ -1488,6 +1497,8 @@ export function CardSpendingChartCard({
                   type="monotone"
                   stroke="var(--primary)"
                   strokeWidth={2.25}
+                  isAnimationActive={chartData.length <= 20}
+                  animationDuration={150}
                   dot={
                     range === "1m"
                       ? false
@@ -1508,6 +1519,8 @@ export function CardSpendingChartCard({
                   type="monotone"
                   stroke="var(--chart-3)"
                   strokeWidth={2}
+                  isAnimationActive={chartData.length <= 20}
+                  animationDuration={150}
                   dot={
                     range === "1m"
                       ? false
@@ -1585,6 +1598,8 @@ export function CardSpendingChartCard({
                   type="monotone"
                   stroke="var(--primary)"
                   strokeWidth={2}
+                  isAnimationActive={chartData.length <= 20}
+                  animationDuration={150}
                   fill={`url(#${layoutIdPrefix}-debit)`}
                 />
               )}
@@ -1595,6 +1610,8 @@ export function CardSpendingChartCard({
                   type="monotone"
                   stroke="var(--chart-3)"
                   strokeWidth={2}
+                  isAnimationActive={chartData.length <= 20}
+                  animationDuration={150}
                   fill={`url(#${layoutIdPrefix}-credit)`}
                 />
               )}

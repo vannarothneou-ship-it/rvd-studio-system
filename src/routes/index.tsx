@@ -544,18 +544,29 @@ function CommandDashboard() {
       <Glass className="mb-5 overflow-hidden border-primary/25 bg-gradient-to-br from-primary/12 via-card/85 to-card/70">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <Wallet className="h-3.5 w-3.5 text-primary" />
-              <span className="font-semibold text-foreground">
-                Combined Liquidity
-              </span>
-              <span aria-hidden="true">·</span>
-              <span>Studio + Personal Real-Time Total</span>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Wallet className="h-3.5 w-3.5 shrink-0 text-primary" />
+                  <span className="font-semibold text-foreground">
+                    Combined Liquidity
+                  </span>
+                  <span className="hidden sm:inline" aria-hidden="true">
+                    ·
+                  </span>
+                  <span className="hidden sm:inline">
+                    Studio + Personal Real-Time Total
+                  </span>
+                </div>
+                <p className="mt-0.5 text-xs text-muted-foreground sm:hidden">
+                  Studio + Personal Real-Time Total
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={toggleHideBalances}
                 aria-label={hideBalances ? "Show balances" : "Hide balances"}
-                className="ml-1 inline-flex h-8 w-8 items-center justify-center rounded-full border border-border/80 bg-background/45 text-muted-foreground transition-colors hover:text-foreground"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/80 bg-background/45 text-muted-foreground transition-colors hover:text-foreground"
               >
                 {hideBalances ? (
                   <Eye className="h-3.5 w-3.5" />

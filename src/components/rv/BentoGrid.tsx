@@ -794,8 +794,9 @@ function BentoSlot({
       {...(editing ? listeners : {})}
       {...(editing ? attributes : {})}
       className={cn(
-        "group/bento col-span-1 flex h-full min-w-0 flex-col transition-all duration-200",
+        "group/bento col-span-1 flex h-full min-w-0 flex-col",
         SPAN_CLASS[effectiveSpan] ?? SPAN_CLASS[config.span],
+        editing && "transition-all duration-200",
         editing &&
           !isPreviewSlot &&
           "relative cursor-grab select-none touch-none rounded-3xl border border-dashed border-primary/45 p-1.5 active:cursor-grabbing",

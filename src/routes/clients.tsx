@@ -207,15 +207,14 @@ function Page() {
             ) : (
               <>
                 <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {visibleRows.map((c, k) => {
+                  {visibleRows.map((c) => {
                     const s = stats(c);
                     return (
                       <button
                         type="button"
                         key={c.id}
                         onClick={() => setEdit(c)}
-                        className="rise block rounded-2xl border border-border/70 bg-muted/40 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:bg-muted"
-                        style={{ animationDelay: `${Math.min(k, 9) * 35}ms` }}
+                        className="block rounded-2xl border border-border/70 bg-muted/40 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:bg-muted"
                       >
                         <div className="mb-3 flex items-center justify-between gap-2">
                           {c.avatar ? (

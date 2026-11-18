@@ -889,9 +889,9 @@ function Editor() {
                       value={it.scope}
                       onChange={(e) => upItem(it.id, { scope: e.target.value })}
                     />
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                       <input
-                        className="field"
+                        className="field col-span-2 sm:col-span-1"
                         placeholder="Timeline"
                         value={it.timeline}
                         onChange={(e) =>
@@ -1212,7 +1212,7 @@ function Editor() {
             ) : (
               <>
                 <span className="label-mono whitespace-nowrap">Quick new</span>
-                <div className="flex flex-wrap items-center gap-1.5">
+                <div className="no-scrollbar flex max-w-full flex-nowrap items-center gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0">
                   {DOCUMENT_TYPES.map((t) => (
                     <Link
                       key={t}
@@ -1232,7 +1232,8 @@ function Editor() {
                           : "border-border bg-muted/50 text-muted-foreground hover:border-primary/40 hover:text-foreground",
                       )}
                     >
-                      <FilePlus2 className="h-3 w-3" />+ {t}
+                      <FilePlus2 className="h-3 w-3" />
+                      {t}
                     </Link>
                   ))}
                 </div>
@@ -1391,7 +1392,7 @@ function Editor() {
         </div>
       </Glass>
 
-      <div className="no-print sticky top-2 z-30 mb-4 flex flex-wrap items-center gap-2 sm:top-24">
+      <div className="no-print mb-4 flex flex-wrap items-center gap-2 sm:sticky sm:top-24 sm:z-30">
         <Btn
           variant="gold"
           onClick={() => {

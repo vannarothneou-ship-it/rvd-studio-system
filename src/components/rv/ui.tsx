@@ -1,13 +1,5 @@
-import {
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { motion } from "motion/react";
 import { Check, ChevronDown, Search, X, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
@@ -31,7 +23,6 @@ export function SlidingTabs<T extends string>({
   onChange,
   tone = "primary",
   size = "sm",
-  layoutGroup,
   className,
 }: {
   options: readonly SlidingTabOption<T>[];
@@ -42,12 +33,10 @@ export function SlidingTabs<T extends string>({
   layoutGroup?: string;
   className?: string;
 }) {
-  const autoId = useId();
-  const lid = layoutGroup ?? `sliding-tabs-${autoId}`;
   return (
     <div
       className={cn(
-        "inline-flex flex-wrap items-center gap-0.5 rounded-full border border-border bg-muted p-1",
+        "no-scrollbar inline-flex max-w-full flex-nowrap items-center gap-0.5 overflow-x-auto rounded-2xl border border-border bg-muted p-1 sm:rounded-full",
         size === "xs" ? "text-[0.72rem]" : "text-xs",
         className,
       )}
@@ -61,33 +50,19 @@ export function SlidingTabs<T extends string>({
             type="button"
             onClick={() => onChange(opt.id)}
             className={cn(
-              "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full font-medium transition-colors",
+              "inline-flex min-h-[34px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl font-medium transition-colors sm:min-h-0 sm:rounded-full",
               size === "xs" ? "px-2.5 py-1" : "px-3 py-1.5",
               active
                 ? tone === "invert"
-                  ? "text-background"
-                  : "text-primary-foreground"
+                  ? "bg-foreground text-background shadow-sm"
+                  : "bg-primary text-primary-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {active && (
-              <motion.span
-                layoutId={lid}
-                transition={{ type: "spring", stiffness: 460, damping: 34 }}
-                className={cn(
-                  "absolute inset-0 rounded-full shadow-sm",
-                  tone === "invert" ? "bg-foreground" : "bg-primary",
-                )}
-              />
-            )}
-            {Icon && <Icon className="relative z-10 h-3.5 w-3.5" />}
-            <span className="relative z-10">{opt.label}</span>
+            {Icon && <Icon className="h-3.5 w-3.5 shrink-0" />}
+            <span>{opt.label}</span>
             {opt.badge !== undefined && (
-              <span
-                className={cn(
-                  "relative z-10 font-num text-[0.68rem] opacity-80",
-                )}
-              >
+              <span className="font-num text-[0.68rem] opacity-80">
                 {opt.badge}
               </span>
             )}
@@ -101,17 +76,13 @@ export function SlidingTabs<T extends string>({
 export function Glass({
   className,
   children,
-  delay = 0,
 }: {
   className?: string;
   children: ReactNode;
   delay?: number;
 }) {
   return (
-    <section
-      className={cn("glass rise p-4 sm:p-6", className)}
-      style={{ animationDelay: `${delay}ms` }}
-    >
+    <section className={cn("glass rise p-4 sm:p-6", className)}>
       {children}
     </section>
   );
@@ -131,17 +102,22 @@ export function PageHeader({
     year: "numeric",
   });
   return (
-    <header className="rise mb-5 flex flex-col gap-3 sm:mb-6 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:gap-4">
+    <header className="rise mb-3.5 flex flex-col gap-2 sm:mb-6 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:gap-4">
       <div className="min-w-0">
-        <p className="text-xs text-muted-foreground sm:text-sm">
-          Welcome back, {owner}.
+        <p className="truncate text-xs text-muted-foreground sm:text-sm">
+          Welcome back, {owner}.<span className="sm:hidden"> · {month}</span>
         </p>
         <h1 className="truncate font-display text-2xl font-bold sm:text-4xl">
           {title}
         </h1>
       </div>
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 sm:flex-col sm:items-end">
-        <span className="text-xs text-muted-foreground sm:text-sm">
+      <div
+        className={cn(
+          "shrink-0 flex-wrap items-center gap-2 sm:flex sm:flex-col sm:items-end",
+          action ? "flex" : "hidden",
+        )}
+      >
+        <span className="hidden text-xs text-muted-foreground sm:inline sm:text-sm">
           {month}
         </span>
         {action}
