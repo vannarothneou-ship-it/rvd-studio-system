@@ -89,7 +89,7 @@ export function Glass({
   delay?: number;
 }) {
   return (
-    <section className={cn("glass rise p-4 sm:p-6", className)}>
+    <section className={cn("glass rise p-4 sm:p-5", className)}>
       {children}
     </section>
   );
@@ -109,12 +109,12 @@ export function PageHeader({
     year: "numeric",
   });
   return (
-    <header className="rise mb-3 flex flex-col gap-2 sm:mb-6 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:gap-4">
+    <header className="rise mb-3 flex flex-col gap-2 sm:mb-5 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:gap-4">
       <div className="min-w-0">
         <p className="hidden truncate text-xs text-muted-foreground sm:block sm:text-sm">
           Welcome back, {owner}.
         </p>
-        <h1 className="truncate font-display text-2xl font-bold sm:text-4xl">
+        <h1 className="truncate font-display text-[1.45rem] font-bold tracking-tight sm:text-4xl">
           {title}
         </h1>
       </div>
@@ -647,11 +647,14 @@ export function Stat({
   tone?: "pos" | "neg" | undefined;
 }) {
   return (
-    <div className="min-w-0" title={fullValue ?? value}>
+    <div
+      className="flex min-w-0 flex-col justify-between gap-0.5"
+      title={fullValue ?? value}
+    >
       <p className="label-mono truncate">{label}</p>
       <p
         className={cn(
-          "font-num text-lg font-bold leading-tight sm:text-xl",
+          "font-num truncate text-base font-bold leading-tight sm:text-lg",
           t === "pos" && "text-positive",
           t === "neg" && "text-destructive",
         )}

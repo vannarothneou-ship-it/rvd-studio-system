@@ -254,7 +254,6 @@ export function ReceiptScannerDrawer({
   defaultAccount?: Account;
   onClose: () => void;
 }) {
-  const [targetAccount, setTargetAccount] = useState<Account>(defaultAccount);
   const [autoRecord, setAutoRecord] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -265,12 +264,6 @@ export function ReceiptScannerDrawer({
 
   const cameraRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (open) {
-      setTargetAccount(defaultAccount);
-    }
-  }, [open, defaultAccount]);
 
   const resetScan = useCallback(() => {
     setScanning(false);
@@ -314,7 +307,7 @@ export function ReceiptScannerDrawer({
           body: JSON.stringify({
             imageBase64: prepared.scanBase64,
             mimeType: prepared.scanMimeType,
-            defaultAccount: targetAccount,
+            defaultAccount: "Personal",
             fallbackDate: today(),
           }),
         });
@@ -335,7 +328,7 @@ export function ReceiptScannerDrawer({
         const nextRecord: RecordedRecord = {
           id: uid(),
           txType: r.txType,
-          account: r.txType === "income" ? "Personal" : r.account,
+          account: "Personal",
           amount: r.amount,
           currency: r.currency,
           date: r.date || today(),
@@ -375,7 +368,7 @@ export function ReceiptScannerDrawer({
         setScanning(false);
       }
     },
-    [autoRecord, targetAccount],
+    [autoRecord],
   );
 
   // Allow Ctrl/Cmd+V image paste while drawer is open
@@ -464,26 +457,21 @@ export function ReceiptScannerDrawer({
       widthClass="max-w-lg"
     >
       <div className="space-y-4">
-        {/* Mode Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border/80 bg-muted/45 p-3">
-          <div className="flex items-center gap-2">
-            <span className="label-mono">Default</span>
-            <SlidingTabs
-              size="xs"
-              layoutGroup="scanner-default-acct"
-              value={targetAccount}
-              onChange={(v) => setTargetAccount(v)}
-              options={[
-                { id: "Personal", label: "Personal" },
-                { id: "Studio", label: "Studio" },
-              ]}
-            />
+        {/* Clean Personal Mode Bar */}
+        <div className="flex items-center justify-between gap-2 rounded-2xl border border-border/80 bg-muted/45 px-3.5 py-2.5">
+          <div className="min-w-0">
+            <span className="text-xs font-semibold text-foreground">
+              Personal Expense
+            </span>
+            <p className="text-[0.68rem] text-muted-foreground">
+              Debit · Credit · USD / KHR
+            </p>
           </div>
           <button
             type="button"
             onClick={() => setAutoRecord((a) => !a)}
             className={cn(
-              "inline-flex min-h-[38px] items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+              "inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
               autoRecord
                 ? "border-positive/45 bg-positive/15 text-positive"
                 : "border-border bg-background/60 text-muted-foreground",
@@ -696,8 +684,8 @@ export function ReceiptScannerDrawer({
                   : ""}
               </p>
 
-              {/* Quick Workspace & Direction Switchers */}
-              <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border/50 pt-3">
+              {/* Direction Switcher */}
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-3">
                 <SlidingTabs
                   size="xs"
                   layoutGroup="scan-res-type"
@@ -708,19 +696,9 @@ export function ReceiptScannerDrawer({
                     { id: "income", label: "Income" },
                   ]}
                 />
-                {record.txType === "expense" && (
-                  <SlidingTabs
-                    size="xs"
-                    tone="invert"
-                    layoutGroup="scan-res-acct"
-                    value={record.account}
-                    onChange={(v) => updateRecord({ account: v })}
-                    options={[
-                      { id: "Personal", label: "Personal" },
-                      { id: "Studio", label: "Studio" },
-                    ]}
-                  />
-                )}
+                <span className="text-[0.7rem] font-medium text-muted-foreground">
+                  Personal Ledger
+                </span>
               </div>
             </div>
 

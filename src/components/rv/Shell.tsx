@@ -1,22 +1,16 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
-  Briefcase,
-  FileText,
-  FolderKanban,
+  ArrowLeft,
   Home,
-  Layers,
   Layers3,
-  LayoutGrid,
   Moon,
   PiggyBank,
   ScanLine,
   Settings,
   Sun,
-  Users,
   Wallet,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { invoiceStatus, isInvoice, useDB } from "@/lib/store";
 import {
   WorkspaceSwitcher,
   type WorkspaceMode,
@@ -31,15 +25,6 @@ import {
 } from "@/components/rv/ReceiptScanner";
 import { cn } from "@/lib/utils";
 
-const studioTabs = [
-  { to: "/studio", label: "Overview", icon: LayoutGrid },
-  { to: "/projects", label: "Projects", icon: FolderKanban },
-  { to: "/clients", label: "Clients", icon: Users },
-  { to: "/services", label: "Services", icon: Layers },
-  { to: "/invoices", label: "Invoices", icon: FileText },
-  { to: "/finance", label: "Finance", icon: Wallet },
-] as const;
-
 export function Shell({ children }: { children: ReactNode }) {
   return (
     <ReceiptScannerProvider>
@@ -50,42 +35,12 @@ export function Shell({ children }: { children: ReactNode }) {
 
 function ShellInner({ children }: { children: ReactNode }) {
   const path = useRouterState({ select: (r) => r.location.pathname });
-  const searchStr = useRouterState({ select: (r) => r.location.searchStr });
   const navigate = useNavigate();
   const { openScanner } = useReceiptScanner();
 
-  const overdue = useDB((d) => {
-    const rate = d.settings.khrRate || 4100;
-    const paidByInv = new Map<string, number>();
-    const invCurrency = new Map<string, string>();
-    for (const inv of d.invoices) {
-      if (isInvoice(inv)) invCurrency.set(inv.id, inv.currency);
-    }
-    for (const p of d.payments) {
-      const cur = invCurrency.get(p.invoiceId);
-      if (!cur) continue;
-      const amt =
-        p.currency === cur
-          ? p.amount
-          : cur === "USD"
-            ? p.currency === "KHR"
-              ? p.amount / rate
-              : p.amount
-            : p.amount * rate;
-      paidByInv.set(p.invoiceId, (paidByInv.get(p.invoiceId) ?? 0) + amt);
-    }
-    let count = 0;
-    for (const inv of d.invoices) {
-      if (!isInvoice(inv)) continue;
-      if (invoiceStatus(inv, paidByInv.get(inv.id) ?? 0) === "Overdue") {
-        count += 1;
-      }
-    }
-    return count;
-  });
-
   const [light, setLight] = useState(false);
-  const lastStudioPathRef = useRef<string>("/studio");
+  const [barsHidden, setBarsHidden] = useState(false);
+  const lastScrollYRef = useRef(0);
 
   useEffect(() => {
     setLight(localStorage.getItem("rv-theme") === "light");
@@ -96,61 +51,75 @@ function ShellInner({ children }: { children: ReactNode }) {
     localStorage.setItem("rv-theme", light ? "light" : "dark");
   }, [light]);
 
+  // Reveal floating top/bottom bars whenever route changes
+  useEffect(() => {
+    setBarsHidden(false);
+    lastScrollYRef.current = typeof window !== "undefined" ? window.scrollY : 0;
+  }, [path]);
+
+  // Auto-hide mobile floating bars on downward scroll, reveal on upward scroll
+  useEffect(() => {
+    let raf = 0;
+    lastScrollYRef.current = window.scrollY;
+    const onScroll = () => {
+      if (raf) return;
+      raf = window.requestAnimationFrame(() => {
+        raf = 0;
+        const y = Math.max(0, window.scrollY);
+        const dy = y - lastScrollYRef.current;
+        if (y < 48) {
+          setBarsHidden(false);
+        } else if (y > 72 && dy > 8) {
+          setBarsHidden(true);
+        } else if (dy < -6) {
+          setBarsHidden(false);
+        }
+        lastScrollYRef.current = y;
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (raf) window.cancelAnimationFrame(raf);
+    };
+  }, []);
+
   const isDashboard = path === "/";
   const isPersonal = path.startsWith("/personal");
   const isWork = path.startsWith("/work");
   const isSettings = path.startsWith("/settings");
-  const isCombinedFinance =
-    path.startsWith("/finance") && searchStr.includes("view=combined");
-  const isStudio = !isDashboard && !isPersonal && !isWork && !isSettings;
+  const isLegacyStudio = !isDashboard && !isPersonal && !isWork && !isSettings;
 
   const activeWorkspace: WorkspaceMode = isDashboard
     ? "dashboard"
-    : isPersonal
-      ? "personal"
-      : isWork
-        ? "work"
-        : "studio";
-
-  useEffect(() => {
-    if (isStudio) {
-      lastStudioPathRef.current = path;
-    }
-  }, [isStudio, path]);
+    : isWork
+      ? "work"
+      : "personal";
 
   const handleWorkspaceSwitch = (next: WorkspaceMode) => {
-    if (next === activeWorkspace) return;
     if (next === "dashboard") {
       navigate({ to: "/" });
     } else if (next === "personal") {
       navigate({ to: "/personal" });
-    } else if (next === "work") {
-      navigate({ to: "/work" });
     } else {
-      const target = lastStudioPathRef.current;
-      if (target.startsWith("/projects")) navigate({ to: "/projects" });
-      else if (target.startsWith("/clients")) navigate({ to: "/clients" });
-      else if (target.startsWith("/services")) navigate({ to: "/services" });
-      else if (target.startsWith("/invoices")) navigate({ to: "/invoices" });
-      else if (target.startsWith("/finance")) navigate({ to: "/finance" });
-      else navigate({ to: "/studio" });
+      navigate({ to: "/work" });
     }
   };
 
-  const active = (to: string) =>
-    to === "/studio" ? path === "/studio" : path.startsWith(to);
+  const active = (to: string) => path.startsWith(to);
 
-  const defaultScannerAccount = isStudio ? "Studio" : "Personal";
-  const swipeTabs = ["/", "/studio", "/work", "/personal"] as const;
-  const activeTabIndex = isDashboard
-    ? 0
-    : isStudio
-      ? 1
+  const pageLabel = isDashboard
+    ? "Dashboard"
+    : isPersonal
+      ? "Personal"
       : isWork
-        ? 2
-        : isPersonal
-          ? 3
-          : -1;
+        ? "Work"
+        : isSettings
+          ? "Settings"
+          : "Studio";
+
+  const swipeTabs = ["/", "/personal", "/work"] as const;
+  const activeTabIndex = isDashboard ? 0 : isPersonal ? 1 : isWork ? 2 : -1;
 
   const swipeStartRef = useRef<{
     x: number;
@@ -220,32 +189,27 @@ function ShellInner({ children }: { children: ReactNode }) {
     <div
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
-      className="min-h-screen pb-[calc(5.25rem+env(safe-area-inset-bottom))] sm:pb-12"
+      className="min-h-screen pb-[calc(5.75rem+env(safe-area-inset-bottom))] sm:pb-12"
     >
-      {/* Crisp Frosted Mobile Header */}
-      <header className="no-print sticky top-0 z-40 border-b border-white/10 bg-[#0d0e13]/85 px-3.5 pt-[calc(env(safe-area-inset-top)+0.35rem)] pb-2 backdrop-blur-xl backdrop-saturate-150 [.light_&]:border-black/10 [.light_&]:bg-[#f6f4ef]/88 sm:hidden">
-        <div className="flex h-10 w-full items-center justify-between gap-2">
-          <Link to="/" className="flex min-w-0 items-center gap-2.5">
+      {/* Floating Frosted Mobile Header (Auto-hides on scroll down) */}
+      <header
+        className={cn(
+          "no-print fixed inset-x-3 top-[max(0.5rem,env(safe-area-inset-top))] z-40 rounded-2xl border border-white/14 bg-[#121319]/72 px-3 py-1.5 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl backdrop-saturate-180 transition-[transform,opacity] duration-300 ease-out will-change-transform [.light_&]:border-black/10 [.light_&]:bg-[#faf8f4]/78 [.light_&]:shadow-[0_10px_28px_-12px_rgba(0,0,0,0.14),inset_0_1px_0_rgba(255,255,255,0.75)] sm:hidden",
+          barsHidden
+            ? "pointer-events-none -translate-y-[calc(100%+1.5rem)] opacity-0"
+            : "translate-y-0 opacity-100",
+        )}
+      >
+        <div className="flex h-9 w-full items-center justify-between gap-2">
+          <Link to="/" className="flex min-w-0 items-center gap-2">
             <img
               src="/apple-touch-icon.png"
               alt="RothVan"
               className="h-7 w-7 shrink-0 rounded-lg border border-white/15 object-cover shadow-xs"
             />
-            <p className="truncate text-[0.82rem] font-semibold tracking-tight text-foreground">
-              RothVan{" "}
-              <span className="font-medium text-primary">
-                ·{" "}
-                {isDashboard
-                  ? "Dashboard"
-                  : isStudio
-                    ? "Studio"
-                    : isWork
-                      ? "Work"
-                      : isPersonal
-                        ? "Personal"
-                        : "Settings"}
-              </span>
-            </p>
+            <span className="truncate text-[0.84rem] font-semibold tracking-tight text-foreground">
+              {pageLabel}
+            </span>
           </Link>
 
           <div className="flex shrink-0 items-center gap-1">
@@ -262,44 +226,37 @@ function ShellInner({ children }: { children: ReactNode }) {
                 <Sun className="h-4 w-4" />
               )}
             </button>
-            <Link
-              to="/settings"
-              aria-label="Settings"
-              className={cn(
-                "grid h-9 w-9 place-items-center rounded-full transition-transform duration-150 hover:bg-accent active:scale-90",
-                active("/settings")
-                  ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground",
-              )}
-            >
-              <Settings className="h-4 w-4" />
-            </Link>
           </div>
         </div>
       </header>
 
-      {/* Modern Icon-Only Frosted Bottom Dock with Thumb-Zone Scan Trigger */}
+      {/* Floating Frosted Icon-Only Bottom Dock (IG/FB/Mobbin style, auto-hides on scroll) */}
       <nav
         aria-label="Mobile navigation"
-        className="no-print fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-[#0d0e13]/82 px-3 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur-2xl backdrop-saturate-150 [.light_&]:border-black/10 [.light_&]:bg-[#f6f4ef]/88 sm:hidden"
+        className={cn(
+          "no-print fixed bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-1/2 z-40 w-[min(calc(100vw-1.5rem),22.5rem)] -translate-x-1/2 rounded-[28px] border border-white/15 bg-[#121319]/75 px-2 py-1.5 shadow-[0_18px_40px_-14px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-2xl backdrop-saturate-180 transition-[transform,opacity] duration-300 ease-out will-change-transform [.light_&]:border-black/10 [.light_&]:bg-[#faf8f4]/82 [.light_&]:shadow-[0_16px_36px_-14px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.8)] sm:hidden",
+          barsHidden
+            ? "pointer-events-none translate-y-[calc(100%+2rem)] opacity-0"
+            : "translate-y-0 opacity-100",
+        )}
       >
-        <div className="mx-auto grid max-w-md grid-cols-5 items-center">
+        <div className="grid grid-cols-5 items-center">
           <Link
             to="/"
             aria-label="Dashboard"
             className={cn(
-              "relative flex h-12 items-center justify-center rounded-2xl transition-all duration-150 active:scale-90",
+              "relative flex min-h-[44px] items-center justify-center rounded-2xl transition-all duration-150 active:scale-90",
               isDashboard
                 ? "text-primary"
                 : "text-muted-foreground/75 hover:text-foreground",
             )}
           >
             {isDashboard && (
-              <span className="absolute top-0.5 h-0.5 w-5 rounded-full bg-primary transition-all duration-150" />
+              <span className="absolute top-1 h-1 w-4 rounded-full bg-primary" />
             )}
             <Home
               className={cn(
-                "h-[22px] w-[22px] transition-transform duration-150",
+                "h-[21px] w-[21px] transition-transform duration-150",
                 isDashboard && "scale-110",
               )}
               strokeWidth={isDashboard ? 2.4 : 1.9}
@@ -308,39 +265,34 @@ function ShellInner({ children }: { children: ReactNode }) {
           </Link>
 
           <Link
-            to="/studio"
-            aria-label="Studio"
+            to="/personal"
+            aria-label="Personal"
             className={cn(
-              "relative flex h-12 items-center justify-center rounded-2xl transition-all duration-150 active:scale-90",
-              isStudio
+              "relative flex min-h-[44px] items-center justify-center rounded-2xl transition-all duration-150 active:scale-90",
+              isPersonal
                 ? "text-primary"
                 : "text-muted-foreground/75 hover:text-foreground",
             )}
           >
-            {isStudio && (
-              <span className="absolute top-0.5 h-0.5 w-5 rounded-full bg-primary transition-all duration-150" />
+            {isPersonal && (
+              <span className="absolute top-1 h-1 w-4 rounded-full bg-primary" />
             )}
-            <Briefcase
+            <Wallet
               className={cn(
-                "h-[22px] w-[22px] transition-transform duration-150",
-                isStudio && "scale-110",
+                "h-[21px] w-[21px] transition-transform duration-150",
+                isPersonal && "scale-110",
               )}
-              strokeWidth={isStudio ? 2.4 : 1.9}
+              strokeWidth={isPersonal ? 2.4 : 1.9}
             />
-            {overdue > 0 && (
-              <span className="font-num absolute right-3.5 top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[0.58rem] font-bold text-destructive-foreground shadow-xs">
-                {overdue}
-              </span>
-            )}
-            <span className="sr-only">Studio</span>
+            <span className="sr-only">Personal</span>
           </Link>
 
           <div className="flex items-center justify-center">
             <button
               type="button"
-              onClick={() => openScanner(defaultScannerAccount)}
+              onClick={() => openScanner("Personal")}
               aria-label="Scan receipt"
-              className="grid h-11 w-12 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-[0_8px_22px_-6px_var(--primary)] transition-transform duration-150 active:scale-90"
+              className="grid h-11 w-12 -translate-y-0.5 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-[0_8px_22px_-6px_var(--primary)] transition-transform duration-150 active:scale-90"
             >
               <ScanLine className="h-5 w-5" strokeWidth={2.2} />
             </button>
@@ -350,18 +302,18 @@ function ShellInner({ children }: { children: ReactNode }) {
             to="/work"
             aria-label="Work"
             className={cn(
-              "relative flex h-12 items-center justify-center rounded-2xl transition-all duration-150 active:scale-90",
+              "relative flex min-h-[44px] items-center justify-center rounded-2xl transition-all duration-150 active:scale-90",
               isWork
                 ? "text-primary"
                 : "text-muted-foreground/75 hover:text-foreground",
             )}
           >
             {isWork && (
-              <span className="absolute top-0.5 h-0.5 w-5 rounded-full bg-primary transition-all duration-150" />
+              <span className="absolute top-1 h-1 w-4 rounded-full bg-primary" />
             )}
             <Layers3
               className={cn(
-                "h-[22px] w-[22px] transition-transform duration-150",
+                "h-[21px] w-[21px] transition-transform duration-150",
                 isWork && "scale-110",
               )}
               strokeWidth={isWork ? 2.4 : 1.9}
@@ -370,26 +322,26 @@ function ShellInner({ children }: { children: ReactNode }) {
           </Link>
 
           <Link
-            to="/personal"
-            aria-label="Personal"
+            to="/settings"
+            aria-label="Settings"
             className={cn(
-              "relative flex h-12 items-center justify-center rounded-2xl transition-all duration-150 active:scale-90",
-              isPersonal
+              "relative flex min-h-[44px] items-center justify-center rounded-2xl transition-all duration-150 active:scale-90",
+              isSettings
                 ? "text-primary"
                 : "text-muted-foreground/75 hover:text-foreground",
             )}
           >
-            {isPersonal && (
-              <span className="absolute top-0.5 h-0.5 w-5 rounded-full bg-primary transition-all duration-150" />
+            {isSettings && (
+              <span className="absolute top-1 h-1 w-4 rounded-full bg-primary" />
             )}
-            <PiggyBank
+            <Settings
               className={cn(
-                "h-[22px] w-[22px] transition-transform duration-150",
-                isPersonal && "scale-110",
+                "h-[21px] w-[21px] transition-transform duration-150",
+                isSettings && "scale-110",
               )}
-              strokeWidth={isPersonal ? 2.4 : 1.9}
+              strokeWidth={isSettings ? 2.4 : 1.9}
             />
-            <span className="sr-only">Personal</span>
+            <span className="sr-only">Settings</span>
           </Link>
         </div>
       </nav>
@@ -397,7 +349,7 @@ function ShellInner({ children }: { children: ReactNode }) {
       {/* Desktop Floating Top Navigation */}
       <nav className="no-print fixed left-1/2 top-4 z-40 hidden w-[min(calc(100vw-2rem),84rem)] -translate-x-1/2 sm:block">
         <div className="glass-strong flex items-center justify-between gap-2.5 rounded-full p-2">
-          {/* Top-Level Workspace Switcher: Dashboard · Studio · Work · Personal */}
+          {/* Top-Level Workspace Switcher: Dashboard · Personal · Work */}
           <div className="shrink-0">
             <WorkspaceSwitcher
               activeWorkspace={activeWorkspace}
@@ -406,12 +358,15 @@ function ShellInner({ children }: { children: ReactNode }) {
           </div>
 
           {/* Context-Scoped Center Area */}
-          {isDashboard ? (
+          {isLegacyStudio ? (
             <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2 text-xs">
-              <span className="hidden truncate text-muted-foreground lg:inline">
-                Unified overview across Studio, Work &amp; Personal · Quick
-                actions &amp; receipt scan
-              </span>
+              <Link
+                to="/personal"
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 font-medium text-primary whitespace-nowrap hover:bg-primary hover:text-primary-foreground"
+              >
+                <ArrowLeft className="h-3.5 w-3.5 shrink-0" />
+                Back to Personal
+              </Link>
             </div>
           ) : isPersonal ? (
             <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2 text-xs">
@@ -433,38 +388,11 @@ function ShellInner({ children }: { children: ReactNode }) {
                 DBG, Connexion &amp; OCIC tasks, mockups &amp; portfolio summary
               </span>
             </div>
-          ) : isCombinedFinance ? (
-            <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2 text-xs">
-              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 font-medium text-primary whitespace-nowrap">
-                <Wallet className="h-3.5 w-3.5 shrink-0" />
-                Combined Studio + Personal Finance
-              </span>
-            </div>
           ) : (
-            <div className="no-scrollbar flex min-w-0 flex-1 items-center justify-center gap-0.5 overflow-x-auto lg:gap-1">
-              {studioTabs.map((t) => {
-                const isActive = active(t.to);
-                return (
-                  <Link
-                    key={t.to}
-                    to={t.to}
-                    className={cn(
-                      "relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-2 text-xs transition-colors lg:px-3 lg:text-sm",
-                      isActive
-                        ? "bg-primary font-medium text-primary-foreground shadow-[0_6px_18px_-6px_var(--primary)]"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    <t.icon className="h-4 w-4 shrink-0" />
-                    <span className="whitespace-nowrap">{t.label}</span>
-                    {t.to === "/invoices" && overdue > 0 && (
-                      <span className="font-num grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[0.6rem] font-bold text-destructive-foreground">
-                        {overdue}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
+            <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2 text-xs">
+              <span className="hidden truncate text-muted-foreground lg:inline">
+                Personal expense &amp; income overview · Quick receipt scanner
+              </span>
             </div>
           )}
 
@@ -473,7 +401,7 @@ function ShellInner({ children }: { children: ReactNode }) {
             <PWAInstallButton />
             <button
               type="button"
-              onClick={() => openScanner(defaultScannerAccount)}
+              onClick={() => openScanner("Personal")}
               className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-primary/40 bg-primary/15 px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
             >
               <ScanLine className="h-3.5 w-3.5 shrink-0" />
@@ -507,38 +435,7 @@ function ShellInner({ children }: { children: ReactNode }) {
         </div>
       </nav>
 
-      {/* Mobile inline Studio sub-navigation bar (non-sticky so fixed UI stays compact) */}
-      {isStudio && (
-        <div className="no-print mx-auto max-w-6xl px-3 pt-1 sm:hidden">
-          <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto pb-1">
-            {studioTabs.map((t) => {
-              const isActive = active(t.to);
-              return (
-                <Link
-                  key={t.to}
-                  to={t.to}
-                  className={cn(
-                    "inline-flex min-h-[38px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                    isActive
-                      ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                      : "border-border bg-muted/65 text-muted-foreground",
-                  )}
-                >
-                  <t.icon className="h-3.5 w-3.5 shrink-0" />
-                  <span>{t.label}</span>
-                  {t.to === "/invoices" && overdue > 0 && (
-                    <span className="font-num ml-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[0.58rem] font-bold text-destructive-foreground">
-                      {overdue}
-                    </span>
-                  )}
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      <main className="mx-auto max-w-6xl px-3 pt-3 sm:px-4 sm:pt-24">
+      <main className="mx-auto max-w-6xl px-3 pt-[4.25rem] sm:px-4 sm:pt-24">
         {children}
       </main>
       <OfflineIndicator />

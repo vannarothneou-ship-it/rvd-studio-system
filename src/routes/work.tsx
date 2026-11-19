@@ -796,7 +796,7 @@ function WorkPage() {
             },
           ]}
         />
-        <p className="text-xs text-muted-foreground">
+        <p className="hidden text-xs text-muted-foreground sm:block">
           Organize daily tasks by project (DBG, Connexion, OCIC) in List or
           Calendar view, and curate your Portfolio Summary.
         </p>

@@ -1,6 +1,5 @@
-const CACHE_NAME = "rothvan-ledger-v2";
+const CACHE_NAME = "rothvan-ledger-v3";
 const PRECACHE_URLS = [
-  "/",
   "/manifest.json",
   "/favicon.ico",
   "/icon.svg",

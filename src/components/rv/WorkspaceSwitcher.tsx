@@ -1,7 +1,7 @@
-import { Briefcase, Home, Layers3, PiggyBank } from "lucide-react";
+import { Home, Layers3, PiggyBank } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type WorkspaceMode = "dashboard" | "studio" | "work" | "personal";
+export type WorkspaceMode = "dashboard" | "personal" | "work";
 
 const WORKSPACES: {
   id: WorkspaceMode;
@@ -12,26 +12,20 @@ const WORKSPACES: {
   {
     id: "dashboard",
     label: "Dashboard",
-    subtitle: "Unified command center across Studio, Work & Personal",
+    subtitle: "Personal balance, cash flow & quick scan",
     icon: Home,
-  },
-  {
-    id: "studio",
-    label: "Studio",
-    subtitle: "Freelance clients, projects, quotations & invoices",
-    icon: Briefcase,
-  },
-  {
-    id: "work",
-    label: "Work",
-    subtitle: "Full-time design tasks, mockups & combined output",
-    icon: Layers3,
   },
   {
     id: "personal",
     label: "Personal",
     subtitle: "Personal income, daily spending, cards & saving goals",
     icon: PiggyBank,
+  },
+  {
+    id: "work",
+    label: "Work",
+    subtitle: "Design tasks, mockups & portfolio showcase",
+    icon: Layers3,
   },
 ];
 
@@ -50,7 +44,7 @@ export function WorkspaceSwitcher({
   return (
     <div
       role="tablist"
-      aria-label="Workspace context switcher"
+      aria-label="Workspace switcher"
       className={cn(
         "no-scrollbar inline-flex max-w-full shrink-0 items-center gap-0.5 overflow-x-auto rounded-full border border-border bg-muted/75 p-1 sm:gap-1",
         className,
@@ -71,7 +65,7 @@ export function WorkspaceSwitcher({
               "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full font-medium transition-colors",
               compact
                 ? "min-h-[36px] px-2.5 py-1.5 text-[0.72rem]"
-                : "min-h-[38px] px-3 py-1.5 text-xs sm:text-sm",
+                : "min-h-[38px] px-3.5 py-1.5 text-xs sm:text-sm",
               active
                 ? "bg-primary text-primary-foreground shadow-[0_6px_18px_-6px_var(--primary)]"
                 : "text-muted-foreground hover:text-foreground",

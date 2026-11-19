@@ -147,11 +147,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         {children}
         <Scripts />
       </body>
@@ -174,7 +174,6 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
       <AppFrame />
-      <Toaster position="top-center" />
     </QueryClientProvider>
   );
 }
@@ -189,10 +188,16 @@ function AppFrame() {
         <span className="h-10 w-10 animate-spin rounded-full border-2 border-primary border-t-transparent" />
       </div>
     );
-  if (path.startsWith("/print")) return <Outlet />;
   return (
-    <Shell>
-      <Outlet />
-    </Shell>
+    <>
+      {path.startsWith("/print") ? (
+        <Outlet />
+      ) : (
+        <Shell>
+          <Outlet />
+        </Shell>
+      )}
+      <Toaster position="top-center" />
+    </>
   );
 }

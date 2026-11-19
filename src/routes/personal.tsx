@@ -425,7 +425,7 @@ function PersonalPage() {
               >
                 <AnimatedNumber value={personalNetRange} />
               </p>
-              <p className="mt-1 text-xs text-muted-foreground">
+              <p className="hidden mt-1 text-xs text-muted-foreground sm:block">
                 Personal income received minus personal spending
               </p>
               <SparklineWithDates
@@ -443,7 +443,7 @@ function PersonalPage() {
                 }
               />
             </div>
-            <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
+            <div className="grid grid-cols-3 gap-3 rounded-2xl bg-muted/35 p-3">
               <Stat
                 label="Income"
                 value={compactMoney(personalInRangeTotal)}
@@ -454,12 +454,11 @@ function PersonalPage() {
                 label="Spending"
                 value={compactMoney(personalOutRangeTotal)}
                 fullValue={money(personalOutRangeTotal)}
-                tone="neg"
               />
               <Stat
                 label="Saved goals"
                 tone="pos"
-                value={`${compactMoney(personalSavedTotal)} / ${compactMoney(personalTargetTotal)}`}
+                value={compactMoney(personalSavedTotal)}
                 fullValue={`${money(personalSavedTotal)} / ${money(personalTargetTotal)}`}
               />
             </div>
@@ -508,23 +507,23 @@ function PersonalPage() {
                 </div>
               </div>
 
-              <div className="mb-3 grid grid-cols-3 gap-3">
+              <div className="mb-3 grid grid-cols-3 gap-3 rounded-2xl bg-muted/35 p-3">
                 <Stat
-                  label="● Income"
+                  label="Income"
                   value={compactMoney(personalInRangeTotal)}
                   fullValue={money(personalInRangeTotal)}
                   tone={personalInRangeTotal > 0 ? "pos" : undefined}
                 />
                 <Stat
-                  label="○ Spending"
+                  label="Spending"
                   value={compactMoney(personalOutRangeTotal)}
                   fullValue={money(personalOutRangeTotal)}
                 />
                 <Stat
                   label={
                     personalRange === "today" || personalRange === "week"
-                      ? "Period net"
-                      : "Avg spend / mo"
+                      ? "Net"
+                      : "Avg / mo"
                   }
                   value={compactMoney(
                     personalRange === "today" || personalRange === "week"

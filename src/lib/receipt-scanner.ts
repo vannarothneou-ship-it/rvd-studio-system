@@ -259,15 +259,14 @@ export async function scanReceiptWithGemini({
     },
   });
 
-  const systemInstruction = `You extract structured bookkeeping transactions from receipts, transfer slips, payment confirmations, and banking screenshots (Visa/Mastercard alerts, cafe/restaurant/fuel/grocery receipts, and design software/vendor invoices).
+  const systemInstruction = `You extract structured bookkeeping transactions from receipts, transfer slips, payment confirmations, and banking screenshots (Visa/Mastercard alerts, cafe/restaurant/fuel/grocery receipts, utilities, and personal transfers).
 
 Rules:
 1. Extract the exact FINAL TOTAL paid or received as numeric \`amount\` and pick \`currency\` ('USD' or 'KHR'). If the receipt shows KHR (e.g. ៛20,500 or 20,500 KHR), return amount 20500 and currency 'KHR'. If both USD and KHR appear on a dual-currency Cambodian receipt, prefer USD as primary amount.
 2. Determine \`txType\`: 'income' ONLY if the slip clearly shows money RECEIVED / credited / salary / incoming transfer ("Transfer Received", "You received", "+$..."); otherwise 'expense'.
-3. Determine \`account\`: Default to '${defaultAccount}'. Switch to 'Studio' ONLY if clearly graphic design studio business cost (Adobe, Figma, Framer, fonts, print shop, signage/fabrication, client project vendor); switch to 'Personal' for coffee, food, supermarket, Prius/fuel/car wash, baby/kid, pharmacy, home utility bill, or personal shopping.
+3. Set \`account\` strictly to 'Personal'.
 4. Pick \`category\` strictly from:
-   - If expense & Personal: ${EXPENSE_PERSONAL.join(", ")}
-   - If expense & Studio: ${EXPENSE_STUDIO.join(", ")}
+   - If expense: ${EXPENSE_PERSONAL.join(", ")}
    - If income: ${INCOME_SOURCES.join(", ")}
 5. Detect \`method\` strictly as 'Debit' or 'Credit'. Pick 'Credit' only when a credit card is indicated; otherwise pick 'Debit'.
 6. Format \`date\` as YYYY-MM-DD. If no complete date is printed, use '${todayIso}'.
@@ -287,7 +286,7 @@ Rules:
               },
             },
             {
-              text: `Read this receipt, invoice, or payment slip and return the transaction JSON. Fallback date if missing: ${todayIso}.`,
+              text: `Read this receipt or payment slip and return the transaction JSON. Fallback date if missing: ${todayIso}.`,
             },
           ],
         },
@@ -306,7 +305,8 @@ Rules:
 
       const parsed = JSON.parse(rawText) as Record<string, unknown>;
       const txType = parsed["txType"] === "income" ? "income" : "expense";
-      const account = parsed["account"] === "Studio" ? "Studio" : "Personal";
+      const account: "Personal" | "Studio" =
+        defaultAccount === "Studio" ? "Studio" : "Personal";
       const currency = parsed["currency"] === "KHR" ? "KHR" : "USD";
       const rawAmount = Number(parsed["amount"]);
       const amount =

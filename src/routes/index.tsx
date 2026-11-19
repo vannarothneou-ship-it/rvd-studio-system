@@ -5,21 +5,15 @@ import {
   ArrowDownLeft,
   ArrowRight,
   ArrowUpRight,
-  Briefcase,
   CheckCircle2,
   Eye,
   EyeOff,
-  FilePlus2,
-  FileText,
-  FolderKanban,
   Image as ImageIcon,
-  Layers,
   Layers3,
-  PiggyBank,
   Plus,
   ScanLine,
   Sparkles,
-  UserPlus,
+  TrendingUp,
   Wallet,
 } from "lucide-react";
 import {
@@ -50,31 +44,18 @@ import {
 } from "@/components/rv/Charts";
 import { DesignMediaUploader } from "@/components/rv/DesignMediaTools";
 import { useReceiptScanner } from "@/components/rv/ReceiptScanner";
-import { workProjectAccent } from "@/components/rv/workProjectColors";
 import {
   CARD_METHODS,
-  CLIENT_SOURCES,
-  CLIENT_STATUSES,
-  CLIENT_TYPES,
   DEFAULT_WORK_PROJECTS,
   DESIGN_TYPES,
-  EXPENSE_CATEGORIES,
   PERSONAL_CATEGORIES,
   PERSONAL_INCOME_METHODS,
   PERSONAL_INCOME_SOURCES,
-  PROJECT_STATUSES,
   WORK_STATUSES,
-  addDays,
-  cashFlowSeries,
-  combinedCashFlowSeries,
   compactMoney,
   designOutputSummary,
   expenseAccount,
-  goalAccount,
-  invoiceView,
-  isInvoice,
   money,
-  needsFollowUp,
   periodBreakdownBars,
   personalSeries,
   setDB,
@@ -82,15 +63,11 @@ import {
   toUSD,
   today,
   uid,
-  updateProject,
   useDB,
   workspaceBalances,
-  type Account,
   type CashRange,
-  type Client,
   type Expense,
   type PersonalIncome,
-  type Project,
   type WorkStatus,
   type WorkTask,
 } from "@/lib/store";
@@ -105,13 +82,13 @@ export const Route = createFileRoute("/")({
       {
         name: "description",
         content:
-          "Unified command dashboard across Studio, Work, and Personal money with quick actions and AI receipt scanning.",
+          "Personal expense tracker, income overview, AI receipt scanner, and work portfolio.",
       },
       { property: "og:title", content: "Dashboard · RothVan Ledger" },
       {
         property: "og:description",
         content:
-          "Unified command dashboard across Studio, Work, and Personal money with quick actions and AI receipt scanning.",
+          "Personal expense tracker, income overview, AI receipt scanner, and work portfolio.",
       },
     ],
   }),
@@ -126,8 +103,7 @@ const CASH_RANGES: { id: CashRange; label: string }[] = [
   { id: "all", label: "All" },
 ];
 
-type CashScope = "all" | "studio" | "personal";
-type FeedScope = "all" | "Studio" | "Work" | "Personal";
+type FeedScope = "all" | "Personal" | "Work";
 
 function CommandDashboard() {
   const db = useDB((d) => d);
@@ -146,16 +122,12 @@ function CommandDashboard() {
     });
   };
 
-  const [cashScope, setCashScope] = useState<CashScope>("all");
   const [cashRange, setCashRange] = useState<CashRange>("today");
   const [cashMode, setCashMode] = useState<ChartMode>("area");
   const [cashLens, setCashLens] = useState<ChartLens>("flow");
   const [feedScope, setFeedScope] = useState<FeedScope>("all");
   const [feedExpanded, setFeedExpanded] = useState(false);
 
-  // Direct quick-action drawers right on Dashboard
-  const [clientDraft, setClientDraft] = useState<Client | null>(null);
-  const [projectDraft, setProjectDraft] = useState<Project | null>(null);
   const [expenseDraft, setExpenseDraft] = useState<Expense | null>(null);
   const [incomeDraft, setIncomeDraft] = useState<PersonalIncome | null>(null);
   const [workTaskDraft, setWorkTaskDraft] = useState<WorkTask | null>(null);
@@ -164,33 +136,21 @@ function CommandDashboard() {
   const bal = useMemo(() => workspaceBalances(db, month), [db, month]);
   const output = useMemo(() => designOutputSummary(db), [db]);
 
-  const combinedSeries = useMemo(
-    () => combinedCashFlowSeries(db, cashRange, month),
-    [db, cashRange, month],
-  );
-  const studioSeries = useMemo(
-    () => cashFlowSeries(db, cashRange, month),
-    [db, cashRange, month],
-  );
   const personalTrend = useMemo(
     () => personalSeries(db, cashRange === "all" ? "12m" : cashRange, month),
     [db, cashRange, month],
   );
-  const categoryBars = useMemo(
+  const breakdownBars = useMemo(
     () =>
       periodBreakdownBars(
         db,
-        cashScope === "all"
-          ? "Combined"
-          : cashScope === "studio"
-            ? "Studio"
-            : "Personal",
+        "Personal",
         cashRange,
         month,
-        "category",
+        cashLens === "method" ? "method" : "category",
         "spending",
       ),
-    [db, cashScope, cashRange, month],
+    [db, cashRange, month, cashLens],
   );
 
   const projectNames = useMemo(() => {
@@ -203,34 +163,14 @@ function CommandDashboard() {
     return Array.from(new Set([...base, ...extra]));
   }, [db.settings.workProjects, db.workTasks]);
 
-  const inProductionCount = useMemo(
-    () => db.projects.filter((p) => p.status === "In production").length,
-    [db.projects],
-  );
-  const followUpCount = useMemo(
-    () => db.invoices.filter((i) => needsFollowUp(i)).length,
-    [db.invoices],
-  );
-  const overdueCount = useMemo(() => {
-    return db.invoices.filter(
-      (i) => isInvoice(i) && invoiceView(i, db).status === "Overdue",
-    ).length;
-  }, [db]);
-
-  const personalGoals = useMemo(
-    () => db.goals.filter((g) => goalAccount(g) === "Personal"),
-    [db.goals],
-  );
-  const leadGoal = personalGoals[0];
-
   const r = db.settings.khrRate || 4100;
 
-  // Unified activity feed across Studio, Work, and Personal
+  // Unified activity feed across Personal & Work (Studio excluded)
   const unifiedFeed = useMemo(() => {
     type FeedItem = {
       id: string;
       date: string;
-      scope: "Studio" | "Work" | "Personal";
+      scope: "Personal" | "Work";
       title: string;
       sub: string;
       badge?: string;
@@ -239,25 +179,9 @@ function CommandDashboard() {
       expense?: Expense;
       income?: PersonalIncome;
       workTask?: WorkTask;
-      linkTo?: string;
     };
 
     const items: FeedItem[] = [];
-
-    for (const p of db.payments) {
-      const inv = db.invoices.find((i) => i.id === p.invoiceId);
-      const c = db.clients.find((cl) => cl.id === inv?.clientId);
-      items.push({
-        id: `pay-${p.id}`,
-        date: p.date,
-        scope: "Studio",
-        title: `${c?.name ?? "Client"} · ${inv?.no ?? "Invoice"}`,
-        sub: `${p.method}${p.reference ? ` · ${p.reference}` : ""}`,
-        amount: toUSD(p.amount, p.currency, r),
-        direction: "in",
-        linkTo: inv ? `/invoices/${inv.id}` : "/invoices",
-      });
-    }
 
     for (const inc of db.personalIncome ?? []) {
       items.push({
@@ -273,11 +197,11 @@ function CommandDashboard() {
     }
 
     for (const e of db.expenses) {
-      const acct = expenseAccount(e);
+      if (expenseAccount(e) !== "Personal") continue;
       items.push({
         id: `exp-${e.id}`,
         date: e.date,
-        scope: acct,
+        scope: "Personal",
         title: e.description || e.vendor || e.category,
         sub: `${e.category}${e.vendor ? ` · ${e.vendor}` : ""}`,
         amount: -toUSD(e.amount, e.currency, r),
@@ -300,75 +224,22 @@ function CommandDashboard() {
     }
 
     return items.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40);
-  }, [
-    db.payments,
-    db.invoices,
-    db.clients,
-    db.personalIncome,
-    db.expenses,
-    db.workTasks,
-    r,
-  ]);
+  }, [db.personalIncome, db.expenses, db.workTasks, r]);
 
   const mask = (formatted: string) => (hideBalances ? "••••••" : formatted);
 
-  /* Quick-Action Creators */
-  const openNewClient = () =>
-    setClientDraft({
-      id: uid(),
-      code: nextCode(
-        "RVD-",
-        db.clients.map((c) => c.code),
-        49,
-      ),
-      name: "",
-      type: CLIENT_TYPES[0] ?? "Owner-operated",
-      industry: "",
-      contact: "",
-      email: "",
-      telegram: "",
-      phone: "",
-      source: CLIENT_SOURCES[0] ?? "Referral",
-      status: "Active",
-      notes: "",
-      preferredContact: "Telegram",
-    });
-
-  const openNewProject = () => {
-    const start = today();
-    setProjectDraft({
-      id: uid(),
-      code: nextCode(
-        "RVD-",
-        db.projects.map((p) => p.code),
-        101,
-      ),
-      clientId: db.clients[0]?.id ?? "",
-      serviceId: db.services[0]?.id ?? "",
-      name: "",
-      status: "In production",
-      start,
-      due: addDays(start, 14),
-      delivered: "",
-      quote: 0,
-    });
-  };
-
-  const openNewExpense = (account: Account) =>
+  const openNewExpense = () =>
     setExpenseDraft({
       id: uid(),
       date: today(),
       projectId: "",
-      category:
-        account === "Studio"
-          ? (EXPENSE_CATEGORIES[0] ?? "Other")
-          : (PERSONAL_CATEGORIES[0] ?? "Food"),
-      vendor: account === "Personal" ? "Debit" : "",
+      category: PERSONAL_CATEGORIES[0] ?? "Food",
+      vendor: "Debit",
       description: "",
       amount: 0,
       currency: "USD",
       receipt: "",
-      account,
+      account: "Personal",
     });
 
   const openNewIncome = () =>
@@ -406,87 +277,30 @@ function CommandDashboard() {
     });
   };
 
-  const clientFields: Field<Client>[] = [
-    { k: "name", label: "Client / Business name", wide: true },
-    { k: "contact", label: "Contact person" },
-    { k: "industry", label: "Industry" },
-    { k: "type", label: "Type", type: "select", options: CLIENT_TYPES },
-    { k: "status", label: "Status", type: "select", options: CLIENT_STATUSES },
-    { k: "phone", label: "Phone" },
-    { k: "telegram", label: "Telegram" },
-    { k: "notes", label: "Notes", type: "textarea" },
-  ];
-
-  const projectFields: Field<Project>[] = [
-    { k: "name", label: "Project name", wide: true },
-    {
-      k: "clientId",
-      label: "Client",
-      type: "select",
-      options: db.clients.map((c) => ({ value: c.id, label: c.name })),
-    },
-    {
-      k: "serviceId",
-      label: "Primary service",
-      type: "select",
-      options: db.services.map((s) => ({
-        value: s.id,
-        label: `${s.code} · ${s.name}`,
-      })),
-    },
-    {
-      k: "status",
-      label: "Status",
-      type: "chips",
-      options: [...PROJECT_STATUSES],
-    },
-    { k: "quote", label: "Quoted fee (USD)", type: "number" },
-    { k: "start", label: "Start date", type: "date" },
-    { k: "due", label: "Due date", type: "date" },
-  ];
-
-  const expenseFields = (acct: Account): Field<Expense>[] => [
+  const expenseFields: Field<Expense>[] = [
     { k: "date", label: "Date", type: "date" },
     { k: "amount", label: "Amount", type: "number" },
     { k: "description", label: "Description / item", wide: true },
     {
       k: "category",
-      label: acct === "Studio" ? "Studio Category" : "Personal Category",
+      label: "Category",
       type: "chips",
-      options: (acct === "Studio"
-        ? EXPENSE_CATEGORIES
-        : PERSONAL_CATEGORIES
-      ).map((c) => ({
+      options: PERSONAL_CATEGORIES.map((c) => ({
         value: c,
         label: c,
         icon: categoryIcon(c),
       })),
     },
-    ...(acct === "Personal"
-      ? ([
-          {
-            k: "vendor",
-            label: "Card",
-            type: "chips",
-            options: CARD_METHODS.map((m) => ({
-              value: m,
-              label: m,
-              icon: paymentCardIcon(m),
-            })),
-          },
-        ] as Field<Expense>[])
-      : ([
-          { k: "vendor", label: "Vendor / Supplier" },
-          {
-            k: "projectId",
-            label: "Project (optional)",
-            type: "select",
-            options: db.projects.map((p) => ({
-              value: p.id,
-              label: `${p.code} · ${p.name}`,
-            })),
-          },
-        ] as Field<Expense>[])),
+    {
+      k: "vendor",
+      label: "Card",
+      type: "chips",
+      options: CARD_METHODS.map((m) => ({
+        value: m,
+        label: m,
+        icon: paymentCardIcon(m),
+      })),
+    },
     {
       k: "currency",
       label: "Currency",
@@ -535,31 +349,54 @@ function CommandDashboard() {
     [output.items],
   );
 
+  const cashTotals = {
+    inVal: personalTrend.reduce((s, p) => s + p.personalIn, 0),
+    outVal: personalTrend.reduce((s, p) => s + p.personalOut, 0),
+    netVal: personalTrend.reduce((s, p) => s + p.net, 0),
+  };
+
+  const isGrouped = cashLens === "category" || cashLens === "method";
+  const chartRows = isGrouped
+    ? breakdownBars
+    : personalTrend.map((pt) => ({
+        label: pt.label,
+        fullDate: pt.fullDate,
+        primary: cashLens === "net" ? pt.net : pt.personalIn,
+        secondary: pt.personalOut,
+        inCount: pt.inCount,
+        count: pt.count,
+      }));
+
+  const primaryLabel =
+    cashLens === "category"
+      ? "Spending by category"
+      : cashLens === "method"
+        ? "Spending by card"
+        : cashLens === "net"
+          ? "Net cash flow"
+          : "Personal income";
+  const secondaryLabel = isGrouped ? "Income" : "Personal out";
+
+  const filteredFeed =
+    feedScope === "all"
+      ? unifiedFeed
+      : unifiedFeed.filter((it) => it.scope === feedScope);
+  const visibleFeed = filteredFeed.slice(0, feedExpanded ? 24 : 8);
+
   return (
     <>
-      <PageHeader title="Command Dashboard" owner={db.settings.ownerName} />
+      <PageHeader title="Dashboard" owner={db.settings.ownerName} />
 
-      {/* Banking-Style Net Liquidity Hero Card (ABA / ACLEDA / Canadia Inspired) */}
-      <Glass className="mb-5 overflow-hidden border-primary/25 bg-gradient-to-br from-primary/12 via-card/85 to-card/70">
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+      {/* Hero Personal Balance + Banking Quick Tiles */}
+      <Glass className="mb-4 overflow-hidden border-primary/25 bg-gradient-to-br from-primary/12 via-card/85 to-card/70">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <Wallet className="h-3.5 w-3.5 shrink-0 text-primary" />
-                  <span className="font-semibold text-foreground">
-                    Combined Liquidity
-                  </span>
-                  <span className="hidden sm:inline" aria-hidden="true">
-                    ·
-                  </span>
-                  <span className="hidden sm:inline">
-                    Studio + Personal Real-Time Total
-                  </span>
-                </div>
-                <p className="mt-0.5 text-xs text-muted-foreground sm:hidden">
-                  Studio + Personal Real-Time Total
-                </p>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Wallet className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <span className="font-semibold text-foreground">
+                  Personal Balance
+                </span>
               </div>
               <button
                 type="button"
@@ -575,58 +412,57 @@ function CommandDashboard() {
               </button>
             </div>
 
-            <div className="mt-2 flex flex-wrap items-baseline gap-3">
+            <div className="mt-1.5 flex flex-wrap items-baseline gap-2.5">
               <p
                 className={cn(
                   "font-num text-3xl font-extrabold tracking-tight sm:text-5xl",
-                  bal.combinedBalance >= 0
+                  bal.personalBalance >= 0
                     ? "text-foreground"
                     : "text-destructive",
                 )}
-                title={hideBalances ? "Hidden" : money(bal.combinedBalance)}
+                title={hideBalances ? "Hidden" : money(bal.personalBalance)}
               >
                 {hideBalances ? (
                   "••••••"
                 ) : (
-                  <AnimatedNumber value={bal.combinedBalance} />
+                  <AnimatedNumber value={bal.personalBalance} />
                 )}
               </p>
               <span
                 className={cn(
                   "font-num text-xs font-semibold",
-                  bal.combinedMonthNet >= 0
+                  bal.personalMonthNet >= 0
                     ? "text-positive"
                     : "text-destructive",
                 )}
               >
                 {hideBalances
-                  ? "This month ••••"
-                  : `${money(bal.combinedMonthNet, "USD", true)} this month`}
+                  ? "Month ••••"
+                  : `${money(bal.personalMonthNet, "USD", true)} this mo`}
               </span>
             </div>
 
-            <p className="font-num mt-1.5 text-xs text-muted-foreground">
-              Studio {mask(money(bal.studioBalance))} · Personal{" "}
-              {mask(money(bal.personalBalance))} · Open A/R{" "}
-              {mask(compactMoney(bal.openAR))} · {output.completedTotal}{" "}
-              completed designs ({output.totalArtworks} pcs)
+            <p className="font-num mt-1 text-xs text-muted-foreground">
+              In {mask(compactMoney(bal.personalInMonth))} · Out{" "}
+              {mask(compactMoney(bal.personalOutMonth))} ·{" "}
+              {output.workCompleted} work done
             </p>
           </div>
 
-          {/* 4 Quick Banking-Style Tiles */}
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 lg:w-[29rem] lg:shrink-0">
+          {/* 4 Aligned Quick Action Tiles */}
+          <div className="grid grid-cols-4 gap-2 lg:w-[25rem] lg:shrink-0">
             <button
               type="button"
               onClick={() => openScanner("Personal")}
-              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl border border-primary/45 bg-primary/18 px-3 py-2.5 text-xs font-semibold text-primary transition-transform hover:-translate-y-0.5 active:scale-95"
+              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl border border-primary/45 bg-primary/18 px-2 py-2.5 text-[0.72rem] font-semibold text-primary transition-transform hover:-translate-y-0.5 active:scale-95"
             >
               <ScanLine className="h-4 w-4 shrink-0" />
-              <span className="whitespace-nowrap">Scan Slip</span>
+              <span className="whitespace-nowrap">Scan</span>
             </button>
             <button
               type="button"
-              onClick={() => openNewExpense("Personal")}
-              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-secondary/75 px-3 py-2.5 text-xs font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
+              onClick={openNewExpense}
+              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-secondary/75 px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
             >
               <ArrowUpRight className="h-4 w-4 shrink-0 text-destructive" />
               <span className="whitespace-nowrap">Expense</span>
@@ -634,7 +470,7 @@ function CommandDashboard() {
             <button
               type="button"
               onClick={openNewIncome}
-              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-secondary/75 px-3 py-2.5 text-xs font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
+              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-secondary/75 px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
             >
               <ArrowDownLeft className="h-4 w-4 shrink-0 text-positive" />
               <span className="whitespace-nowrap">Income</span>
@@ -646,251 +482,45 @@ function CommandDashboard() {
                   .getElementById("dashboard-cashflow")
                   ?.scrollIntoView({ behavior: "smooth", block: "start" })
               }
-              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-secondary/75 px-3 py-2.5 text-xs font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
+              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-secondary/75 px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
             >
-              <Layers className="h-4 w-4 shrink-0 text-primary" />
-              <span className="whitespace-nowrap">Cash Flow</span>
+              <TrendingUp className="h-4 w-4 shrink-0 text-primary" />
+              <span className="whitespace-nowrap">Flow</span>
             </button>
           </div>
         </div>
       </Glass>
 
-      {/* 3 Main Workspace Command Panels: Studio · Work · Personal */}
-      <div className="mb-5 grid grid-cols-1 gap-4 lg:grid-cols-3">
-        {/* 1. Studio Workspace Panel */}
+      {/* Symmetrical Middle Command Cards: Personal Money · Work & Portfolio */}
+      <div className="mb-4 grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
+        {/* 1. Personal Money Card */}
         <Glass className="flex flex-col justify-between gap-4">
-          <div>
+          <div className="flex flex-col gap-3.5">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="grid h-9 w-9 place-items-center rounded-xl border border-primary/35 bg-primary/15 text-primary">
-                  <Briefcase className="h-4 w-4" />
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-positive/35 bg-positive/15 text-positive">
+                  <Wallet className="h-4 w-4" />
                 </span>
-                <div>
-                  <h2 className="font-display text-lg font-bold leading-tight">
-                    Studio
-                  </h2>
-                  <p className="text-[0.7rem] text-muted-foreground">
-                    RothVan Design freelance ledger
-                  </p>
-                </div>
-              </div>
-              <Link
-                to="/studio"
-                className="inline-flex min-h-[36px] items-center gap-1 text-xs font-semibold text-primary hover:underline"
-              >
-                Open <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl border border-border/70 bg-muted/35 p-3">
-              <Stat
-                label="Studio Balance"
-                value={mask(compactMoney(bal.studioBalance))}
-                fullValue={hideBalances ? undefined : money(bal.studioBalance)}
-                tone={bal.studioBalance >= 0 ? "pos" : "neg"}
-              />
-              <Stat
-                label="Open A/R"
-                value={mask(compactMoney(bal.openAR))}
-                fullValue={hideBalances ? undefined : money(bal.openAR)}
-              />
-              <Stat label="In production" value={String(inProductionCount)} />
-              <Stat
-                label={overdueCount > 0 ? "Overdue inv" : "Follow-ups"}
-                value={String(overdueCount > 0 ? overdueCount : followUpCount)}
-                tone={overdueCount > 0 ? "neg" : undefined}
-              />
-            </div>
-
-            <div className="mt-4">
-              <p className="label-mono mb-2">Studio quick actions</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={openNewClient}
-                  className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-border bg-secondary/75 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent"
-                >
-                  <UserPlus className="h-3.5 w-3.5 shrink-0 text-primary" />
-                  <span className="truncate">Client</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={openNewProject}
-                  className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-border bg-secondary/75 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent"
-                >
-                  <FolderKanban className="h-3.5 w-3.5 shrink-0 text-primary" />
-                  <span className="truncate">Project</span>
-                </button>
-                <Link
-                  to="/invoices/$id"
-                  params={{ id: "new" }}
-                  search={{ kind: "Quotation" }}
-                  className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-border bg-secondary/75 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent"
-                >
-                  <FilePlus2 className="h-3.5 w-3.5 shrink-0 text-primary" />
-                  <span className="truncate">Quotation</span>
-                </Link>
-                <Link
-                  to="/invoices/$id"
-                  params={{ id: "new" }}
-                  className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/15 px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
-                >
-                  <FileText className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Invoice</span>
-                </Link>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-3 text-xs">
-            <button
-              type="button"
-              onClick={() => openNewExpense("Studio")}
-              className="inline-flex items-center gap-1 font-medium text-muted-foreground hover:text-foreground"
-            >
-              <Plus className="h-3.5 w-3.5 text-primary" />
-              Log Studio Cost
-            </button>
-            <div className="flex items-center gap-3 text-muted-foreground">
-              <Link to="/projects" className="hover:text-primary">
-                Projects
-              </Link>
-              <Link to="/clients" className="hover:text-primary">
-                Clients
-              </Link>
-              <Link to="/invoices" className="hover:text-primary">
-                Invoices
-              </Link>
-            </div>
-          </div>
-        </Glass>
-
-        {/* 2. Work & Portfolio Panel */}
-        <Glass className="flex flex-col justify-between gap-4" delay={60}>
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="grid h-9 w-9 place-items-center rounded-xl border border-primary/35 bg-primary/15 text-primary">
-                  <Layers3 className="h-4 w-4" />
-                </span>
-                <div>
-                  <h2 className="font-display text-lg font-bold leading-tight">
-                    Work &amp; Portfolio
-                  </h2>
-                  <p className="text-[0.7rem] text-muted-foreground">
-                    Full-time jobs + artwork archive
-                  </p>
-                </div>
-              </div>
-              <Link
-                to="/work"
-                className="inline-flex min-h-[36px] items-center gap-1 text-xs font-semibold text-primary hover:underline"
-              >
-                Open <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl border border-border/70 bg-muted/35 p-3">
-              <Stat
-                label="Completed"
-                value={String(output.completedTotal)}
-                tone="pos"
-              />
-              <Stat label="Current tasks" value={String(output.workActive)} />
-              <Stat label="Artworks" value={String(output.totalArtworks)} />
-              <Stat label="Mockups / PDF" value={String(output.mediaCount)} />
-            </div>
-
-            {/* Top Work Projects */}
-            <div className="mt-3 flex flex-wrap items-center gap-1.5">
-              {projectNames.slice(0, 4).map((name) => {
-                const count = (db.workTasks ?? []).filter(
-                  (t) => (t.projectName || t.company || "General") === name,
-                ).length;
-                const acc = workProjectAccent(name);
-                return (
-                  <Link
-                    key={name}
-                    to="/work"
-                    className="inline-flex items-center gap-1.5 rounded-full border border-border/80 bg-background/45 px-2.5 py-1 text-[0.7rem] font-medium text-foreground hover:border-primary/45"
-                  >
-                    <span
-                      className="h-2 w-2 rounded-full"
-                      style={{ backgroundColor: acc.dot }}
-                    />
-                    <span>{name}</span>
-                    <span className="font-num text-muted-foreground">
-                      {count}
-                    </span>
-                  </Link>
-                );
-              })}
-            </div>
-
-            <div className="mt-4">
-              <p className="label-mono mb-2">Work quick actions</p>
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => openNewWorkTask(false)}
-                  className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-primary/40 bg-primary/15 px-3 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
-                >
-                  <Plus className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Work Task</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openNewWorkTask(true)}
-                  className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl border border-border bg-secondary/75 px-3 py-2 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent"
-                >
-                  <ImageIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
-                  <span className="truncate">Portfolio</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-3 text-xs text-muted-foreground">
-            <span>
-              {output.workCompleted} full-time · {output.studioCompleted} studio
-            </span>
-            <Link
-              to="/work"
-              className="font-medium text-primary hover:underline"
-            >
-              Calendar &amp; Summary →
-            </Link>
-          </div>
-        </Glass>
-
-        {/* 3. Personal Money Panel */}
-        <Glass className="flex flex-col justify-between gap-4" delay={120}>
-          <div>
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <span className="grid h-9 w-9 place-items-center rounded-xl border border-positive/35 bg-positive/15 text-positive">
-                  <PiggyBank className="h-4 w-4" />
-                </span>
-                <div>
-                  <h2 className="font-display text-lg font-bold leading-tight">
+                <div className="min-w-0">
+                  <h2 className="truncate font-display text-lg font-bold leading-tight">
                     Personal Money
                   </h2>
-                  <p className="text-[0.7rem] text-muted-foreground">
+                  <p className="hidden text-[0.7rem] text-muted-foreground sm:block">
                     Debit, Credit &amp; daily spending
                   </p>
                 </div>
               </div>
               <Link
                 to="/personal"
-                className="inline-flex min-h-[36px] items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                className="inline-flex min-h-[36px] shrink-0 items-center gap-1 text-xs font-semibold text-primary hover:underline"
               >
                 Open <ArrowRight className="h-3.5 w-3.5" />
               </Link>
             </div>
 
-            <div className="mt-4 grid grid-cols-2 gap-3 rounded-2xl border border-border/70 bg-muted/35 p-3">
+            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3.5">
               <Stat
-                label="Wallet balance"
+                label="Wallet"
                 value={mask(compactMoney(bal.personalBalance))}
                 fullValue={
                   hideBalances ? undefined : money(bal.personalBalance)
@@ -898,7 +528,7 @@ function CommandDashboard() {
                 tone={bal.personalBalance >= 0 ? "pos" : "neg"}
               />
               <Stat
-                label="Month income"
+                label="Month in"
                 value={mask(compactMoney(bal.personalInMonth))}
                 fullValue={
                   hideBalances ? undefined : money(bal.personalInMonth)
@@ -906,7 +536,7 @@ function CommandDashboard() {
                 tone={bal.personalInMonth > 0 ? "pos" : undefined}
               />
               <Stat
-                label="Month spend"
+                label="Month out"
                 value={mask(compactMoney(bal.personalOutMonth))}
                 fullValue={
                   hideBalances ? undefined : money(bal.personalOutMonth)
@@ -921,387 +551,289 @@ function CommandDashboard() {
                 }
               />
             </div>
+          </div>
 
-            {leadGoal && (
-              <div className="mt-3 rounded-2xl border border-border/60 bg-background/35 px-3 py-2">
-                <div className="flex items-center justify-between text-[0.7rem]">
-                  <span className="truncate font-medium text-foreground">
-                    {leadGoal.name}
-                  </span>
-                  <span className="font-num text-muted-foreground">
-                    {leadGoal.target > 0
-                      ? `${Math.min(100, Math.round((leadGoal.current / leadGoal.target) * 100))}%`
-                      : "0%"}
-                  </span>
-                </div>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-positive transition-all"
-                    style={{
-                      width: `${leadGoal.target > 0 ? Math.min(100, (leadGoal.current / leadGoal.target) * 100) : 0}%`,
-                    }}
-                  />
+          <div className="mt-auto flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={openNewExpense}
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
+              >
+                <Plus className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">Expense</span>
+              </button>
+              <button
+                type="button"
+                onClick={openNewIncome}
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-border bg-secondary/75 px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent active:scale-95"
+              >
+                <ArrowDownLeft className="h-3.5 w-3.5 shrink-0 text-positive" />
+                <span className="truncate">Income</span>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+              <span className="font-num truncate">
+                Net {mask(compactMoney(bal.personalMonthNet, "USD", true))}
+              </span>
+              <Link
+                to="/personal"
+                className="shrink-0 font-medium text-primary hover:underline"
+              >
+                Cards &amp; Budget →
+              </Link>
+            </div>
+          </div>
+        </Glass>
+
+        {/* 2. Work & Portfolio Card */}
+        <Glass className="flex flex-col justify-between gap-4" delay={60}>
+          <div className="flex flex-col gap-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-primary/35 bg-primary/15 text-primary">
+                  <Layers3 className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="truncate font-display text-lg font-bold leading-tight">
+                    Work &amp; Portfolio
+                  </h2>
+                  <p className="hidden text-[0.7rem] text-muted-foreground sm:block">
+                    Tasks, calendar &amp; artwork archive
+                  </p>
                 </div>
               </div>
-            )}
+              <Link
+                to="/work"
+                className="inline-flex min-h-[36px] shrink-0 items-center gap-1 text-xs font-semibold text-primary hover:underline"
+              >
+                Open <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
 
-            <div className="mt-4">
-              <p className="label-mono mb-2">Personal quick actions</p>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => openScanner("Personal")}
-                  className="inline-flex min-h-[42px] items-center justify-center gap-1 rounded-xl border border-primary/40 bg-primary/15 px-2.5 py-2 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
-                >
-                  <ScanLine className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">Scan</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => openNewExpense("Personal")}
-                  className="inline-flex min-h-[42px] items-center justify-center gap-1 rounded-xl border border-border bg-secondary/75 px-2.5 py-2 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent"
-                >
-                  <Plus className="h-3.5 w-3.5 shrink-0 text-destructive" />
-                  <span className="truncate">Expense</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={openNewIncome}
-                  className="inline-flex min-h-[42px] items-center justify-center gap-1 rounded-xl border border-border bg-secondary/75 px-2.5 py-2 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent"
-                >
-                  <Plus className="h-3.5 w-3.5 shrink-0 text-positive" />
-                  <span className="truncate">Income</span>
-                </button>
-              </div>
+            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3.5">
+              <Stat
+                label="Completed"
+                value={String(output.workCompleted)}
+                tone="pos"
+              />
+              <Stat label="Current tasks" value={String(output.workActive)} />
+              <Stat label="Artworks" value={String(output.totalArtworks)} />
+              <Stat label="Mockups / PDF" value={String(output.mediaCount)} />
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-3 text-xs text-muted-foreground">
-            <span>
-              Month net {mask(compactMoney(bal.personalMonthNet, "USD", true))}
-            </span>
-            <Link
-              to="/personal"
-              className="font-medium text-primary hover:underline"
-            >
-              Cards &amp; Budget →
-            </Link>
+          <div className="mt-auto flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => openNewWorkTask(false)}
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
+              >
+                <Plus className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">Work Task</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openNewWorkTask(true)}
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-border bg-secondary/75 px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent active:scale-95"
+              >
+                <ImageIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <span className="truncate">Portfolio</span>
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+              <span className="font-num truncate">
+                {projectNames.slice(0, 3).join(" · ")}
+              </span>
+              <Link
+                to="/work"
+                className="shrink-0 font-medium text-primary hover:underline"
+              >
+                Calendar &amp; Summary →
+              </Link>
+            </div>
           </div>
         </Glass>
       </div>
 
-      {/* Interactive Cash Flow + In-Page Recent Activity Feed */}
-      {(() => {
-        const cashTotals =
-          cashScope === "all"
-            ? {
-                inVal: combinedSeries.reduce((s, p) => s + p.totalIn, 0),
-                outVal: combinedSeries.reduce((s, p) => s + p.totalOut, 0),
-                netVal: combinedSeries.reduce((s, p) => s + p.combinedNet, 0),
-              }
-            : cashScope === "studio"
-              ? {
-                  inVal: studioSeries.reduce((s, p) => s + p.inn, 0),
-                  outVal: studioSeries.reduce((s, p) => s + p.out, 0),
-                  netVal: studioSeries.reduce((s, p) => s + p.net, 0),
-                }
-              : {
-                  inVal: personalTrend.reduce((s, p) => s + p.personalIn, 0),
-                  outVal: personalTrend.reduce((s, p) => s + p.personalOut, 0),
-                  netVal: personalTrend.reduce((s, p) => s + p.net, 0),
-                };
-
-        const chartRows =
-          cashLens === "category"
-            ? categoryBars
-            : cashScope === "all"
-              ? combinedSeries.map((pt) => ({
-                  label: pt.label,
-                  fullDate: pt.fullDate,
-                  primary: cashLens === "net" ? pt.combinedNet : pt.totalIn,
-                  secondary: pt.totalOut,
-                  count: pt.count,
-                }))
-              : cashScope === "studio"
-                ? studioSeries.map((pt) => ({
-                    label: pt.label,
-                    fullDate: pt.fullDate,
-                    primary: cashLens === "net" ? pt.net : pt.inn,
-                    secondary: pt.out,
-                    inCount: pt.inCount,
-                    outCount: pt.outCount,
-                  }))
-                : personalTrend.map((pt) => ({
-                    label: pt.label,
-                    fullDate: pt.fullDate,
-                    primary: cashLens === "net" ? pt.net : pt.personalIn,
-                    secondary: pt.personalOut,
-                    inCount: pt.inCount,
-                    count: pt.count,
-                  }));
-
-        const primaryLabel =
-          cashLens === "category"
-            ? "Top spending categories"
-            : cashLens === "net"
-              ? "Net cash flow"
-              : cashScope === "studio"
-                ? "Studio cash in"
-                : cashScope === "personal"
-                  ? "Personal income"
-                  : "Combined cash in";
-        const secondaryLabel =
-          cashScope === "studio"
-            ? "Studio out"
-            : cashScope === "personal"
-              ? "Personal out"
-              : "Total spending";
-
-        const filteredFeed =
-          feedScope === "all"
-            ? unifiedFeed
-            : unifiedFeed.filter((it) => it.scope === feedScope);
-        const visibleFeed = filteredFeed.slice(0, feedExpanded ? 24 : 8);
-
-        return (
-          <div
-            id="dashboard-cashflow"
-            className="mb-5 grid scroll-mt-20 grid-cols-1 gap-4 lg:grid-cols-12"
-          >
-            <Glass className="lg:col-span-7">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className="font-medium">Cash Flow Overview</h2>
-                  <p className="hidden text-xs text-muted-foreground sm:block">
-                    Compare in vs out, net margin, and top spending categories
-                    in place
-                  </p>
-                </div>
-                <SlidingTabs
-                  size="xs"
-                  layoutGroup="dash-cf-scope"
-                  value={cashScope}
-                  onChange={setCashScope}
-                  options={[
-                    { id: "all", label: "All" },
-                    { id: "studio", label: "Studio" },
-                    { id: "personal", label: "Personal" },
-                  ]}
-                />
-              </div>
-
-              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-                <div className="flex items-center justify-between gap-2">
-                  <SlidingTabs
-                    size="xs"
-                    layoutGroup="dash-cf-lens"
-                    value={cashLens}
-                    onChange={setCashLens}
-                    options={CHART_LENS_OPTIONS.slice(0, 3)}
-                  />
-                  <SlidingTabs
-                    size="xs"
-                    layoutGroup="dash-cf-mode"
-                    value={cashMode}
-                    onChange={setCashMode}
-                    options={CHART_MODE_OPTIONS.map((o) => ({
-                      ...o,
-                      label: o.label,
-                    }))}
-                    className="sm:hidden"
-                  />
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-1.5">
-                  <SlidingTabs
-                    size="xs"
-                    layoutGroup="dash-cf-mode-dt"
-                    value={cashMode}
-                    onChange={setCashMode}
-                    options={CHART_MODE_OPTIONS}
-                    className="hidden sm:inline-flex"
-                  />
-                  <SlidingTabs
-                    size="xs"
-                    tone="invert"
-                    layoutGroup="dash-cf-range"
-                    value={cashRange}
-                    onChange={setCashRange}
-                    options={CASH_RANGES}
-                  />
-                </div>
-              </div>
-
-              <div className="mb-3 grid grid-cols-3 gap-3">
-                <Stat
-                  label={
-                    cashScope === "studio"
-                      ? "Studio in"
-                      : cashScope === "personal"
-                        ? "Personal in"
-                        : "Total in"
-                  }
-                  value={mask(compactMoney(cashTotals.inVal))}
-                  tone="pos"
-                />
-                <Stat
-                  label={
-                    cashScope === "studio"
-                      ? "Studio out"
-                      : cashScope === "personal"
-                        ? "Personal out"
-                        : "Total out"
-                  }
-                  value={mask(compactMoney(cashTotals.outVal))}
-                  tone="neg"
-                />
-                <Stat
-                  label="Net flow"
-                  value={mask(compactMoney(cashTotals.netVal, "USD", true))}
-                  tone={cashTotals.netVal >= 0 ? "pos" : "neg"}
-                />
-              </div>
-
-              <TrendChartCanvas
-                mode={cashLens === "category" ? "bar" : cashMode}
-                data={chartRows}
-                primaryKey="primary"
-                primaryName={primaryLabel}
-                secondaryKey="secondary"
-                secondaryName={secondaryLabel}
-                gradientId={`dash-cf-${cashScope}-${cashLens}`}
-                isNetMetric={cashLens === "net"}
-                hideSecondary={cashLens !== "flow"}
+      {/* Interactive Cash Flow + Recent Activity */}
+      <div
+        id="dashboard-cashflow"
+        className="mb-4 grid scroll-mt-20 grid-cols-1 items-stretch gap-4 lg:grid-cols-12"
+      >
+        <Glass className="flex flex-col justify-between lg:col-span-7">
+          <div>
+            <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-medium">Cash Flow</h2>
+              <SlidingTabs
+                size="xs"
+                tone="invert"
+                layoutGroup="dash-cf-range"
+                value={cashRange}
+                onChange={setCashRange}
+                options={CASH_RANGES}
               />
-            </Glass>
+            </div>
 
-            <Glass className="flex flex-col justify-between lg:col-span-5">
-              <div>
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="font-medium">Recent Activity</h2>
-                  <SlidingTabs
-                    size="xs"
-                    layoutGroup="dash-feed-scope"
-                    value={feedScope}
-                    onChange={(next) => {
-                      setFeedScope(next);
-                      setFeedExpanded(false);
-                    }}
-                    options={[
-                      { id: "all", label: "All" },
-                      { id: "Studio", label: "Studio" },
-                      { id: "Work", label: "Work" },
-                      { id: "Personal", label: "Personal" },
-                    ]}
-                  />
-                </div>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <SlidingTabs
+                size="xs"
+                layoutGroup="dash-cf-lens"
+                value={cashLens}
+                onChange={setCashLens}
+                options={CHART_LENS_OPTIONS}
+              />
+              <SlidingTabs
+                size="xs"
+                layoutGroup="dash-cf-mode"
+                value={cashMode}
+                onChange={setCashMode}
+                options={CHART_MODE_OPTIONS}
+              />
+            </div>
 
-                {visibleFeed.length === 0 ? (
-                  <p className="py-8 text-center text-xs text-muted-foreground">
-                    No activity logged under {feedScope} yet.
-                  </p>
-                ) : (
-                  <ul className="divide-y divide-border/70">
-                    {visibleFeed.map((item) => {
-                      const Icon = item.expense
-                        ? expenseItemIcon(item.expense)
-                        : item.income
-                          ? incomeSourceIcon(item.income.source)
-                          : item.workTask
-                            ? CheckCircle2
-                            : ArrowDownLeft;
-
-                      const inner = (
-                        <>
-                          <div className="flex min-w-0 items-center gap-2.5">
-                            <span
-                              className={cn(
-                                "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-muted/80",
-                                item.direction === "in" && "text-positive",
-                                item.direction === "out" && "text-destructive",
-                                !item.direction && "text-primary",
-                              )}
-                            >
-                              <Icon className="h-4 w-4" />
-                            </span>
-                            <div className="min-w-0">
-                              <p className="truncate text-xs font-semibold text-foreground sm:text-sm">
-                                {item.title}
-                              </p>
-                              <p className="truncate text-[0.7rem] text-muted-foreground">
-                                <span className="font-medium text-primary/90">
-                                  {item.scope}
-                                </span>{" "}
-                                · {item.sub} · {shortDate(item.date)}
-                              </p>
-                            </div>
-                          </div>
-                          {item.amount !== undefined ? (
-                            <span
-                              className={cn(
-                                "font-num shrink-0 text-xs font-bold sm:text-sm",
-                                item.direction === "in"
-                                  ? "text-positive"
-                                  : "text-destructive",
-                              )}
-                            >
-                              {hideBalances
-                                ? "••••"
-                                : money(item.amount, "USD", true)}
-                            </span>
-                          ) : item.badge ? (
-                            <Pill s={item.badge} />
-                          ) : null}
-                        </>
-                      );
-
-                      return (
-                        <li key={item.id}>
-                          {item.linkTo ? (
-                            <Link
-                              to={item.linkTo as "/invoices"}
-                              className="flex items-center justify-between gap-2.5 rounded-xl px-1.5 py-2.5 transition-colors hover:bg-muted/60"
-                            >
-                              {inner}
-                            </Link>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (item.expense) setExpenseDraft(item.expense);
-                                else if (item.income)
-                                  setIncomeDraft(item.income);
-                                else if (item.workTask)
-                                  setWorkTaskDraft(item.workTask);
-                              }}
-                              className="flex w-full items-center justify-between gap-2.5 rounded-xl px-1.5 py-2.5 text-left transition-colors hover:bg-muted/60"
-                            >
-                              {inner}
-                            </button>
-                          )}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-
-              {filteredFeed.length > 8 && (
-                <div className="mt-3 flex justify-center border-t border-border/60 pt-2.5">
-                  <button
-                    type="button"
-                    onClick={() => setFeedExpanded((v) => !v)}
-                    className="text-xs font-medium text-primary hover:underline"
-                  >
-                    {feedExpanded
-                      ? "Show less"
-                      : `Show more (${filteredFeed.length - 8} more)`}
-                  </button>
-                </div>
-              )}
-            </Glass>
+            <div className="mb-3 grid grid-cols-3 gap-3 rounded-2xl bg-muted/35 p-3">
+              <Stat
+                label="Income"
+                value={mask(compactMoney(cashTotals.inVal))}
+                tone="pos"
+              />
+              <Stat
+                label="Spending"
+                value={mask(compactMoney(cashTotals.outVal))}
+                tone="neg"
+              />
+              <Stat
+                label="Net flow"
+                value={mask(compactMoney(cashTotals.netVal, "USD", true))}
+                tone={cashTotals.netVal >= 0 ? "pos" : "neg"}
+              />
+            </div>
           </div>
-        );
-      })()}
+
+          <TrendChartCanvas
+            mode={isGrouped ? "bar" : cashMode}
+            data={chartRows}
+            primaryKey="primary"
+            primaryName={primaryLabel}
+            secondaryKey="secondary"
+            secondaryName={secondaryLabel}
+            gradientId={`dash-cf-${cashLens}`}
+            isNetMetric={cashLens === "net"}
+            hideSecondary={cashLens !== "flow"}
+          />
+        </Glass>
+
+        <Glass className="flex flex-col justify-between lg:col-span-5">
+          <div>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <h2 className="font-medium">Recent Activity</h2>
+              <SlidingTabs
+                size="xs"
+                layoutGroup="dash-feed-scope"
+                value={feedScope}
+                onChange={(next) => {
+                  setFeedScope(next);
+                  setFeedExpanded(false);
+                }}
+                options={[
+                  { id: "all", label: "All" },
+                  { id: "Personal", label: "Personal" },
+                  { id: "Work", label: "Work" },
+                ]}
+              />
+            </div>
+
+            {visibleFeed.length === 0 ? (
+              <p className="py-8 text-center text-xs text-muted-foreground">
+                No activity logged under {feedScope} yet.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border/70">
+                {visibleFeed.map((item) => {
+                  const Icon = item.expense
+                    ? expenseItemIcon(item.expense)
+                    : item.income
+                      ? incomeSourceIcon(item.income.source)
+                      : CheckCircle2;
+
+                  return (
+                    <li key={item.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (item.expense) setExpenseDraft(item.expense);
+                          else if (item.income) setIncomeDraft(item.income);
+                          else if (item.workTask)
+                            setWorkTaskDraft(item.workTask);
+                        }}
+                        className="flex w-full items-center justify-between gap-2.5 rounded-xl px-1.5 py-2.5 text-left transition-colors hover:bg-muted/60"
+                      >
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <span
+                            className={cn(
+                              "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-muted/80",
+                              item.direction === "in" && "text-positive",
+                              item.direction === "out" && "text-destructive",
+                              !item.direction && "text-primary",
+                            )}
+                          >
+                            <Icon className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-semibold text-foreground sm:text-sm">
+                              {item.title}
+                            </p>
+                            <p className="truncate text-[0.7rem] text-muted-foreground">
+                              <span className="font-medium text-primary/90">
+                                {item.scope}
+                              </span>{" "}
+                              · {item.sub} · {shortDate(item.date)}
+                            </p>
+                          </div>
+                        </div>
+                        {item.amount !== undefined ? (
+                          <span
+                            className={cn(
+                              "font-num shrink-0 text-xs font-bold sm:text-sm",
+                              item.direction === "in"
+                                ? "text-positive"
+                                : "text-destructive",
+                            )}
+                          >
+                            {hideBalances
+                              ? "••••"
+                              : money(item.amount, "USD", true)}
+                          </span>
+                        ) : item.badge ? (
+                          <Pill s={item.badge} />
+                        ) : null}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+
+          {filteredFeed.length > 8 && (
+            <div className="mt-3 flex justify-center border-t border-border/60 pt-2.5">
+              <button
+                type="button"
+                onClick={() => setFeedExpanded((v) => !v)}
+                className="text-xs font-medium text-primary hover:underline"
+              >
+                {feedExpanded
+                  ? "Show less"
+                  : `Show more (${filteredFeed.length - 8} more)`}
+              </button>
+            </div>
+          )}
+        </Glass>
+      </div>
 
       {/* Recent Portfolio Visuals Preview Strip */}
       {showcaseWithMedia.length > 0 && (
@@ -1309,16 +841,16 @@ function CommandDashboard() {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
-              <h2 className="font-medium">Recent Portfolio Showcase</h2>
+              <h2 className="font-medium">Portfolio Showcase</h2>
               <span className="font-num text-xs text-muted-foreground">
-                · {output.mediaCount} attached mockups
+                · {output.mediaCount} mockups
               </span>
             </div>
             <Link
               to="/work"
               className="text-xs font-semibold text-primary hover:underline"
             >
-              Open full Portfolio &amp; Summary →
+              Open Portfolio →
             </Link>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -1354,70 +886,21 @@ function CommandDashboard() {
         </Glass>
       )}
 
-      {/* Dashboard Direct Action Drawers */}
-      <EditModal
-        item={clientDraft}
-        onClose={() => setClientDraft(null)}
-        title="New Studio Client"
-        subtitle="RothVan Design Directory"
-        presentation="drawer"
-        side="right"
-        fields={clientFields}
-        onSave={(v) => {
-          if (!v.name.trim()) {
-            toast.error("Enter a client name.");
-            return;
-          }
-          setDB((d) => ({ ...d, clients: upsert(d.clients, v) }));
-          toast.success(`Client "${v.name}" added.`);
-        }}
-      />
-
-      <EditModal
-        item={projectDraft}
-        onClose={() => setProjectDraft(null)}
-        title="New Studio Project"
-        subtitle="RothVan Design Pipeline"
-        presentation="drawer"
-        side="right"
-        fields={projectFields}
-        onSave={(v) => {
-          try {
-            setDB((d) => updateProject(d, v));
-            toast.success(`Project "${v.name || v.code}" saved.`);
-          } catch (err) {
-            toast.error(
-              err instanceof Error ? err.message : "Could not save project.",
-            );
-          }
-        }}
-      />
-
+      {/* Personal Expense Drawer */}
       <EditModal
         item={expenseDraft}
         onClose={() => setExpenseDraft(null)}
-        title={
-          expenseDraft && expenseAccount(expenseDraft) === "Studio"
-            ? "Studio Expense"
-            : "Personal Expense"
-        }
-        subtitle={
-          expenseDraft && expenseAccount(expenseDraft) === "Studio"
-            ? "RothVan Design"
-            : "Personal Money"
-        }
+        title="Personal Expense"
+        subtitle="Personal Money"
         presentation="drawer"
         side="right"
-        fields={expenseFields(
-          expenseDraft ? expenseAccount(expenseDraft) : "Personal",
-        )}
+        fields={expenseFields}
         onSave={(v) => {
-          const acct = expenseAccount(v);
           setDB((d) => ({
             ...d,
-            expenses: upsert(d.expenses, { ...v, account: acct }),
+            expenses: upsert(d.expenses, { ...v, account: "Personal" }),
           }));
-          toast.success(`${acct} expense saved.`);
+          toast.success("Personal expense saved.");
         }}
         onDelete={
           expenseDraft && db.expenses.some((e) => e.id === expenseDraft.id)
@@ -1432,11 +915,12 @@ function CommandDashboard() {
         }
       />
 
+      {/* Personal Income Drawer */}
       <EditModal
         item={incomeDraft}
         onClose={() => setIncomeDraft(null)}
         title="Log Personal Income"
-        subtitle="Salary · Studio Draw · Freelance · Bonus"
+        subtitle="Salary · Freelance · Bonus"
         presentation="drawer"
         side="right"
         fields={incomeFields}
@@ -1463,14 +947,14 @@ function CommandDashboard() {
         }
       />
 
-      {/* Work Task & Portfolio Quick-Add Drawer */}
+      {/* Work Task & Portfolio Drawer */}
       <SlideDrawer
         open={Boolean(workTaskDraft)}
         onClose={() => setWorkTaskDraft(null)}
         title={
           workTaskDraft?.featured
             ? "Add Portfolio Work & Mockup"
-            : "New Full-Time Work Task"
+            : "New Work Task"
         }
         subtitle="DBG · Connexion · OCIC · Portfolio"
         widthClass="max-w-lg"

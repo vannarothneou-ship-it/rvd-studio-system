@@ -14,7 +14,7 @@ import type { WorkspaceMode } from "@/components/rv/WorkspaceSwitcher";
 export function WorkspaceBalanceCard({
   workspace,
 }: {
-  workspace: WorkspaceMode;
+  workspace: WorkspaceMode | "studio";
 }) {
   const db = useDB((d) => d);
   const bal = workspaceBalances(db);
@@ -28,39 +28,42 @@ export function WorkspaceBalanceCard({
     const workTaskCount = (db.workTasks ?? []).length;
 
     return (
-      <Glass className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <Glass className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Briefcase className="h-3.5 w-3.5 text-primary" />
-            <span className="font-medium text-foreground">Work Workspace</span>
-            <span aria-hidden="true">·</span>
-            <span>Full-Time + Freelance Design Output</span>
+            <span className="font-semibold text-foreground">
+              Work &amp; Portfolio
+            </span>
+            <span className="hidden sm:inline" aria-hidden="true">
+              ·
+            </span>
+            <span className="hidden sm:inline">Design Output</span>
           </div>
           <div className="mt-1.5 flex flex-wrap items-baseline gap-3">
             <p className="font-num text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">
               {output.completedTotal}{" "}
-              <span className="text-lg font-semibold text-muted-foreground">
-                completed works
+              <span className="text-base font-semibold text-muted-foreground sm:text-lg">
+                completed
               </span>
             </p>
             <span className="font-num text-xs font-semibold text-primary">
-              {output.totalArtworks} total artworks · {completionPct}% done
+              {output.totalArtworks} artworks · {completionPct}% done
             </span>
           </div>
           <p className="mt-1 hidden text-xs text-muted-foreground sm:block">
-            {workTaskCount} full-time tasks ({output.workCompleted} completed,{" "}
-            {output.workActive} current) · {output.studioCompleted} studio
-            delivered/closed
+            {workTaskCount} tasks ({output.workCompleted} completed,{" "}
+            {output.workActive} current)
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 border-t border-border/70 pt-3 sm:grid-cols-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+        <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3 sm:grid-cols-4 lg:border-l lg:border-border/70 lg:bg-transparent lg:p-0 lg:pl-6">
           <Stat
             label="Full-time done"
             value={String(output.workCompleted)}
             tone="pos"
           />
-          <Stat label="Studio done" value={String(output.studioCompleted)} />
+          <Stat label="Current" value={String(output.workActive)} />
           <Stat
             label="Artworks"
             value={String(output.totalArtworks)}
@@ -80,15 +83,17 @@ export function WorkspaceBalanceCard({
           ? "text-destructive"
           : "text-foreground";
     return (
-      <Glass className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <Glass className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Wallet className="h-3.5 w-3.5 text-positive" />
-            <span className="font-medium text-foreground">
-              Personal Workspace
+            <span className="font-semibold text-foreground">
+              Personal Balance
             </span>
-            <span aria-hidden="true">·</span>
-            <span>Real-time Current Balance (All ledger entries)</span>
+            <span className="hidden sm:inline" aria-hidden="true">
+              ·
+            </span>
+            <span className="hidden sm:inline">Real-time Wallet Total</span>
           </div>
           <p
             className={cn(
@@ -104,7 +109,7 @@ export function WorkspaceBalanceCard({
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 border-t border-border/70 pt-3 sm:grid-cols-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+        <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3 sm:grid-cols-4 lg:border-l lg:border-border/70 lg:bg-transparent lg:p-0 lg:pl-6">
           <Stat
             label="Total income"
             value={compactMoney(bal.personalInAll)}

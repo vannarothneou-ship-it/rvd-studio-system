@@ -733,7 +733,7 @@ export function BreakdownPieCard({
 
       {canGroupMethod && (
         <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2 text-[0.7rem]">
-          <span className="text-muted-foreground">
+          <span className="hidden text-muted-foreground sm:inline">
             {effectiveGroup === "method"
               ? "Grouped by card"
               : effectiveMode === "income"
@@ -1250,21 +1250,29 @@ export function CardSpendingChartCard({
   return (
     <Glass delay={delay} className="flex h-full flex-col justify-between">
       <div>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-primary/30 bg-primary/12 text-primary">
-              <CreditCard className="h-4 w-4" />
-            </span>
-            <div>
-              <h2 className="font-medium leading-tight">
-                Card spending · Debit vs Credit
-              </h2>
-              <p className="text-xs text-muted-foreground">
-                {agg.scopeLabel} · Tap a card tile to filter chart
-              </p>
+        <div className="mb-3 flex flex-col gap-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-primary/30 bg-primary/12 text-primary">
+                <CreditCard className="h-4 w-4" />
+              </span>
+              <div>
+                <h2 className="font-medium leading-tight">Debit vs Credit</h2>
+                <p className="hidden text-xs text-muted-foreground sm:block">
+                  {agg.scopeLabel} · Tap a card tile to filter chart
+                </p>
+              </div>
             </div>
+            <SlidingTabs
+              size="xs"
+              tone="invert"
+              layoutGroup={`${layoutIdPrefix}-range`}
+              value={range}
+              onChange={setRange}
+              options={CARD_RANGE_OPTIONS}
+            />
           </div>
-          <div className="flex max-w-full flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-1.5">
             <SlidingTabs
               size="xs"
               layoutGroup={`${layoutIdPrefix}-filter`}
@@ -1283,19 +1291,11 @@ export function CardSpendingChartCard({
               onChange={setMode}
               options={CHART_MODE_OPTIONS}
             />
-            <SlidingTabs
-              size="xs"
-              tone="invert"
-              layoutGroup={`${layoutIdPrefix}-range`}
-              value={range}
-              onChange={setRange}
-              options={CARD_RANGE_OPTIONS}
-            />
           </div>
         </div>
 
         {/* Interactive Summary KPI Strip */}
-        <div className="mb-3 grid gap-2.5 sm:grid-cols-3">
+        <div className="mb-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
           <button
             type="button"
             onClick={() => toggleCardFilter("debit")}
@@ -1311,7 +1311,7 @@ export function CardSpendingChartCard({
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-[0.68rem] font-medium uppercase tracking-wider text-muted-foreground">
                 <Landmark className="h-3.5 w-3.5 text-primary" />
-                Debit card
+                Debit
               </span>
               <span className="font-num text-[0.68rem] font-semibold text-primary">
                 {debitPct}%
@@ -1344,7 +1344,7 @@ export function CardSpendingChartCard({
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-[0.68rem] font-medium uppercase tracking-wider text-muted-foreground">
                 <CreditCard className="h-3.5 w-3.5 text-[var(--chart-3)]" />
-                Credit card
+                Credit
               </span>
               <span className="font-num text-[0.7rem] font-semibold text-foreground">
                 {creditPct}%
@@ -1362,7 +1362,7 @@ export function CardSpendingChartCard({
             </p>
           </button>
 
-          <div className="rounded-2xl border border-border/75 bg-muted/35 p-3.5">
+          <div className="col-span-2 rounded-2xl border border-border/75 bg-muted/35 p-3.5 sm:col-span-1">
             <div className="flex items-center justify-between gap-2">
               <span className="label-mono">
                 {cardFilter === "both" ? "Total & pace" : `${cardFilter} total`}
