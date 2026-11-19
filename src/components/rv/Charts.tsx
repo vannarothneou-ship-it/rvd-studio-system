@@ -56,12 +56,116 @@ export const CHART_MODE_OPTIONS = [
   { id: "bar" as const, label: "Bar", icon: BarChart3 },
 ];
 
+const MODE_ORDER: ChartMode[] = ["area", "line", "bar"];
+
+export function ChartModeCycleButton({
+  mode,
+  onChange,
+  className,
+}: {
+  mode: ChartMode;
+  onChange: (next: ChartMode) => void;
+  className?: string;
+}) {
+  const current =
+    CHART_MODE_OPTIONS.find((o) => o.id === mode) ?? CHART_MODE_OPTIONS[0]!;
+  const nextMode =
+    MODE_ORDER[(MODE_ORDER.indexOf(mode) + 1) % MODE_ORDER.length]!;
+  const Icon = current.icon;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(nextMode)}
+      aria-label={`Chart style: ${current.label}. Tap to switch to ${nextMode}`}
+      title={`Style: ${current.label} (tap to switch)`}
+      className={cn(
+        "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted/75 text-primary transition-all duration-150 hover:border-primary/50 hover:bg-primary hover:text-primary-foreground active:scale-90",
+        className,
+      )}
+    >
+      <Icon className="h-4 w-4" strokeWidth={2.2} />
+    </button>
+  );
+}
+
 export const CHART_LENS_OPTIONS: { id: ChartLens; label: string }[] = [
-  { id: "flow", label: "In vs Out" },
-  { id: "net", label: "Net Flow" },
+  { id: "flow", label: "Flow" },
+  { id: "net", label: "Net" },
   { id: "category", label: "Category" },
   { id: "method", label: "Card" },
 ];
+
+function TimeSlotTick({
+  x = 0,
+  y = 0,
+  payload,
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value?: string };
+}) {
+  const label = String(payload?.value ?? "");
+  // Render crisp monochrome weather/time-of-day SVG icons for Today time slots
+  if (
+    label === "Morning" ||
+    label === "Midday" ||
+    label === "Afternoon" ||
+    label === "Evening"
+  ) {
+    const cx = Number(x);
+    const cy = Number(y) + 10;
+    return (
+      <g
+        transform={`translate(${cx}, ${cy})`}
+        stroke="var(--muted-foreground)"
+        fill="none"
+        strokeWidth={1.7}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <title>{label}</title>
+        {label === "Morning" && (
+          <>
+            <path d="M-5 2a5 5 0 0 1 10 0" />
+            <path d="M-7 2h14" />
+            <path d="M0-5v2" />
+            <path d="m-5-2 1.2 1.2" />
+            <path d="m5-2-1.2 1.2" />
+          </>
+        )}
+        {label === "Midday" && (
+          <>
+            <circle cx="0" cy="0" r="3" />
+            <path d="M0-6v1.5M0 4.5V6M-6 0h1.5M4.5 0H6M-4.2-4.2l1 1M3.2 3.2l1 1M4.2-4.2l-1 1M-3.2 3.2l-1 1" />
+          </>
+        )}
+        {label === "Afternoon" && (
+          <>
+            <path d="M-5 1a5 5 0 0 1 10 0" />
+            <path d="M-7 1h14" />
+            <path d="M-4 4h8" />
+          </>
+        )}
+        {label === "Evening" && (
+          <path d="M2.5-4.5a4.8 4.8 0 1 0 3.2 8.2A4.2 4.2 0 0 1 2.5-4.5Z" />
+        )}
+      </g>
+    );
+  }
+
+  return (
+    <text
+      x={x}
+      y={Number(y) + 12}
+      textAnchor="middle"
+      fill="var(--muted-foreground)"
+      fontSize={10.5}
+    >
+      {label}
+    </text>
+  );
+}
 
 const PIE_PALETTE = [
   "oklch(0.83 0.13 82)", // RothVan Gold
@@ -97,7 +201,7 @@ export function SparklineWithDates({
       <ResponsiveContainer width="100%" height={112}>
         <AreaChart
           data={data}
-          margin={{ top: 6, right: 6, bottom: 0, left: 6 }}
+          margin={{ top: 6, right: 12, bottom: 8, left: 12 }}
         >
           <defs>
             <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
@@ -109,8 +213,8 @@ export function SparklineWithDates({
           <XAxis
             dataKey="label"
             interval="preserveStartEnd"
-            minTickGap={46}
-            tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
+            minTickGap={36}
+            tick={<TimeSlotTick />}
             axisLine={false}
             tickLine={false}
           />
@@ -307,11 +411,12 @@ export function TrendChartCanvas({
             )}
             <XAxis
               dataKey="label"
-              tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+              tick={<TimeSlotTick />}
               axisLine={false}
               tickLine={false}
               tickMargin={6}
-              minTickGap={34}
+              padding={{ left: 10, right: 10 }}
+              minTickGap={24}
               interval={resolvedInterval}
             />
             <YAxis
@@ -374,11 +479,12 @@ export function TrendChartCanvas({
             )}
             <XAxis
               dataKey="label"
-              tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+              tick={<TimeSlotTick />}
               axisLine={false}
               tickLine={false}
               tickMargin={6}
-              minTickGap={34}
+              padding={{ left: 10, right: 10 }}
+              minTickGap={24}
               interval={resolvedInterval}
             />
             <YAxis
@@ -480,11 +586,12 @@ export function TrendChartCanvas({
             )}
             <XAxis
               dataKey="label"
-              tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
+              tick={<TimeSlotTick />}
               axisLine={false}
               tickLine={false}
               tickMargin={6}
-              minTickGap={34}
+              padding={{ left: 10, right: 10 }}
+              minTickGap={24}
               interval={resolvedInterval}
             />
             <YAxis
@@ -974,10 +1081,11 @@ export function PeriodBarPulseCard({
             />
             <XAxis
               dataKey="label"
-              tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
+              tick={<TimeSlotTick />}
               axisLine={false}
               tickLine={false}
-              minTickGap={28}
+              padding={{ left: 10, right: 10 }}
+              minTickGap={24}
               interval={chartData.length > 10 ? "preserveStartEnd" : 0}
             />
             <YAxis
@@ -1251,30 +1359,27 @@ export function CardSpendingChartCard({
     <Glass delay={delay} className="flex h-full flex-col justify-between">
       <div>
         <div className="mb-3 flex flex-col gap-2.5">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2.5">
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-primary/30 bg-primary/12 text-primary">
                 <CreditCard className="h-4 w-4" />
               </span>
-              <div>
-                <h2 className="font-medium leading-tight">Debit vs Credit</h2>
+              <div className="min-w-0">
+                <h2 className="truncate font-medium leading-tight">
+                  Debit vs Credit
+                </h2>
                 <p className="hidden text-xs text-muted-foreground sm:block">
                   {agg.scopeLabel} · Tap a card tile to filter chart
                 </p>
               </div>
             </div>
-            <SlidingTabs
-              size="xs"
-              tone="invert"
-              layoutGroup={`${layoutIdPrefix}-range`}
-              value={range}
-              onChange={setRange}
-              options={CARD_RANGE_OPTIONS}
-            />
+            <ChartModeCycleButton mode={mode} onChange={setMode} />
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-1.5">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <SlidingTabs
+              stretch
               size="xs"
+              className="w-full sm:w-auto"
               layoutGroup={`${layoutIdPrefix}-filter`}
               value={cardFilter}
               onChange={setCardFilter}
@@ -1285,11 +1390,14 @@ export function CardSpendingChartCard({
               ]}
             />
             <SlidingTabs
+              stretch
               size="xs"
-              layoutGroup={`${layoutIdPrefix}-mode`}
-              value={mode}
-              onChange={setMode}
-              options={CHART_MODE_OPTIONS}
+              tone="invert"
+              className="w-full sm:w-auto"
+              layoutGroup={`${layoutIdPrefix}-range`}
+              value={range}
+              onChange={setRange}
+              options={CARD_RANGE_OPTIONS}
             />
           </div>
         </div>
@@ -1429,10 +1537,11 @@ export function CardSpendingChartCard({
               />
               <XAxis
                 dataKey="label"
-                tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
+                tick={<TimeSlotTick />}
                 axisLine={false}
                 tickLine={false}
-                minTickGap={28}
+                padding={{ left: 10, right: 10 }}
+                minTickGap={24}
                 interval={range === "1m" ? "preserveStartEnd" : xInterval}
               />
               <YAxis

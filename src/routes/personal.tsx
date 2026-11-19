@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -7,6 +7,7 @@ import {
   Plus,
   Search,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   Btn,
   Empty,
@@ -24,13 +25,12 @@ import {
   categoryIcon,
   expenseItemIcon,
   incomeSourceIcon,
-  paymentCardIcon,
 } from "@/components/rv/FinanceVisuals";
 import {
   BreakdownPieCard,
   CHART_LENS_OPTIONS,
-  CHART_MODE_OPTIONS,
   CardSpendingChartCard,
+  ChartModeCycleButton,
   PeriodBarPulseCard,
   SparklineWithDates,
   TrendChartCanvas,
@@ -43,11 +43,14 @@ import {
   type BentoWidgetDef,
 } from "@/components/rv/BentoGrid";
 import { MonthPicker } from "@/components/rv/MonthPicker";
+import { MoneyFlowSankeyCard } from "@/components/rv/MoneyFlowSankey";
+import {
+  QuickExpenseDrawer,
+  QuickIncomeDrawer,
+} from "@/components/rv/QuickTxDrawer";
 import { WorkspaceBalanceCard } from "@/components/rv/WorkspaceBalanceCard";
 import {
-  CARD_METHODS,
   PERSONAL_CATEGORIES,
-  PERSONAL_INCOME_METHODS,
   PERSONAL_INCOME_SOURCES,
   compactMoney,
   expenseAccount,
@@ -186,35 +189,41 @@ function PersonalPage() {
     [db, personalRange, month, chartLens],
   );
 
-  const openNewExpense = (category?: string) => {
-    setExpenseDraft({
-      id: uid(),
-      date: today().startsWith(month) ? today() : pAgg.anchorDay,
-      projectId: "",
-      category:
-        category && PERSONAL_CATEGORIES.includes(category)
-          ? category
-          : (PERSONAL_CATEGORIES[0] ?? "Food"),
-      vendor: "Debit",
-      description: "",
-      amount: 0,
-      currency: "USD",
-      receipt: "",
-      account: "Personal",
-    });
-  };
+  const openNewExpense = useCallback(
+    (category?: string) => {
+      setExpenseDraft({
+        id: uid(),
+        date: today().startsWith(month) ? today() : pAgg.anchorDay,
+        projectId: "",
+        category:
+          category && PERSONAL_CATEGORIES.includes(category)
+            ? category
+            : (PERSONAL_CATEGORIES[0] ?? "Food"),
+        vendor: "Debit",
+        description: "",
+        amount: 0,
+        currency: "USD",
+        receipt: "",
+        account: "Personal",
+      });
+    },
+    [month, pAgg.anchorDay],
+  );
 
-  const openNewIncome = (source?: string) => {
-    setIncomeDraft({
-      id: uid(),
-      date: today().startsWith(month) ? today() : pAgg.anchorDay,
-      source: source ?? "Salary",
-      accountMethod: "Debit",
-      description: "",
-      amount: 0,
-      currency: "USD",
-    });
-  };
+  const openNewIncome = useCallback(
+    (source?: string) => {
+      setIncomeDraft({
+        id: uid(),
+        date: today().startsWith(month) ? today() : pAgg.anchorDay,
+        source: source ?? "Salary",
+        accountMethod: "Debit",
+        description: "",
+        amount: 0,
+        currency: "USD",
+      });
+    },
+    [month, pAgg.anchorDay],
+  );
 
   const openNewGoal = () => {
     setGoalDraft({
@@ -226,70 +235,6 @@ function PersonalPage() {
       account: "Personal",
     });
   };
-
-  const expenseFields = (): Field<Expense>[] => [
-    { k: "date", label: "Date", type: "date" },
-    { k: "amount", label: "Amount", type: "number" },
-    { k: "description", label: "What did you buy?", wide: true },
-    {
-      k: "category",
-      label: "Category (tap to choose)",
-      type: "chips",
-      options: PERSONAL_CATEGORIES.map((c) => ({
-        value: c,
-        label: c,
-        icon: categoryIcon(c),
-      })),
-    },
-    {
-      k: "vendor",
-      label: "Card",
-      type: "chips",
-      options: CARD_METHODS.map((m) => ({
-        value: m,
-        label: m,
-        icon: paymentCardIcon(m),
-      })),
-    },
-    {
-      k: "currency",
-      label: "Currency",
-      type: "chips",
-      options: ["USD", "KHR"],
-    },
-  ];
-
-  const incomeFields = (): Field<PersonalIncome>[] => [
-    { k: "date", label: "Date received", type: "date" },
-    { k: "amount", label: "Amount", type: "number" },
-    { k: "description", label: "Note / payer", wide: true },
-    {
-      k: "source",
-      label: "Income source",
-      type: "chips",
-      options: PERSONAL_INCOME_SOURCES.map((s) => ({
-        value: s,
-        label: s,
-        icon: incomeSourceIcon(s),
-      })),
-    },
-    {
-      k: "accountMethod",
-      label: "Card",
-      type: "chips",
-      options: PERSONAL_INCOME_METHODS.map((m) => ({
-        value: m,
-        label: m,
-        icon: paymentCardIcon(m),
-      })),
-    },
-    {
-      k: "currency",
-      label: "Currency",
-      type: "chips",
-      options: ["USD", "KHR"],
-    },
-  ];
 
   const goalFields = (): Field<Goal>[] => [
     { k: "name", label: "Personal goal name", wide: true },
@@ -467,44 +412,44 @@ function PersonalPage() {
       },
       {
         id: "personalFlowChart",
-        title: "Personal income vs spending",
+        title: "Cash Flow",
         defaultSpan: 7,
         render: () => {
           const isGrouped = chartLens === "category" || chartLens === "method";
           return (
             <Glass delay={80} className="h-full">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className="font-medium">
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h2 className="truncate font-medium">
                     {chartLens === "net"
-                      ? "Personal net cash flow"
+                      ? "Net Flow"
                       : chartLens === "category"
-                        ? "Spending by category"
+                        ? "By Category"
                         : chartLens === "method"
-                          ? "Cash by Debit & Credit"
-                          : "Personal income vs spending"}
+                          ? "By Card"
+                          : "Cash Flow"}
                   </h2>
                   <p className="text-xs text-muted-foreground">
                     {pAgg.scopeLabel}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <SlidingTabs
-                    size="xs"
-                    tone="invert"
-                    layoutGroup="pers-chart-lens"
-                    value={chartLens}
-                    onChange={setChartLens}
-                    options={CHART_LENS_OPTIONS}
-                  />
-                  <SlidingTabs
-                    size="xs"
-                    layoutGroup="pers-chart-mode"
-                    value={chartMode}
-                    onChange={setChartMode}
-                    options={CHART_MODE_OPTIONS}
-                  />
-                </div>
+                <ChartModeCycleButton
+                  mode={chartMode}
+                  onChange={setChartMode}
+                />
+              </div>
+
+              <div className="mb-3">
+                <SlidingTabs
+                  stretch
+                  size="xs"
+                  tone="invert"
+                  layoutGroup="pers-chart-lens"
+                  className="w-full sm:w-auto"
+                  value={chartLens}
+                  onChange={setChartLens}
+                  options={CHART_LENS_OPTIONS}
+                />
               </div>
 
               <div className="mb-3 grid grid-cols-3 gap-3 rounded-2xl bg-muted/35 p-3">
@@ -589,6 +534,23 @@ function PersonalPage() {
             </Glass>
           );
         },
+      },
+      {
+        id: "personalMoneyFlow",
+        title: "Personal money flow river",
+        defaultSpan: 12,
+        render: () => (
+          <MoneyFlowSankeyCard
+            db={db}
+            accountScope="Personal"
+            anchorMonth={month}
+            onSelectCategory={(_acc, cat) => setInspectedCategory(cat)}
+            onQuickLog={(kind) =>
+              kind === "income" ? openNewIncome() : openNewExpense()
+            }
+            layoutIdPrefix="pers-money-flow"
+          />
+        ),
       },
       {
         id: "personalPie",
@@ -752,10 +714,12 @@ function PersonalPage() {
                   in this month
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
                 <SlidingTabs
+                  stretch
                   size="xs"
                   layoutGroup="pers-ledger-view"
+                  className="w-full sm:w-auto"
                   value={ledgerView}
                   onChange={(v) => {
                     setLedgerView(v);
@@ -781,23 +745,25 @@ function PersonalPage() {
                     className="field w-full py-1.5 pl-8 text-base sm:w-52 sm:text-xs"
                   />
                 </div>
-                <Btn
-                  type="button"
-                  onClick={() => openNewIncome()}
-                  className="px-3 py-1.5 text-xs whitespace-nowrap shrink-0"
-                >
-                  <Plus className="h-3 w-3" />
-                  Income
-                </Btn>
-                <Btn
-                  type="button"
-                  variant="gold"
-                  onClick={() => openNewExpense()}
-                  className="px-3 py-1.5 text-xs whitespace-nowrap shrink-0"
-                >
-                  <Plus className="h-3 w-3" />
-                  Spending
-                </Btn>
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                  <Btn
+                    type="button"
+                    onClick={() => openNewIncome()}
+                    className="w-full justify-center px-3 py-1.5 text-xs whitespace-nowrap sm:w-auto sm:shrink-0"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Income
+                  </Btn>
+                  <Btn
+                    type="button"
+                    variant="gold"
+                    onClick={() => openNewExpense()}
+                    className="w-full justify-center px-3 py-1.5 text-xs whitespace-nowrap sm:w-auto sm:shrink-0"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Spending
+                  </Btn>
+                </div>
               </div>
             </div>
 
@@ -984,6 +950,8 @@ function PersonalPage() {
       filterOptions,
       visibleRows,
       visibleCount,
+      openNewExpense,
+      openNewIncome,
     ],
   );
 
@@ -993,15 +961,17 @@ function PersonalPage() {
         title="Personal Money"
         owner={db.settings.ownerName}
         action={
-          <div className="flex flex-wrap items-center gap-2">
-            <EditLayoutButton
-              editing={editingLayout}
-              onToggle={() => setEditingLayout((e) => !e)}
-            />
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
+            <div className="hidden sm:block">
+              <EditLayoutButton
+                editing={editingLayout}
+                onToggle={() => setEditingLayout((e) => !e)}
+              />
+            </div>
             <Btn
               type="button"
               onClick={() => openNewIncome()}
-              className="whitespace-nowrap shrink-0"
+              className="w-full justify-center whitespace-nowrap sm:w-auto sm:shrink-0"
             >
               <Plus className="h-4 w-4 text-positive" />
               Log income
@@ -1010,7 +980,7 @@ function PersonalPage() {
               type="button"
               variant="gold"
               onClick={() => openNewExpense()}
-              className="whitespace-nowrap shrink-0"
+              className="w-full justify-center whitespace-nowrap sm:w-auto sm:shrink-0"
             >
               <Plus className="h-4 w-4" />
               Add expense
@@ -1022,13 +992,14 @@ function PersonalPage() {
       <WorkspaceBalanceCard workspace="personal" />
 
       {/* Personal Scope Bar: Month Picker + Synced Time Range */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2.5">
+      <div className="mb-4 flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <p className="hidden text-xs text-muted-foreground sm:block">
           Dedicated personal wallet for daily spending, income, cards, and
           saving goals
         </p>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
           <MonthPicker
+            className="w-full justify-between sm:w-auto"
             value={month}
             onChange={(next) => {
               setMonth(next);
@@ -1036,9 +1007,11 @@ function PersonalPage() {
             }}
           />
           <SlidingTabs
+            stretch
             size="xs"
             tone="invert"
             layoutGroup="pers-top-range"
+            className="w-full sm:w-auto"
             value={personalRange}
             onChange={(next) => {
               setPersonalRange(next);
@@ -1070,57 +1043,53 @@ function PersonalPage() {
         onEditExpense={(exp) => setExpenseDraft(exp)}
       />
 
-      {/* Right-Side Slide-Over Drawer for Personal Expenses */}
-      <EditModal
-        presentation="drawer"
-        side="right"
+      {/* Fast-Tap Personal Expense Drawer */}
+      <QuickExpenseDrawer
         item={expenseDraft}
-        fields={expenseFields()}
-        subtitle="Personal spending"
-        title="Personal Expense"
         onClose={() => setExpenseDraft(null)}
-        onSave={(v) =>
+        onSave={(v) => {
           setDB((d) => ({
             ...d,
             expenses: upsert(d.expenses, { ...v, account: "Personal" }),
-          }))
-        }
+          }));
+          toast.success("Personal expense saved.");
+        }}
         onDelete={
           expenseDraft && db.expenses.some((x) => x.id === expenseDraft.id)
-            ? (v) =>
+            ? (v) => {
                 setDB((d) => ({
                   ...d,
                   expenses: d.expenses.filter((x) => x.id !== v.id),
-                }))
+                }));
+                toast.message("Expense deleted.");
+              }
             : undefined
         }
       />
 
-      {/* Right-Side Slide-Over Drawer for Personal Income */}
-      <EditModal
-        presentation="drawer"
-        side="right"
+      {/* Fast-Tap Personal Income Drawer */}
+      <QuickIncomeDrawer
         item={incomeDraft}
-        fields={incomeFields()}
-        subtitle="Personal money in"
-        title="Personal Income"
         onClose={() => setIncomeDraft(null)}
-        onSave={(v) =>
+        onSave={(v) => {
           setDB((d) => ({
             ...d,
             personalIncome: upsert(d.personalIncome ?? [], v),
-          }))
-        }
+          }));
+          toast.success("Personal income saved.");
+        }}
         onDelete={
           incomeDraft &&
           (db.personalIncome ?? []).some((x) => x.id === incomeDraft.id)
-            ? (v) =>
+            ? (v) => {
                 setDB((d) => ({
                   ...d,
                   personalIncome: (d.personalIncome ?? []).filter(
                     (x) => x.id !== v.id,
                   ),
-                }))
+                }));
+                toast.message("Income deleted.");
+              }
             : undefined
         }
       />

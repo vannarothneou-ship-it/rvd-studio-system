@@ -5,15 +5,17 @@ import {
   ArrowDownLeft,
   ArrowRight,
   ArrowUpRight,
+  Briefcase,
   CheckCircle2,
   Eye,
   EyeOff,
+  FileText,
   Image as ImageIcon,
   Layers3,
   Plus,
   ScanLine,
   Sparkles,
-  TrendingUp,
+  Users,
   Wallet,
 } from "lucide-react";
 import {
@@ -27,30 +29,31 @@ import {
   SlidingTabs,
   Stat,
 } from "@/components/rv/ui";
-import { EditModal, nextCode, upsert, type Field } from "@/components/rv/Crud";
+import { nextCode, upsert } from "@/components/rv/Crud";
 import {
   AnimatedNumber,
-  categoryIcon,
+  CategoryInspectorDrawer,
   expenseItemIcon,
   incomeSourceIcon,
-  paymentCardIcon,
 } from "@/components/rv/FinanceVisuals";
+import { MoneyFlowSankeyCard } from "@/components/rv/MoneyFlowSankey";
 import {
   CHART_LENS_OPTIONS,
-  CHART_MODE_OPTIONS,
+  ChartModeCycleButton,
   TrendChartCanvas,
   type ChartLens,
   type ChartMode,
 } from "@/components/rv/Charts";
 import { DesignMediaUploader } from "@/components/rv/DesignMediaTools";
+import {
+  QuickExpenseDrawer,
+  QuickIncomeDrawer,
+} from "@/components/rv/QuickTxDrawer";
 import { useReceiptScanner } from "@/components/rv/ReceiptScanner";
 import {
-  CARD_METHODS,
   DEFAULT_WORK_PROJECTS,
   DESIGN_TYPES,
   PERSONAL_CATEGORIES,
-  PERSONAL_INCOME_METHODS,
-  PERSONAL_INCOME_SOURCES,
   WORK_STATUSES,
   compactMoney,
   designOutputSummary,
@@ -65,6 +68,7 @@ import {
   uid,
   useDB,
   workspaceBalances,
+  type Account,
   type CashRange,
   type Expense,
   type PersonalIncome,
@@ -103,7 +107,7 @@ const CASH_RANGES: { id: CashRange; label: string }[] = [
   { id: "all", label: "All" },
 ];
 
-type FeedScope = "all" | "Personal" | "Work";
+type FeedScope = "all" | "Studio" | "Personal" | "Work";
 
 function CommandDashboard() {
   const db = useDB((d) => d);
@@ -131,6 +135,10 @@ function CommandDashboard() {
   const [expenseDraft, setExpenseDraft] = useState<Expense | null>(null);
   const [incomeDraft, setIncomeDraft] = useState<PersonalIncome | null>(null);
   const [workTaskDraft, setWorkTaskDraft] = useState<WorkTask | null>(null);
+  const [inspectedCategory, setInspectedCategory] = useState<{
+    account: Account;
+    category: string;
+  } | null>(null);
 
   const month = today().slice(0, 7);
   const bal = useMemo(() => workspaceBalances(db, month), [db, month]);
@@ -165,12 +173,23 @@ function CommandDashboard() {
 
   const r = db.settings.khrRate || 4100;
 
-  // Unified activity feed across Personal & Work (Studio excluded)
+  const studioActiveProjects = useMemo(
+    () =>
+      db.projects.filter(
+        (p) =>
+          p.status === "Inquiry" ||
+          p.status === "Quoted" ||
+          p.status === "In production",
+      ).length,
+    [db.projects],
+  );
+
+  // Unified activity feed across Studio, Personal & Work
   const unifiedFeed = useMemo(() => {
     type FeedItem = {
       id: string;
       date: string;
-      scope: "Personal" | "Work";
+      scope: "Studio" | "Personal" | "Work";
       title: string;
       sub: string;
       badge?: string;
@@ -179,9 +198,25 @@ function CommandDashboard() {
       expense?: Expense;
       income?: PersonalIncome;
       workTask?: WorkTask;
+      invoiceId?: string;
     };
 
     const items: FeedItem[] = [];
+
+    for (const p of db.payments) {
+      const inv = db.invoices.find((i) => i.id === p.invoiceId);
+      const client = db.clients.find((c) => c.id === inv?.clientId);
+      items.push({
+        id: `pay-${p.id}`,
+        date: p.date,
+        scope: "Studio",
+        title: `${client?.name ?? "Client"} · ${inv?.no ?? "Payment"}`,
+        sub: `${p.method}${p.reference ? ` · ${p.reference}` : ""}`,
+        amount: toUSD(p.amount, p.currency, r),
+        direction: "in",
+        invoiceId: p.invoiceId,
+      });
+    }
 
     for (const inc of db.personalIncome ?? []) {
       items.push({
@@ -197,11 +232,11 @@ function CommandDashboard() {
     }
 
     for (const e of db.expenses) {
-      if (expenseAccount(e) !== "Personal") continue;
+      const acc = expenseAccount(e);
       items.push({
         id: `exp-${e.id}`,
         date: e.date,
-        scope: "Personal",
+        scope: acc,
         title: e.description || e.vendor || e.category,
         sub: `${e.category}${e.vendor ? ` · ${e.vendor}` : ""}`,
         amount: -toUSD(e.amount, e.currency, r),
@@ -224,7 +259,15 @@ function CommandDashboard() {
     }
 
     return items.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40);
-  }, [db.personalIncome, db.expenses, db.workTasks, r]);
+  }, [
+    db.payments,
+    db.invoices,
+    db.clients,
+    db.personalIncome,
+    db.expenses,
+    db.workTasks,
+    r,
+  ]);
 
   const mask = (formatted: string) => (hideBalances ? "••••••" : formatted);
 
@@ -276,70 +319,6 @@ function CommandDashboard() {
       featured: portfolioPreset,
     });
   };
-
-  const expenseFields: Field<Expense>[] = [
-    { k: "date", label: "Date", type: "date" },
-    { k: "amount", label: "Amount", type: "number" },
-    { k: "description", label: "Description / item", wide: true },
-    {
-      k: "category",
-      label: "Category",
-      type: "chips",
-      options: PERSONAL_CATEGORIES.map((c) => ({
-        value: c,
-        label: c,
-        icon: categoryIcon(c),
-      })),
-    },
-    {
-      k: "vendor",
-      label: "Card",
-      type: "chips",
-      options: CARD_METHODS.map((m) => ({
-        value: m,
-        label: m,
-        icon: paymentCardIcon(m),
-      })),
-    },
-    {
-      k: "currency",
-      label: "Currency",
-      type: "chips",
-      options: ["USD", "KHR"],
-    },
-  ];
-
-  const incomeFields: Field<PersonalIncome>[] = [
-    { k: "date", label: "Date received", type: "date" },
-    { k: "amount", label: "Amount", type: "number" },
-    { k: "description", label: "Note / payer", wide: true },
-    {
-      k: "source",
-      label: "Income source",
-      type: "chips",
-      options: PERSONAL_INCOME_SOURCES.map((s) => ({
-        value: s,
-        label: s,
-        icon: incomeSourceIcon(s),
-      })),
-    },
-    {
-      k: "accountMethod",
-      label: "Card",
-      type: "chips",
-      options: PERSONAL_INCOME_METHODS.map((m) => ({
-        value: m,
-        label: m,
-        icon: paymentCardIcon(m),
-      })),
-    },
-    {
-      k: "currency",
-      label: "Currency",
-      type: "chips",
-      options: ["USD", "KHR"],
-    },
-  ];
 
   const showcaseWithMedia = useMemo(
     () =>
@@ -443,9 +422,9 @@ function CommandDashboard() {
             </div>
 
             <p className="font-num mt-1 text-xs text-muted-foreground">
-              In {mask(compactMoney(bal.personalInMonth))} · Out{" "}
-              {mask(compactMoney(bal.personalOutMonth))} ·{" "}
-              {output.workCompleted} work done
+              Studio {mask(compactMoney(bal.studioBalance))} · Open A/R{" "}
+              {mask(compactMoney(bal.openAR))} · {output.workCompleted} work
+              done
             </p>
           </div>
 
@@ -475,24 +454,98 @@ function CommandDashboard() {
               <ArrowDownLeft className="h-4 w-4 shrink-0 text-positive" />
               <span className="whitespace-nowrap">Income</span>
             </button>
-            <button
-              type="button"
-              onClick={() =>
-                document
-                  .getElementById("dashboard-cashflow")
-                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
-              }
+            <Link
+              to="/invoices/$id"
+              params={{ id: "new" }}
               className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-secondary/75 px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
             >
-              <TrendingUp className="h-4 w-4 shrink-0 text-primary" />
-              <span className="whitespace-nowrap">Flow</span>
-            </button>
+              <FileText className="h-4 w-4 shrink-0 text-primary" />
+              <span className="whitespace-nowrap">Invoice</span>
+            </Link>
           </div>
         </div>
       </Glass>
 
-      {/* Symmetrical Middle Command Cards: Personal Money · Work & Portfolio */}
-      <div className="mb-4 grid grid-cols-1 items-stretch gap-4 lg:grid-cols-2">
+      {/* Symmetrical Middle Command Cards: Studio · Personal Money · Work & Portfolio */}
+      <div className="mb-4 grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
+        {/* 1. Studio Card */}
+        <Glass className="flex flex-col justify-between gap-4">
+          <div className="flex flex-col gap-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-primary/35 bg-primary/15 text-primary">
+                  <Briefcase className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="truncate font-display text-lg font-bold leading-tight">
+                    Studio
+                  </h2>
+                  <p className="hidden text-[0.7rem] text-muted-foreground sm:block">
+                    Clients, invoices &amp; projects
+                  </p>
+                </div>
+              </div>
+              <Link
+                to="/studio"
+                className="inline-flex min-h-[36px] shrink-0 items-center gap-1 text-xs font-semibold text-primary hover:underline"
+              >
+                Open <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3.5">
+              <Stat
+                label="Cash in"
+                value={mask(compactMoney(bal.studioInAll))}
+                fullValue={hideBalances ? undefined : money(bal.studioInAll)}
+                tone="pos"
+              />
+              <Stat
+                label="Studio out"
+                value={mask(compactMoney(bal.studioOutAll))}
+                fullValue={hideBalances ? undefined : money(bal.studioOutAll)}
+              />
+              <Stat
+                label="Open A/R"
+                value={mask(compactMoney(bal.openAR))}
+                fullValue={hideBalances ? undefined : money(bal.openAR)}
+              />
+              <Stat label="Active" value={String(studioActiveProjects)} />
+            </div>
+          </div>
+
+          <div className="mt-auto flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              <Link
+                to="/invoices/$id"
+                params={{ id: "new" }}
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
+              >
+                <Plus className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">Invoice</span>
+              </Link>
+              <Link
+                to="/clients"
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-border bg-secondary/75 px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent active:scale-95"
+              >
+                <Users className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <span className="truncate">Clients</span>
+              </Link>
+            </div>
+
+            <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+              <span className="font-num truncate">
+                Net {mask(compactMoney(bal.studioMonthNet, "USD", true))}
+              </span>
+              <Link
+                to="/projects"
+                className="shrink-0 font-medium text-primary hover:underline"
+              >
+                Projects →
+              </Link>
+            </div>
+          </div>
+        </Glass>
         {/* 1. Personal Money Card */}
         <Glass className="flex flex-col justify-between gap-4">
           <div className="flex flex-col gap-3.5">
@@ -659,6 +712,22 @@ function CommandDashboard() {
         </Glass>
       </div>
 
+      {/* Money Flow Sankey ("The River") */}
+      <MoneyFlowSankeyCard
+        db={db}
+        accountScope="all"
+        anchorMonth={month}
+        hideBalances={hideBalances}
+        onSelectCategory={(account, category) =>
+          setInspectedCategory({ account, category })
+        }
+        onQuickLog={(kind) =>
+          kind === "income" ? openNewIncome() : openNewExpense()
+        }
+        layoutIdPrefix="dash-money-flow"
+        className="mb-4"
+      />
+
       {/* Interactive Cash Flow + Recent Activity */}
       <div
         id="dashboard-cashflow"
@@ -666,32 +735,38 @@ function CommandDashboard() {
       >
         <Glass className="flex flex-col justify-between lg:col-span-7">
           <div>
-            <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-medium">Cash Flow</h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="font-medium">
+                {cashLens === "net"
+                  ? "Net Flow"
+                  : cashLens === "category"
+                    ? "By Category"
+                    : cashLens === "method"
+                      ? "By Card"
+                      : "Cash Flow"}
+              </h2>
+              <ChartModeCycleButton mode={cashMode} onChange={setCashMode} />
+            </div>
+
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <SlidingTabs
+                stretch
                 size="xs"
                 tone="invert"
                 layoutGroup="dash-cf-range"
+                className="w-full sm:w-auto"
                 value={cashRange}
                 onChange={setCashRange}
                 options={CASH_RANGES}
               />
-            </div>
-
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <SlidingTabs
+                stretch
                 size="xs"
                 layoutGroup="dash-cf-lens"
+                className="w-full sm:w-auto"
                 value={cashLens}
                 onChange={setCashLens}
                 options={CHART_LENS_OPTIONS}
-              />
-              <SlidingTabs
-                size="xs"
-                layoutGroup="dash-cf-mode"
-                value={cashMode}
-                onChange={setCashMode}
-                options={CHART_MODE_OPTIONS}
               />
             </div>
 
@@ -715,7 +790,7 @@ function CommandDashboard() {
           </div>
 
           <TrendChartCanvas
-            mode={isGrouped ? "bar" : cashMode}
+            mode={cashMode}
             data={chartRows}
             primaryKey="primary"
             primaryName={primaryLabel}
@@ -729,11 +804,13 @@ function CommandDashboard() {
 
         <Glass className="flex flex-col justify-between lg:col-span-5">
           <div>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <h2 className="font-medium">Recent Activity</h2>
               <SlidingTabs
+                stretch
                 size="xs"
                 layoutGroup="dash-feed-scope"
+                className="w-full sm:w-auto"
                 value={feedScope}
                 onChange={(next) => {
                   setFeedScope(next);
@@ -741,6 +818,7 @@ function CommandDashboard() {
                 }}
                 options={[
                   { id: "all", label: "All" },
+                  { id: "Studio", label: "Studio" },
                   { id: "Personal", label: "Personal" },
                   { id: "Work", label: "Work" },
                 ]}
@@ -758,7 +836,9 @@ function CommandDashboard() {
                     ? expenseItemIcon(item.expense)
                     : item.income
                       ? incomeSourceIcon(item.income.source)
-                      : CheckCircle2;
+                      : item.invoiceId
+                        ? Briefcase
+                        : CheckCircle2;
 
                   return (
                     <li key={item.id}>
@@ -769,6 +849,11 @@ function CommandDashboard() {
                           else if (item.income) setIncomeDraft(item.income);
                           else if (item.workTask)
                             setWorkTaskDraft(item.workTask);
+                          else if (item.invoiceId)
+                            navigate({
+                              to: "/invoices/$id",
+                              params: { id: item.invoiceId },
+                            });
                         }}
                         className="flex w-full items-center justify-between gap-2.5 rounded-xl px-1.5 py-2.5 text-left transition-colors hover:bg-muted/60"
                       >
@@ -886,21 +971,45 @@ function CommandDashboard() {
         </Glass>
       )}
 
-      {/* Personal Expense Drawer */}
-      <EditModal
+      {/* Category Inspector Drawer with Interactive Timeline */}
+      <CategoryInspectorDrawer
+        db={db}
+        account={inspectedCategory?.account ?? "Personal"}
+        category={inspectedCategory?.category ?? null}
+        month={month}
+        onClose={() => setInspectedCategory(null)}
+        onAddExpense={(acc, cat) => {
+          setInspectedCategory(null);
+          setExpenseDraft({
+            id: uid(),
+            date: today(),
+            projectId: "",
+            category: cat,
+            vendor: "Debit",
+            description: "",
+            amount: 0,
+            currency: "USD",
+            receipt: "",
+            account: acc,
+          });
+        }}
+        onEditExpense={(exp) => {
+          setInspectedCategory(null);
+          setExpenseDraft(exp);
+        }}
+      />
+
+      {/* Fast-Tap Personal Expense Drawer */}
+      <QuickExpenseDrawer
         item={expenseDraft}
         onClose={() => setExpenseDraft(null)}
-        title="Personal Expense"
-        subtitle="Personal Money"
-        presentation="drawer"
-        side="right"
-        fields={expenseFields}
         onSave={(v) => {
+          const acc = expenseAccount(v);
           setDB((d) => ({
             ...d,
-            expenses: upsert(d.expenses, { ...v, account: "Personal" }),
+            expenses: upsert(d.expenses, { ...v, account: acc }),
           }));
-          toast.success("Personal expense saved.");
+          toast.success(`${acc} expense saved.`);
         }}
         onDelete={
           expenseDraft && db.expenses.some((e) => e.id === expenseDraft.id)
@@ -915,15 +1024,10 @@ function CommandDashboard() {
         }
       />
 
-      {/* Personal Income Drawer */}
-      <EditModal
+      {/* Fast-Tap Personal Income Drawer */}
+      <QuickIncomeDrawer
         item={incomeDraft}
         onClose={() => setIncomeDraft(null)}
-        title="Log Personal Income"
-        subtitle="Salary · Freelance · Bonus"
-        presentation="drawer"
-        side="right"
-        fields={incomeFields}
         onSave={(v) => {
           setDB((d) => ({
             ...d,

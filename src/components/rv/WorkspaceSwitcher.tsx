@@ -1,7 +1,7 @@
-import { Home, Layers3, PiggyBank } from "lucide-react";
+import { Briefcase, Home, Layers3, PiggyBank } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type WorkspaceMode = "dashboard" | "personal" | "work";
+export type WorkspaceMode = "dashboard" | "studio" | "personal" | "work";
 
 const WORKSPACES: {
   id: WorkspaceMode;
@@ -12,8 +12,14 @@ const WORKSPACES: {
   {
     id: "dashboard",
     label: "Dashboard",
-    subtitle: "Personal balance, cash flow & quick scan",
+    subtitle: "Unified Studio, Personal & Work command view",
     icon: Home,
+  },
+  {
+    id: "studio",
+    label: "Studio",
+    subtitle: "Clients, quotations, invoices & studio cash flow",
+    icon: Briefcase,
   },
   {
     id: "personal",

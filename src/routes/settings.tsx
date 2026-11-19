@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Download, Plus, Upload } from "lucide-react";
-import { Btn, F, Glass, PageHeader } from "@/components/rv/ui";
+import { Database, Download, Plus, RotateCcw, Upload } from "lucide-react";
+import { Btn, F, Glass, PageHeader, Stat } from "@/components/rv/ui";
 import { EditModal, nextCode, upsert, type Field } from "@/components/rv/Crud";
 import {
   PILLARS,
@@ -108,30 +108,138 @@ function Page() {
     </F>
   );
   const exportData = () => {
+    const snapshot = getDB();
+    const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(
-      new Blob([JSON.stringify(getDB())], { type: "application/json" }),
-    );
+    a.href = url;
     a.download = `rothvan-backup-${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast.success("Database backup downloaded.");
   };
+
   const importData = async (f: File) => {
     try {
       const p = JSON.parse(await f.text());
-      if (!p.settings) throw 0;
-      setDB(() => ({
-        ...p,
-        personalIncome: Array.isArray(p.personalIncome) ? p.personalIncome : [],
-        workTasks: Array.isArray(p.workTasks) ? p.workTasks : [],
+      if (!p || typeof p !== "object" || !p.settings) {
+        throw new Error("Invalid backup file");
+      }
+      const nextExpenses = Array.isArray(p.expenses) ? p.expenses : [];
+      const nextIncome = Array.isArray(p.personalIncome)
+        ? p.personalIncome
+        : [];
+      const nextWork = Array.isArray(p.workTasks) ? p.workTasks : [];
+
+      setDB((prev) => ({
+        clients: Array.isArray(p.clients) ? p.clients : prev.clients,
+        services: Array.isArray(p.services) ? p.services : prev.services,
+        projects: Array.isArray(p.projects) ? p.projects : prev.projects,
+        invoices: Array.isArray(p.invoices) ? p.invoices : prev.invoices,
+        payments: Array.isArray(p.payments) ? p.payments : prev.payments,
+        expenses: nextExpenses,
+        personalIncome: nextIncome,
+        workTasks: nextWork,
+        goals: Array.isArray(p.goals) ? p.goals : prev.goals,
+        settings: { ...prev.settings, ...p.settings },
+        categoryLimits:
+          p.categoryLimits && typeof p.categoryLimits === "object"
+            ? p.categoryLimits
+            : prev.categoryLimits,
+        caseStudies:
+          p.caseStudies && typeof p.caseStudies === "object"
+            ? p.caseStudies
+            : prev.caseStudies,
       }));
-      toast.success("Backup restored.");
+      toast.success(
+        `Backup restored (${nextExpenses.length} expenses, ${nextIncome.length} income, ${nextWork.length} work items).`,
+      );
     } catch {
-      toast.error("That file isn't a RothVan backup.");
+      toast.error("That file isn't a valid RothVan backup.");
     }
   };
+
+  const totalRecords =
+    db.expenses.length +
+    (db.personalIncome?.length ?? 0) +
+    (db.workTasks?.length ?? 0) +
+    db.goals.length;
+
   return (
     <>
       <PageHeader title="Settings" owner={s.ownerName} />
+
+      <Glass className="mb-4 min-w-0 border-primary/25">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-primary/35 bg-primary/15 text-primary">
+              <Database className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="truncate font-display text-lg font-bold">
+                Database Backup &amp; Restore
+              </h2>
+              <p className="truncate text-xs text-muted-foreground">
+                Download a JSON copy or restore from a saved backup
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-3 grid grid-cols-2 gap-2.5 rounded-2xl bg-muted/35 p-3 sm:grid-cols-4">
+          <Stat label="Expenses" value={String(db.expenses.length)} />
+          <Stat
+            label="Income"
+            value={String(db.personalIncome?.length ?? 0)}
+            tone="pos"
+          />
+          <Stat label="Work Tasks" value={String(db.workTasks?.length ?? 0)} />
+          <Stat label="Total Saved" value={String(totalRecords)} />
+        </div>
+
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <Btn
+            type="button"
+            variant="gold"
+            onClick={exportData}
+            className="w-full justify-center"
+          >
+            <Download className="h-4 w-4 shrink-0" />
+            <span>Download Database</span>
+          </Btn>
+          <label className="inline-flex min-h-[42px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground transition-all hover:bg-accent active:scale-95 sm:min-h-[38px]">
+            <Upload className="h-4 w-4 shrink-0 text-primary" />
+            <span>Upload Backup</span>
+            <input
+              type="file"
+              accept=".json,application/json"
+              className="sr-only"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void importData(file);
+                e.target.value = "";
+              }}
+            />
+          </label>
+          <Btn
+            type="button"
+            variant="danger"
+            onClick={() => {
+              if (confirm("Erase everything and restore sample data?")) {
+                resetDB();
+                toast.message("Sample data restored.");
+              }
+            }}
+            className="w-full justify-center"
+          >
+            <RotateCcw className="h-4 w-4 shrink-0" />
+            <span>Reset Sample Data</span>
+          </Btn>
+        </div>
+      </Glass>
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Glass className="min-w-0">
           <h2 className="mb-4 font-display text-lg font-bold">Business</h2>
@@ -271,34 +379,6 @@ function Page() {
               onChange={(e) => set("thankYou", e.target.value)}
             />
           </F>
-          <p className="label-mono mb-2 mt-4">Backup</p>
-          <div className="flex flex-wrap gap-2">
-            <Btn onClick={exportData}>
-              <Download className="h-4 w-4" />
-              Download backup
-            </Btn>
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border bg-secondary px-4 py-2 text-sm hover:bg-accent">
-              <Upload className="h-4 w-4" />
-              Restore
-              <input
-                type="file"
-                accept="application/json"
-                className="hidden"
-                onChange={(e) =>
-                  e.target.files?.[0] && importData(e.target.files[0])
-                }
-              />
-            </label>
-            <Btn
-              variant="danger"
-              onClick={() =>
-                confirm("Erase everything and restore sample data?") &&
-                resetDB()
-              }
-            >
-              Reset
-            </Btn>
-          </div>
         </Glass>
       </div>
       <EditModal

@@ -31,7 +31,7 @@ import {
 } from "@/components/rv/FinanceVisuals";
 import {
   BreakdownPieCard,
-  CHART_MODE_OPTIONS,
+  ChartModeCycleButton,
   PeriodBarPulseCard,
   SparklineWithDates,
   TrendChartCanvas,
@@ -508,32 +508,31 @@ function StudioDashboard() {
       },
       cashFlowChart: {
         id: "cashFlowChart",
-        title: "Studio cash flow",
+        title: "Cash Flow",
         defaultSpan: 7,
         render: () => (
           <Glass delay={80} className="h-full">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-medium">Studio cash flow</h2>
-              <div className="flex flex-wrap items-center gap-2">
-                <SlidingTabs
-                  size="xs"
-                  layoutGroup="ov-cash-mode"
-                  value={cashChartMode}
-                  onChange={setCashChartMode}
-                  options={CHART_MODE_OPTIONS}
-                />
-                <SlidingTabs
-                  size="xs"
-                  tone="invert"
-                  layoutGroup="ov-cash-range"
-                  value={range}
-                  onChange={setRange}
-                  options={RANGE_OPTIONS.map((o) => ({
-                    id: o.id,
-                    label: o.label,
-                  }))}
-                />
-              </div>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="font-medium">Cash Flow</h2>
+              <ChartModeCycleButton
+                mode={cashChartMode}
+                onChange={setCashChartMode}
+              />
+            </div>
+            <div className="mb-3">
+              <SlidingTabs
+                stretch
+                size="xs"
+                tone="invert"
+                layoutGroup="ov-cash-range"
+                className="w-full sm:w-auto"
+                value={range}
+                onChange={setRange}
+                options={RANGE_OPTIONS.map((o) => ({
+                  id: o.id,
+                  label: o.label,
+                }))}
+              />
             </div>
             <div className="mb-3 grid grid-cols-3 gap-3">
               <Stat

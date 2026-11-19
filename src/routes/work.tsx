@@ -736,30 +736,30 @@ function WorkPage() {
         title="Full-Time Work & Portfolio"
         owner={db.settings.ownerName}
         action={
-          <div className="no-print flex flex-wrap items-center gap-2">
+          <div className="no-print grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
             <Btn
               type="button"
               onClick={() => caseStudyFilesInputRef.current?.click()}
-              className="whitespace-nowrap shrink-0"
+              className="w-full justify-center whitespace-nowrap px-3 text-xs sm:w-auto sm:shrink-0 sm:px-4 sm:text-sm"
             >
-              <Sparkles className="h-4 w-4 text-primary" />
-              Auto Case Study
+              <Sparkles className="h-3.5 w-3.5 shrink-0 text-primary" />
+              Case Study
             </Btn>
             <Btn
               type="button"
               onClick={() => setImportOpen(true)}
-              className="whitespace-nowrap shrink-0"
+              className="w-full justify-center whitespace-nowrap px-3 text-xs sm:w-auto sm:shrink-0 sm:px-4 sm:text-sm"
             >
-              <FileSpreadsheet className="h-4 w-4" />
+              <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
               Import CSV
             </Btn>
             <Btn
               type="button"
               variant="gold"
               onClick={() => setEditingTask(blankTask({ status: "Current" }))}
-              className="whitespace-nowrap shrink-0"
+              className="col-span-2 w-full justify-center whitespace-nowrap sm:col-span-1 sm:w-auto sm:shrink-0"
             >
-              <Plus className="h-4 w-4" />
+              <Plus className="h-4 w-4 shrink-0" />
               Add work task
             </Btn>
           </div>
@@ -772,25 +772,27 @@ function WorkPage() {
 
       <div className="no-print mb-5 flex flex-wrap items-center justify-between gap-3">
         <SlidingTabs
+          stretch
+          className="w-full sm:w-auto"
           layoutGroup="work-main-tabs"
           value={tab}
           onChange={setTab}
           options={[
             {
               id: "tasks",
-              label: "Work Tasks",
+              label: "Tasks",
               icon: Briefcase,
               badge: workTasks.length,
             },
             {
               id: "summary",
-              label: "Portfolio Summary",
+              label: "Portfolio",
               icon: Sparkles,
               badge: output.completedTotal,
             },
             {
               id: "gallery",
-              label: "Design Gallery",
+              label: "Gallery",
               icon: Layers,
               badge: output.mediaCount,
             },

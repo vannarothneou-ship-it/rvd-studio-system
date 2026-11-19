@@ -357,6 +357,20 @@
     transform: translateY(-2px);
   }
 }
+@keyframes scanSweep {
+  0% {
+    transform: translateY(8%);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translateY(168px);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(8%);
+    opacity: 0.85;
+  }
+}
 @utility drawer-in {
   animation: drawerIn 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
@@ -365,6 +379,10 @@
 }
 @utility jar-sheen {
   opacity: 0.32;
+}
+@utility scan-sweep {
+  animation: scanSweep 2.1s ease-in-out infinite;
+  will-change: transform, opacity;
 }
 .no-scrollbar {
   -ms-overflow-style: none;

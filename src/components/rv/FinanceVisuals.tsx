@@ -41,11 +41,24 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
+  buildCategoryTimeline,
+  type CategoryTimelineRange,
+} from "@/lib/money-flow";
+import {
   categoryLimit,
   compactMoney,
-  expenseAccount,
   money,
-  previousMonth,
   setCategoryLimit,
   shortDate,
   toUSD,
@@ -56,7 +69,7 @@ import {
   type Goal,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { Btn } from "@/components/rv/ui";
+import { Btn, SlidingTabs } from "@/components/rv/ui";
 
 /* ---------- Category & Item Icon Mapping ---------- */
 
@@ -581,6 +594,15 @@ export function BudgetShelf({
 
 /* ---------- Right-Side Category Inspector Slide-Over Drawer ---------- */
 
+const TIMELINE_OPTIONS: { id: CategoryTimelineRange; label: string }[] = [
+  { id: "1w", label: "1W" },
+  { id: "1m", label: "1M" },
+  { id: "3m", label: "3M" },
+  { id: "6m", label: "6M" },
+  { id: "12m", label: "12M" },
+  { id: "all", label: "All" },
+];
+
 export function CategoryInspectorDrawer({
   db,
   account,
@@ -601,11 +623,19 @@ export function CategoryInspectorDrawer({
   const limit = category ? categoryLimit(db, account, category) : 0;
   const [limitInput, setLimitInput] = useState(String(limit));
   const [savedFlash, setSavedFlash] = useState(false);
+  const [timelineRange, setTimelineRange] =
+    useState<CategoryTimelineRange>("1m");
+  const [showAllItems, setShowAllItems] = useState(false);
 
   useEffect(() => {
     setLimitInput(String(limit));
     setSavedFlash(false);
+    setShowAllItems(false);
   }, [category, limit]);
+
+  useEffect(() => {
+    setShowAllItems(false);
+  }, [timelineRange]);
 
   useEffect(() => {
     if (!category) return;
@@ -616,53 +646,38 @@ export function CategoryInspectorDrawer({
     return () => window.removeEventListener("keydown", onKey);
   }, [category, onClose]);
 
-  if (!category) return null;
+  const timeline = useMemo(() => {
+    if (!category) return null;
+    return buildCategoryTimeline(db, account, category, timelineRange, month);
+  }, [db, account, category, timelineRange, month]);
+
+  if (!category || !timeline) return null;
 
   const r = db.settings.khrRate;
-  const prevYm = previousMonth(month);
-  const monthLabel = new Date(month + "-01T00:00:00Z").toLocaleDateString(
-    "en-US",
-    { month: "long", year: "numeric", timeZone: "UTC" },
-  );
-  const shortCur = new Date(month + "-01T00:00:00Z").toLocaleDateString(
-    "en-US",
-    { month: "short", timeZone: "UTC" },
-  );
-  const shortPrev = new Date(prevYm + "-01T00:00:00Z").toLocaleDateString(
-    "en-US",
-    { month: "short", timeZone: "UTC" },
-  );
-
-  const items = db.expenses
-    .filter(
-      (e) =>
-        expenseAccount(e) === account &&
-        e.category === category &&
-        e.date.startsWith(month),
-    )
-    .sort((a, b) => b.date.localeCompare(a.date));
-
-  const spentCur = items.reduce(
-    (s, e) => s + toUSD(e.amount, e.currency, r),
-    0,
-  );
-  const spentPrev = db.expenses
-    .filter(
-      (e) =>
-        expenseAccount(e) === account &&
-        e.category === category &&
-        e.date.startsWith(prevYm),
-    )
-    .reduce((s, e) => s + toUSD(e.amount, e.currency, r), 0);
-
   const pacePct = monthPacePercent(month);
-  const pct = limit > 0 ? Math.round((spentCur / limit) * 100) : 100;
+  const jarLimit =
+    timelineRange === "all"
+      ? Math.max(limit, timeline.totalUSD)
+      : timeline.scaledLimit;
+  const pct =
+    jarLimit > 0 ? Math.round((timeline.totalUSD / jarLimit) * 100) : 100;
   const statusLabel =
-    pct > 100
-      ? "Over limit"
-      : pct > Math.min(95, pacePct + 12)
-        ? "Spending fast"
-        : "On pace";
+    timelineRange === "all"
+      ? `${timeline.txCount} total entries`
+      : pct > 100
+        ? "Over limit"
+        : timelineRange === "1m" && pct > Math.min(95, pacePct + 12)
+          ? "Spending fast"
+          : "On pace";
+
+  const isMultiMonthChart =
+    timelineRange === "3m" ||
+    timelineRange === "6m" ||
+    timelineRange === "12m" ||
+    timelineRange === "all";
+  const visibleItems = showAllItems
+    ? timeline.items
+    : timeline.items.slice(0, 30);
 
   const saveLimit = () => {
     const val = Number(limitInput);
@@ -723,7 +738,7 @@ export function CategoryInspectorDrawer({
             </button>
             <div className="min-w-0">
               <span className="label-mono block truncate">
-                {account} · {monthLabel}
+                {account} · {timeline.scopeLabel}
               </span>
               <h2 className="truncate font-display text-lg font-bold sm:text-xl">
                 {category}
@@ -741,25 +756,41 @@ export function CategoryInspectorDrawer({
         </div>
 
         {/* Scrollable Content */}
-        <div className="flex-1 space-y-5 overflow-y-auto px-5 py-5">
+        <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5 sm:py-5">
+          {/* Interactive Timeline Toggle */}
+          <SlidingTabs
+            stretch
+            size="xs"
+            tone="invert"
+            layoutGroup="cat-inspector-timeline"
+            className="w-full"
+            value={timelineRange}
+            onChange={setTimelineRange}
+            options={TIMELINE_OPTIONS}
+          />
+
           {/* Centered Hero Jar */}
-          <div className="flex flex-col items-center rounded-2xl border border-border/70 bg-muted/25 py-5">
+          <div className="flex flex-col items-center rounded-2xl border border-border/70 bg-muted/25 py-4">
             <LiquidJar
               category={category}
-              spent={spentCur}
-              limit={limit}
-              pacePct={pacePct}
+              spent={timeline.totalUSD}
+              limit={jarLimit}
+              pacePct={timelineRange === "1m" ? pacePct : 100}
               size="lg"
               selected
             />
             <p className="mt-3 font-num text-xs text-muted-foreground">
-              <strong className="text-foreground">{money(spentCur)}</strong> of{" "}
-              {money(limit)}
+              <strong className="text-foreground">
+                {money(timeline.totalUSD)}
+              </strong>
+              {timelineRange === "all"
+                ? ` across ${timeline.txCount} transactions`
+                : ` of ${money(timeline.scaledLimit)}`}
             </p>
             <span
               className={cn(
                 "mt-1 text-xs font-medium",
-                statusLabel === "On pace"
+                statusLabel === "On pace" || timelineRange === "all"
                   ? "text-positive"
                   : "text-destructive",
               )}
@@ -768,23 +799,139 @@ export function CategoryInspectorDrawer({
             </span>
           </div>
 
-          {/* Month Comparison */}
+          {/* Interactive Category Timeline Trend Chart */}
+          <div className="rounded-2xl border border-border/70 bg-muted/25 p-3.5">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="label-mono">{timeline.scopeLabel} trend</span>
+              <span className="font-num text-[0.7rem] text-muted-foreground">
+                Avg {money(timeline.avgPerTx)} / tx
+              </span>
+            </div>
+            <div className="h-[150px] w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={timeline.points}
+                  margin={{ top: 8, right: 4, left: -24, bottom: 0 }}
+                >
+                  <CartesianGrid
+                    stroke="var(--border)"
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    opacity={0.55}
+                  />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                    interval={
+                      timelineRange === "1m"
+                        ? 5
+                        : timelineRange === "all" && timeline.points.length > 10
+                          ? Math.ceil(timeline.points.length / 6) - 1
+                          : 0
+                    }
+                  />
+                  <YAxis
+                    tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v) =>
+                      v === 0 ? "$0" : compactMoney(Number(v))
+                    }
+                  />
+                  <Tooltip
+                    cursor={{ fill: "var(--muted)", opacity: 0.45 }}
+                    content={({ active, payload }) => {
+                      if (!active || !payload?.length) return null;
+                      const pt = payload[0]?.payload as
+                        | { fullDate: string; amount: number; count: number }
+                        | undefined;
+                      if (!pt) return null;
+                      return (
+                        <div className="rounded-xl border border-border bg-card/95 px-2.5 py-1.5 text-xs shadow-lg backdrop-blur-md">
+                          <p className="font-medium text-foreground">
+                            {pt.fullDate}
+                          </p>
+                          <p className="font-num font-bold text-primary">
+                            {money(pt.amount)}{" "}
+                            <span className="font-normal text-muted-foreground">
+                              · {pt.count} {pt.count === 1 ? "tx" : "txs"}
+                            </span>
+                          </p>
+                        </div>
+                      );
+                    }}
+                  />
+                  {isMultiMonthChart && limit > 0 && (
+                    <ReferenceLine
+                      y={limit}
+                      stroke="var(--muted-foreground)"
+                      strokeDasharray="4 4"
+                      strokeOpacity={0.7}
+                    />
+                  )}
+                  <Bar
+                    dataKey="amount"
+                    radius={[5, 5, 2, 2]}
+                    maxBarSize={timelineRange === "1m" ? 10 : 28}
+                  >
+                    {timeline.points.map((pt) => {
+                      const overLimit =
+                        isMultiMonthChart && limit > 0 && pt.amount > limit;
+                      return (
+                        <Cell
+                          key={pt.key}
+                          fill={
+                            overLimit ? "var(--destructive)" : "var(--primary)"
+                          }
+                          fillOpacity={pt.amount > 0 ? 0.9 : 0.25}
+                        />
+                      );
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Period Comparison */}
           <div className="divide-y divide-border rounded-2xl border border-border/70 bg-muted/25 px-4 text-sm">
             <div className="flex items-center justify-between py-2.5">
-              <span className="text-muted-foreground">Spent in {shortCur}</span>
-              <AnimatedNumber
-                value={spentCur}
-                className="font-num font-semibold"
-              />
-            </div>
-            <div className="flex items-center justify-between py-2.5">
               <span className="text-muted-foreground">
-                Spent in {shortPrev}
+                {timeline.scopeLabel}
               </span>
-              <span className="font-num text-muted-foreground">
-                {money(spentPrev)}
+              <span className="flex items-center gap-2">
+                {timeline.deltaPct !== null && (
+                  <span
+                    className={cn(
+                      "font-num rounded-full px-1.5 py-0.5 text-[0.65rem] font-semibold",
+                      timeline.deltaPct > 0
+                        ? "bg-destructive/15 text-destructive"
+                        : "bg-positive/15 text-positive",
+                    )}
+                  >
+                    {timeline.deltaPct > 0
+                      ? `↑ ${timeline.deltaPct}%`
+                      : `↓ ${Math.abs(timeline.deltaPct)}%`}
+                  </span>
+                )}
+                <AnimatedNumber
+                  value={timeline.totalUSD}
+                  className="font-num font-semibold"
+                />
               </span>
             </div>
+            {timeline.prevTotalUSD !== null && timeline.prevLabel && (
+              <div className="flex items-center justify-between py-2.5">
+                <span className="text-muted-foreground">
+                  {timeline.prevLabel}
+                </span>
+                <span className="font-num text-muted-foreground">
+                  {money(timeline.prevTotalUSD)}
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Editable Monthly Limit */}
@@ -823,7 +970,7 @@ export function CategoryInspectorDrawer({
           <div>
             <div className="mb-2.5 flex items-center justify-between">
               <span className="label-mono">
-                What I paid for ({items.length})
+                What I paid for ({timeline.items.length})
               </span>
               {onAddExpense && (
                 <button
@@ -837,42 +984,55 @@ export function CategoryInspectorDrawer({
               )}
             </div>
 
-            {items.length === 0 ? (
+            {timeline.items.length === 0 ? (
               <p className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-center text-xs text-muted-foreground">
-                No {category} transactions in {monthLabel}.
+                No {category} transactions in {timeline.scopeLabel}.
               </p>
             ) : (
-              <ul className="divide-y divide-border rounded-2xl border border-border/70 bg-muted/20">
-                {items.map((e) => {
-                  const ItemIcon = expenseItemIcon(e);
-                  const usd = toUSD(e.amount, e.currency, r);
-                  return (
-                    <li key={e.id}>
-                      <button
-                        type="button"
-                        onClick={() => onEditExpense?.(e)}
-                        className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/50"
-                      >
-                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-background/50 text-primary">
-                          <ItemIcon className="h-3.5 w-3.5" />
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">
-                            {e.description || e.vendor || category}
-                          </p>
-                          <p className="truncate text-[0.72rem] text-muted-foreground">
-                            {shortDate(e.date)}
-                            {e.vendor ? ` · ${e.vendor}` : ""}
-                          </p>
-                        </div>
-                        <span className="shrink-0 font-num text-xs font-semibold text-destructive">
-                          -{money(usd)}
-                        </span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+              <>
+                <ul className="divide-y divide-border rounded-2xl border border-border/70 bg-muted/20">
+                  {visibleItems.map((e) => {
+                    const ItemIcon = expenseItemIcon(e);
+                    const usd = toUSD(e.amount, e.currency, r);
+                    return (
+                      <li key={e.id}>
+                        <button
+                          type="button"
+                          onClick={() => onEditExpense?.(e)}
+                          className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/50"
+                        >
+                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-background/50 text-primary">
+                            <ItemIcon className="h-3.5 w-3.5" />
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">
+                              {e.description || e.vendor || category}
+                            </p>
+                            <p className="truncate text-[0.72rem] text-muted-foreground">
+                              {shortDate(e.date)}
+                              {e.vendor ? ` · ${e.vendor}` : ""}
+                            </p>
+                          </div>
+                          <span className="shrink-0 font-num text-xs font-semibold text-destructive">
+                            -{money(usd)}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+                {timeline.items.length > 30 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllItems((v) => !v)}
+                    className="mt-2 w-full rounded-xl border border-border/70 py-2 text-xs font-medium text-primary hover:bg-muted/40"
+                  >
+                    {showAllItems
+                      ? "Show fewer transactions"
+                      : `Show all ${timeline.items.length} transactions`}
+                  </button>
+                )}
+              </>
             )}
           </div>
         </div>

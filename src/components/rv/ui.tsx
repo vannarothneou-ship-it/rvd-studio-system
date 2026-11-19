@@ -30,6 +30,7 @@ export function SlidingTabs<T extends string>({
   onChange,
   tone = "primary",
   size = "sm",
+  stretch = false,
   className,
 }: {
   options: readonly SlidingTabOption<T>[];
@@ -38,12 +39,14 @@ export function SlidingTabs<T extends string>({
   tone?: "primary" | "invert";
   size?: "xs" | "sm";
   layoutGroup?: string;
+  stretch?: boolean;
   className?: string;
 }) {
   return (
     <div
       className={cn(
-        "no-scrollbar inline-flex max-w-full flex-nowrap items-center gap-0.5 overflow-x-auto rounded-2xl border border-border bg-muted p-1 sm:rounded-full",
+        "no-scrollbar max-w-full flex-nowrap items-center gap-0.5 overflow-x-auto rounded-full border border-border bg-muted p-1",
+        stretch ? "flex w-full" : "inline-flex",
         size === "xs" ? "text-[0.72rem]" : "text-xs",
         className,
       )}
@@ -57,7 +60,8 @@ export function SlidingTabs<T extends string>({
             type="button"
             onClick={() => onChange(opt.id)}
             className={cn(
-              "inline-flex min-h-[34px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl font-medium transition-colors sm:min-h-0 sm:rounded-full",
+              "inline-flex min-h-[34px] items-center justify-center gap-1.5 whitespace-nowrap rounded-full font-medium transition-all duration-150 active:scale-[0.96] sm:min-h-0",
+              stretch ? "min-w-0 flex-1" : "shrink-0",
               size === "xs" ? "px-2.5 py-1" : "px-3 py-1.5",
               active
                 ? tone === "invert"
@@ -67,7 +71,7 @@ export function SlidingTabs<T extends string>({
             )}
           >
             {Icon && <Icon className="h-3.5 w-3.5 shrink-0" />}
-            <span>{opt.label}</span>
+            <span className="truncate">{opt.label}</span>
             {opt.badge !== undefined && (
               <span className="font-num text-[0.68rem] opacity-80">
                 {opt.badge}
@@ -109,26 +113,20 @@ export function PageHeader({
     year: "numeric",
   });
   return (
-    <header className="rise mb-3 flex flex-col gap-2 sm:mb-5 sm:grid sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:gap-4">
+    <header className="rise mb-3 flex flex-col gap-2.5 sm:mb-5 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
       <div className="min-w-0">
         <p className="hidden truncate text-xs text-muted-foreground sm:block sm:text-sm">
-          Welcome back, {owner}.
+          Welcome back, {owner}. · {month}
         </p>
         <h1 className="truncate font-display text-[1.45rem] font-bold tracking-tight sm:text-4xl">
           {title}
         </h1>
       </div>
-      <div
-        className={cn(
-          "shrink-0 flex-wrap items-center gap-2 sm:flex sm:flex-col sm:items-end",
-          action ? "flex" : "hidden",
-        )}
-      >
-        <span className="hidden text-xs text-muted-foreground sm:inline sm:text-sm">
-          {month}
-        </span>
-        {action}
-      </div>
+      {action && (
+        <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+          {action}
+        </div>
+      )}
     </header>
   );
 }
@@ -144,7 +142,7 @@ export function Btn({
     <button
       {...p}
       className={cn(
-        "inline-flex min-h-[42px] items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all active:scale-95 disabled:opacity-50 sm:min-h-[38px]",
+        "inline-flex min-h-[42px] items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all duration-150 active:scale-95 disabled:opacity-50 sm:min-h-[38px]",
         variant === "gold" &&
           "bg-primary text-primary-foreground shadow-[0_8px_24px_-8px_var(--primary)] hover:brightness-110",
         variant === "ghost" &&
@@ -210,6 +208,7 @@ export function SlideDrawer({
   onClose,
   title,
   subtitle,
+  headerAction,
   side = "right",
   widthClass = "max-w-md",
   children,
@@ -218,6 +217,7 @@ export function SlideDrawer({
   onClose: () => void;
   title: string;
   subtitle?: string | undefined;
+  headerAction?: ReactNode;
   side?: "right" | "left" | undefined;
   widthClass?: string | undefined;
   children: ReactNode;
@@ -272,14 +272,17 @@ export function SlideDrawer({
               </h2>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
+          <div className="flex shrink-0 items-center gap-1.5">
+            {headerAction}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto px-4 py-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] sm:px-5 sm:py-5">
           {children}
