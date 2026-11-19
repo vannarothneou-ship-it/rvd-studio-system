@@ -290,6 +290,14 @@ export interface PersonalIncome {
   amount: number;
   currency: Currency;
 }
+export type GoalCadence = "daily" | "monthly" | "yearly";
+export interface GoalContribution {
+  id: string;
+  date: string;
+  amount: number;
+  cadence?: GoalCadence;
+  note?: string;
+}
 export interface Goal {
   id: string;
   name: string;
@@ -297,6 +305,10 @@ export interface Goal {
   target: number;
   current: number;
   account?: Account;
+  cadence?: GoalCadence;
+  contributionAmount?: number;
+  targetDate?: string;
+  contributions?: GoalContribution[];
 }
 export interface Settings {
   businessName: string;
@@ -360,6 +372,22 @@ export interface CaseStudyDoc {
   updatedAt: string;
 }
 
+export type ReminderCategory =
+  "car-odo" | "birthday" | "special" | "bill" | "general";
+
+export interface CalendarReminder {
+  id: string;
+  title: string;
+  date: string;
+  category: ReminderCategory;
+  odoKm?: number;
+  notifyDaysBefore: number;
+  repeatYearly?: boolean;
+  notes: string;
+  media?: DesignMedia[];
+  dismissedForDate?: string;
+}
+
 export interface DB {
   clients: Client[];
   services: Service[];
@@ -369,6 +397,7 @@ export interface DB {
   expenses: Expense[];
   personalIncome: PersonalIncome[];
   workTasks: WorkTask[];
+  reminders?: CalendarReminder[];
   goals: Goal[];
   settings: Settings;
   categoryLimits?: Record<string, number>;
@@ -474,6 +503,7 @@ function seed(): DB {
     expenses: buildSampleExpenses(m),
     personalIncome: [],
     workTasks: [],
+    reminders: [],
     goals: rothvanGoals.map((g) => ({ ...g })),
     settings: { ...defaultSettings },
     categoryLimits: {},
@@ -513,6 +543,13 @@ function load() {
               featured: Boolean(t.featured),
               media: Array.isArray(t.media) ? t.media : [],
               artworkCount: Math.max(1, Number(t.artworkCount) || 1),
+            }))
+          : [],
+        reminders: Array.isArray(p.reminders)
+          ? (p.reminders as CalendarReminder[]).map((rm) => ({
+              ...rm,
+              notifyDaysBefore: Math.max(0, Number(rm.notifyDaysBefore) || 0),
+              media: Array.isArray(rm.media) ? rm.media : [],
             }))
           : [],
         services: rawServices.map((s) => ({

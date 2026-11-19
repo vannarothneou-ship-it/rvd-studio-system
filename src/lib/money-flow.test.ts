@@ -146,6 +146,9 @@ describe("buildMoneyFlowData", () => {
     expect(foodTarget?.amount).toBe(200);
     expect(foodTarget?.prevAmount).toBe(100);
     expect(foodTarget?.deltaPct).toBe(100);
+    expect(flow.timelinePoints.length).toBe(30);
+    expect(flow.timelinePoints.reduce((s, p) => s + p.income, 0)).toBe(1500);
+    expect(flow.timelinePoints.reduce((s, p) => s + p.spend, 0)).toBe(450);
   });
 
   it("handles Personal scope cleanly even when personal income is zero", () => {
@@ -159,6 +162,7 @@ describe("buildMoneyFlowData", () => {
     expect(flow.buckets.map((b) => b.id)).toEqual(["needs", "wants"]);
     expect(flow.sourceToBucketLinks).toHaveLength(0);
     expect(flow.bucketToTargetLinks.length).toBeGreaterThanOrEqual(2);
+    expect(flow.timelinePoints).toHaveLength(30);
   });
 });
 

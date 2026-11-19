@@ -8,56 +8,56 @@ export interface WorkProjectAccent {
 const PRESET_ACCENTS: Record<string, WorkProjectAccent> = {
   dbg: {
     dot: "oklch(0.83 0.14 82)",
-    calBg: "oklch(0.83 0.14 82 / 22%)",
-    calBorder: "oklch(0.83 0.14 82 / 55%)",
-    calText: "oklch(0.96 0.03 82)",
+    calBg: "oklch(0.83 0.14 82 / 24%)",
+    calBorder: "oklch(0.83 0.14 82 / 58%)",
+    calText: "var(--foreground)",
   },
   connexion: {
     dot: "oklch(0.7 0.14 240)",
-    calBg: "oklch(0.68 0.14 240 / 24%)",
-    calBorder: "oklch(0.68 0.14 240 / 55%)",
-    calText: "oklch(0.95 0.03 240)",
+    calBg: "oklch(0.68 0.14 240 / 26%)",
+    calBorder: "oklch(0.68 0.14 240 / 58%)",
+    calText: "var(--foreground)",
   },
   ocic: {
     dot: "oklch(0.76 0.14 155)",
-    calBg: "oklch(0.76 0.14 155 / 22%)",
-    calBorder: "oklch(0.76 0.14 155 / 55%)",
-    calText: "oklch(0.95 0.03 155)",
+    calBg: "oklch(0.76 0.14 155 / 24%)",
+    calBorder: "oklch(0.76 0.14 155 / 58%)",
+    calText: "var(--foreground)",
   },
 };
 
 const PALETTE: WorkProjectAccent[] = [
   {
     dot: "oklch(0.72 0.14 300)",
-    calBg: "oklch(0.72 0.14 300 / 22%)",
-    calBorder: "oklch(0.72 0.14 300 / 55%)",
-    calText: "oklch(0.95 0.03 300)",
+    calBg: "oklch(0.72 0.14 300 / 24%)",
+    calBorder: "oklch(0.72 0.14 300 / 58%)",
+    calText: "var(--foreground)",
   },
   {
     dot: "oklch(0.74 0.14 45)",
-    calBg: "oklch(0.74 0.14 45 / 22%)",
-    calBorder: "oklch(0.74 0.14 45 / 55%)",
-    calText: "oklch(0.95 0.03 45)",
+    calBg: "oklch(0.74 0.14 45 / 24%)",
+    calBorder: "oklch(0.74 0.14 45 / 58%)",
+    calText: "var(--foreground)",
   },
   {
     dot: "oklch(0.72 0.12 195)",
-    calBg: "oklch(0.72 0.12 195 / 22%)",
-    calBorder: "oklch(0.72 0.12 195 / 55%)",
-    calText: "oklch(0.95 0.03 195)",
+    calBg: "oklch(0.72 0.12 195 / 24%)",
+    calBorder: "oklch(0.72 0.12 195 / 58%)",
+    calText: "var(--foreground)",
   },
   {
     dot: "oklch(0.72 0.14 15)",
-    calBg: "oklch(0.72 0.14 15 / 22%)",
-    calBorder: "oklch(0.72 0.14 15 / 55%)",
-    calText: "oklch(0.95 0.03 15)",
+    calBg: "oklch(0.72 0.14 15 / 24%)",
+    calBorder: "oklch(0.72 0.14 15 / 58%)",
+    calText: "var(--foreground)",
   },
 ];
 
 const FALLBACK_ACCENT: WorkProjectAccent = {
   dot: "oklch(0.68 0.02 70)",
-  calBg: "oklch(0.68 0.02 70 / 20%)",
-  calBorder: "oklch(0.68 0.02 70 / 45%)",
-  calText: "oklch(0.94 0.01 70)",
+  calBg: "oklch(0.68 0.02 70 / 22%)",
+  calBorder: "oklch(0.68 0.02 70 / 48%)",
+  calText: "var(--foreground)",
 };
 
 export function workTaskProjectName(task: {

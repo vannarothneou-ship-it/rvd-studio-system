@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
+  ArrowDownLeft,
   ArrowLeft,
+  ArrowUpRight,
   Baby,
   Briefcase,
   Building2,
+  Calendar,
   Car,
   CheckCircle2,
   Coffee,
@@ -19,6 +22,7 @@ import {
   Megaphone,
   Monitor,
   Package,
+  Pencil,
   PiggyBank,
   Plane,
   Plus,
@@ -28,6 +32,8 @@ import {
   Smartphone,
   Sparkles,
   Stethoscope,
+  Target,
+  Trash2,
   TrendingUp,
   Type,
   Users,
@@ -56,6 +62,7 @@ import {
   type CategoryTimelineRange,
 } from "@/lib/money-flow";
 import {
+  addDays,
   categoryLimit,
   compactMoney,
   money,
@@ -63,13 +70,16 @@ import {
   shortDate,
   toUSD,
   today,
+  uid,
   type Account,
   type DB,
   type Expense,
   type Goal,
+  type GoalCadence,
+  type GoalContribution,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { Btn, SlidingTabs } from "@/components/rv/ui";
+import { Btn, F, Sel, SlideDrawer, SlidingTabs } from "@/components/rv/ui";
 
 /* ---------- Category & Item Icon Mapping ---------- */
 
@@ -1056,7 +1066,52 @@ export function CategoryInspectorDrawer({
   );
 }
 
-/* ---------- Video-Inspired Circular SVG Ring Goal Card ---------- */
+/* ---------- Circular SVG Ring Goal Card & Daily/Monthly/Yearly Goal Planner ---------- */
+
+const CADENCE_LABEL: Record<GoalCadence, string> = {
+  daily: "Daily",
+  monthly: "Monthly",
+  yearly: "Yearly",
+};
+
+const CADENCE_SHORT: Record<GoalCadence, string> = {
+  daily: "/day",
+  monthly: "/mo",
+  yearly: "/yr",
+};
+
+function convertCadenceAmounts(
+  amount: number,
+  cadence: GoalCadence,
+): { daily: number; monthly: number; yearly: number } {
+  const clean = Math.max(0, amount || 0);
+  if (cadence === "daily") {
+    return {
+      daily: clean,
+      monthly: clean * 30.4375,
+      yearly: clean * 365,
+    };
+  }
+  if (cadence === "yearly") {
+    return {
+      daily: clean / 365,
+      monthly: clean / 12,
+      yearly: clean,
+    };
+  }
+  return {
+    daily: clean / 30.4375,
+    monthly: clean,
+    yearly: clean * 12,
+  };
+}
+
+function daysBetweenIso(fromIso: string, toIso: string): number {
+  const a = new Date(fromIso + "T00:00:00Z").getTime();
+  const b = new Date(toIso + "T00:00:00Z").getTime();
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return 0;
+  return Math.round((b - a) / 86400000);
+}
 
 export function GoalRingCard({
   goal,
@@ -1086,6 +1141,8 @@ export function GoalRingCard({
   const circumference = 2 * Math.PI * radius;
   const targetOffset = circumference * (1 - (mounted ? pct : 0) / 100);
   const done = pct >= 100;
+  const cadence: GoalCadence = goal.cadence ?? "monthly";
+  const planAmt = goal.contributionAmount ?? 0;
 
   return (
     <div
@@ -1096,34 +1153,48 @@ export function GoalRingCard({
         <button
           type="button"
           onClick={onEdit}
-          className="min-w-0 text-left hover:text-primary"
+          className="min-w-0 flex-1 text-left hover:text-primary"
         >
           <p className="truncate text-sm font-semibold">
             {goal.name || "Untitled goal"}
           </p>
-          {accountLabel && (
-            <span className="font-num text-[0.65rem] text-muted-foreground">
-              {accountLabel}
-            </span>
-          )}
+          <p className="font-num mt-0.5 truncate text-[0.65rem] text-muted-foreground">
+            {planAmt > 0
+              ? `${compactMoney(planAmt)}${CADENCE_SHORT[cadence]}`
+              : accountLabel
+                ? accountLabel
+                : goal.targetDate
+                  ? `By ${shortDate(goal.targetDate)}`
+                  : CADENCE_LABEL[cadence]}
+          </p>
         </button>
-        <span
-          className={cn(
-            "shrink-0 rounded-full border px-2 py-0.5 font-num text-[0.68rem] font-semibold",
-            done
-              ? "border-positive/40 bg-positive/15 text-positive"
-              : "border-border bg-background/60 text-muted-foreground",
-          )}
-        >
-          {pct}%
-        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          <span
+            className={cn(
+              "rounded-full border px-2 py-0.5 font-num text-[0.68rem] font-semibold",
+              done
+                ? "border-positive/40 bg-positive/15 text-positive"
+                : "border-border bg-background/60 text-muted-foreground",
+            )}
+          >
+            {pct}%
+          </span>
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label={`Edit ${goal.name || "goal"}`}
+            className="grid h-7 w-7 place-items-center rounded-full border border-border/80 bg-background/60 text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+        </div>
       </div>
 
       {/* Circular Donut Progress Ring */}
       <button
         type="button"
         onClick={onEdit}
-        className="relative mx-auto my-3 grid h-32 w-32 place-items-center"
+        className="relative mx-auto my-2.5 grid h-28 w-28 place-items-center"
       >
         <svg className="h-full w-full -rotate-90" viewBox="0 0 108 108">
           <circle
@@ -1160,9 +1231,9 @@ export function GoalRingCard({
             format={(n) =>
               isMoney ? compactMoney(Math.round(n)) : String(Math.round(n))
             }
-            className="font-num text-lg font-bold leading-tight"
+            className="font-num text-base font-bold leading-tight"
           />
-          <span className="font-num mt-0.5 text-[0.68rem] text-muted-foreground">
+          <span className="font-num mt-0.5 text-[0.66rem] text-muted-foreground">
             of {isMoney ? compactMoney(goal.target) : goal.target}
           </span>
         </div>
@@ -1170,24 +1241,552 @@ export function GoalRingCard({
 
       {goal.kind === "manual" && onQuickAdd ? (
         <div className="flex items-center justify-center gap-1.5">
-          {[50, 100].map((amt) => (
+          {[10, 50, 100].map((amt) => (
             <button
               key={amt}
               type="button"
               onClick={() => onQuickAdd(amt)}
-              className="rounded-full border border-border px-3 py-1 text-[0.7rem] font-medium transition-colors hover:border-primary hover:bg-accent"
+              className="rounded-full border border-border px-2.5 py-1 text-[0.68rem] font-medium transition-colors hover:border-primary hover:bg-accent active:scale-95"
             >
               +${amt}
             </button>
           ))}
+          <button
+            type="button"
+            onClick={onEdit}
+            aria-label="Open planner & custom deposit"
+            className="grid h-7 w-7 place-items-center rounded-full border border-primary/40 bg-primary/12 text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
         </div>
       ) : (
-        <p className="text-center font-num text-[0.65rem] text-muted-foreground">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="text-center font-num text-[0.65rem] text-muted-foreground hover:text-primary"
+        >
           {goal.kind === "cash"
-            ? "Auto-synced from paid invoices"
-            : "Auto-synced from active clients"}
-        </p>
+            ? "Auto · Paid invoices"
+            : "Auto · Active clients"}
+        </button>
       )}
     </div>
+  );
+}
+
+export function GoalPlannerDrawer({
+  goal,
+  liveCurrent,
+  account,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  goal: Goal | null;
+  liveCurrent?: number | undefined;
+  account: Account;
+  onClose: () => void;
+  onSave: (next: Goal) => void;
+  onDelete?: ((goal: Goal) => void) | undefined;
+}) {
+  const [draft, setDraft] = useState<Goal | null>(null);
+  const [entryDir, setEntryDir] = useState<"deposit" | "withdraw">("deposit");
+  const [entryAmount, setEntryAmount] = useState("50");
+  const [entryDate, setEntryDate] = useState(() => today());
+  const [entryCadence, setEntryCadence] = useState<GoalCadence>("monthly");
+  const [entryNote, setEntryNote] = useState("");
+
+  useEffect(() => {
+    if (!goal) {
+      setDraft(null);
+      return;
+    }
+    const initCadence: GoalCadence = goal.cadence ?? "monthly";
+    setDraft({
+      ...goal,
+      cadence: initCadence,
+      contributionAmount: goal.contributionAmount ?? 0,
+      targetDate: goal.targetDate ?? "",
+      contributions: goal.contributions ?? [],
+    });
+    setEntryDir("deposit");
+    setEntryCadence(initCadence);
+    setEntryAmount(
+      goal.contributionAmount && goal.contributionAmount > 0
+        ? String(goal.contributionAmount)
+        : "50",
+    );
+    setEntryDate(today());
+    setEntryNote("");
+  }, [goal]);
+
+  const effectiveCurrent =
+    draft?.kind === "manual"
+      ? draft.current
+      : (liveCurrent ?? draft?.current ?? 0);
+  const targetVal = Math.max(0, draft?.target ?? 0);
+  const remaining = Math.max(0, targetVal - effectiveCurrent);
+  const pct =
+    targetVal > 0
+      ? Math.min(100, Math.round((effectiveCurrent / targetVal) * 100))
+      : 0;
+  const isMoney = draft?.kind !== "clients";
+
+  const cadence: GoalCadence = draft?.cadence ?? "monthly";
+  const planAmt = Math.max(0, draft?.contributionAmount ?? 0);
+  const planPace = useMemo(
+    () => convertCadenceAmounts(planAmt, cadence),
+    [planAmt, cadence],
+  );
+
+  const requiredPace = useMemo(() => {
+    if (!draft?.targetDate || remaining <= 0) return null;
+    const days = daysBetweenIso(today(), draft.targetDate);
+    if (days <= 0) return null;
+    const daily = remaining / days;
+    return {
+      days,
+      daily,
+      monthly: daily * 30.4375,
+      yearly: daily * 365,
+    };
+  }, [draft?.targetDate, remaining]);
+
+  const projectedCompletion = useMemo(() => {
+    if (remaining <= 0) return "Goal reached!";
+    if (planPace.daily <= 0.005) return "Set a contribution rate to estimate";
+    const daysNeeded = Math.ceil(remaining / planPace.daily);
+    if (daysNeeded > 36500) return "100+ years at current rate";
+    return `Est. ${shortDate(addDays(today(), daysNeeded))}`;
+  }, [remaining, planPace.daily]);
+
+  const handleLogContribution = () => {
+    if (!draft) return;
+    const amt = Math.max(0, Number(entryAmount) || 0);
+    if (amt <= 0) return;
+    const signed = entryDir === "deposit" ? amt : -amt;
+    const newEntry: GoalContribution = {
+      id: uid(),
+      date: entryDate || today(),
+      amount: signed,
+      cadence: entryCadence,
+      note:
+        entryNote.trim() ||
+        (entryDir === "deposit" ? "Saving deposit" : "Withdrawal"),
+    };
+    const nextGoal: Goal = {
+      ...draft,
+      current: Math.max(0, Math.round((draft.current + signed) * 100) / 100),
+      contributions: [newEntry, ...(draft.contributions ?? [])],
+    };
+    setDraft(nextGoal);
+    onSave(nextGoal);
+    setEntryNote("");
+  };
+
+  const handleRemoveContribution = (c: GoalContribution) => {
+    if (!draft) return;
+    const nextGoal: Goal = {
+      ...draft,
+      current: Math.max(0, Math.round((draft.current - c.amount) * 100) / 100),
+      contributions: (draft.contributions ?? []).filter((x) => x.id !== c.id),
+    };
+    setDraft(nextGoal);
+    onSave(nextGoal);
+  };
+
+  const handleSaveForm = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!draft) return;
+    onSave({
+      ...draft,
+      name: draft.name.trim() || "Saving Goal",
+      account,
+      target: Math.max(1, Number(draft.target) || 1),
+      current: Math.max(0, Number(draft.current) || 0),
+      contributionAmount: Math.max(0, Number(draft.contributionAmount) || 0),
+    });
+    onClose();
+  };
+
+  return (
+    <SlideDrawer
+      open={Boolean(draft)}
+      onClose={onClose}
+      title={draft?.name || "New Saving Goal"}
+      subtitle={`${account} · Daily / Monthly / Yearly Planner`}
+      widthClass="max-w-lg"
+    >
+      {draft && (
+        <form onSubmit={handleSaveForm} className="space-y-4">
+          {/* Progress Summary */}
+          <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="label-mono">Progress</p>
+                <p className="font-num mt-0.5 text-2xl font-extrabold text-foreground">
+                  {isMoney ? money(effectiveCurrent) : effectiveCurrent}{" "}
+                  <span className="text-sm font-medium text-muted-foreground">
+                    / {isMoney ? money(targetVal) : targetVal}
+                  </span>
+                </p>
+              </div>
+              <span className="font-num rounded-full border border-primary/40 bg-background/70 px-3 py-1 text-sm font-bold text-primary">
+                {pct}%
+              </span>
+            </div>
+            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn(
+                  "h-full rounded-full transition-all duration-300",
+                  pct >= 100 ? "bg-positive" : "bg-primary",
+                )}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span className="font-num">
+                Left: {isMoney ? money(remaining) : remaining}
+              </span>
+              <span className="font-num text-foreground">
+                {projectedCompletion}
+              </span>
+            </div>
+          </div>
+
+          {/* Cadence & Live Daily / Monthly / Yearly Calculator */}
+          <div className="space-y-2.5 rounded-2xl border border-border bg-muted/30 p-3.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="label-mono flex items-center gap-1.5">
+                <Target className="h-3.5 w-3.5 text-primary" />
+                Saving Cadence
+              </span>
+              <SlidingTabs
+                size="xs"
+                tone="invert"
+                layoutGroup="goal-plan-cadence"
+                value={cadence}
+                onChange={(next) => setDraft({ ...draft, cadence: next })}
+                options={[
+                  { id: "daily", label: "Daily" },
+                  { id: "monthly", label: "Monthly" },
+                  { id: "yearly", label: "Yearly" },
+                ]}
+              />
+            </div>
+
+            <div className="grid grid-cols-3 gap-2">
+              {(
+                [
+                  {
+                    k: "daily",
+                    label: "Daily",
+                    val: planPace.daily,
+                    req: requiredPace?.daily,
+                  },
+                  {
+                    k: "monthly",
+                    label: "Monthly",
+                    val: planPace.monthly,
+                    req: requiredPace?.monthly,
+                  },
+                  {
+                    k: "yearly",
+                    label: "Yearly",
+                    val: planPace.yearly,
+                    req: requiredPace?.yearly,
+                  },
+                ] as const
+              ).map((item) => (
+                <button
+                  key={item.k}
+                  type="button"
+                  onClick={() => setDraft({ ...draft, cadence: item.k })}
+                  className={cn(
+                    "rounded-xl border p-2.5 text-left transition-colors",
+                    cadence === item.k
+                      ? "border-primary bg-primary/12"
+                      : "border-border/70 bg-background/40 hover:border-primary/40",
+                  )}
+                >
+                  <p className="text-[0.65rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                    {item.label}
+                  </p>
+                  <p className="font-num mt-0.5 truncate text-sm font-bold text-foreground">
+                    {item.val > 0 ? compactMoney(item.val) : "—"}
+                  </p>
+                  {item.req !== undefined && (
+                    <p className="font-num mt-0.5 truncate text-[0.64rem] text-primary">
+                      Need {compactMoney(item.req)}
+                    </p>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Record Saving Deposit / Withdraw (Manual Goals) */}
+          {draft.kind === "manual" && (
+            <div className="space-y-3 rounded-2xl border border-border bg-muted/30 p-3.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="label-mono">Add / Update Saving</span>
+                <SlidingTabs
+                  size="xs"
+                  layoutGroup="goal-entry-dir"
+                  value={entryDir}
+                  onChange={setEntryDir}
+                  options={[
+                    { id: "deposit", label: "Deposit", icon: ArrowDownLeft },
+                    { id: "withdraw", label: "Withdraw", icon: ArrowUpRight },
+                  ]}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <F label="Amount (USD)">
+                  <input
+                    type="number"
+                    min={0}
+                    step="any"
+                    className="field font-num"
+                    value={entryAmount}
+                    onChange={(e) => setEntryAmount(e.target.value)}
+                  />
+                </F>
+                <F label="Date">
+                  <input
+                    type="date"
+                    className="field font-num"
+                    value={entryDate}
+                    onChange={(e) => setEntryDate(e.target.value)}
+                  />
+                </F>
+                <F label="Cycle" className="col-span-1">
+                  <Sel
+                    value={entryCadence}
+                    onChange={(v) => setEntryCadence(v as GoalCadence)}
+                    options={[
+                      { value: "daily", label: "Daily" },
+                      { value: "monthly", label: "Monthly" },
+                      { value: "yearly", label: "Yearly" },
+                    ]}
+                  />
+                </F>
+                <F label="Note (optional)" className="col-span-1">
+                  <input
+                    className="field"
+                    placeholder="e.g. Week 1 save"
+                    value={entryNote}
+                    onChange={(e) => setEntryNote(e.target.value)}
+                  />
+                </F>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-1.5">
+                  {[10, 50, 100, 250].map((v) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setEntryAmount(String(v))}
+                      className="rounded-full border border-border bg-background/50 px-2.5 py-1 font-num text-xs font-medium hover:border-primary"
+                    >
+                      ${v}
+                    </button>
+                  ))}
+                </div>
+                <Btn
+                  type="button"
+                  variant="gold"
+                  onClick={handleLogContribution}
+                  className="px-3.5 py-1.5 text-xs"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  {entryDir === "deposit" ? "Add saving" : "Withdraw"}
+                </Btn>
+              </div>
+
+              {(draft.contributions?.length ?? 0) > 0 && (
+                <div className="border-t border-border/60 pt-2.5">
+                  <p className="label-mono mb-1.5">
+                    History ({draft.contributions!.length})
+                  </p>
+                  <ul className="max-h-40 divide-y divide-border overflow-y-auto rounded-xl border border-border/60 bg-background/35">
+                    {draft.contributions!.map((c) => (
+                      <li
+                        key={c.id}
+                        className="flex items-center justify-between gap-2 px-3 py-2 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-foreground">
+                            {c.note || "Saving entry"}
+                          </p>
+                          <p className="font-num text-[0.68rem] text-muted-foreground">
+                            {shortDate(c.date)} ·{" "}
+                            {CADENCE_LABEL[c.cadence ?? "monthly"]}
+                          </p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <span
+                            className={cn(
+                              "font-num font-semibold",
+                              c.amount >= 0
+                                ? "text-positive"
+                                : "text-destructive",
+                            )}
+                          >
+                            {money(c.amount, "USD", true)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveContribution(c)}
+                            aria-label="Remove entry"
+                            className="rounded-full p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Goal Settings Form */}
+          <div className="grid grid-cols-2 gap-3 rounded-2xl border border-border bg-muted/25 p-3.5">
+            <F label="Goal name" className="col-span-2">
+              <input
+                className="field"
+                placeholder="e.g. Emergency Fund or Mac Studio"
+                value={draft.name}
+                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
+                required
+              />
+            </F>
+
+            {account === "Studio" && (
+              <F label="Tracking mode" className="col-span-2">
+                <Sel
+                  value={draft.kind}
+                  onChange={(v) =>
+                    setDraft({ ...draft, kind: v as Goal["kind"] })
+                  }
+                  options={[
+                    { value: "cash", label: "Studio cash received (auto)" },
+                    { value: "clients", label: "Active clients won (auto)" },
+                    { value: "manual", label: "Manual studio fund" },
+                  ]}
+                />
+              </F>
+            )}
+
+            <F
+              label={
+                draft.kind === "clients" ? "Target clients" : "Target (USD)"
+              }
+              className="col-span-1"
+            >
+              <input
+                type="number"
+                min={1}
+                step="any"
+                className="field font-num"
+                value={draft.target || ""}
+                onChange={(e) =>
+                  setDraft({ ...draft, target: Number(e.target.value) || 0 })
+                }
+                required
+              />
+            </F>
+
+            <F
+              label={draft.kind === "manual" ? "Current saved" : "Auto-synced"}
+              className="col-span-1"
+            >
+              <input
+                type="number"
+                min={0}
+                step="any"
+                disabled={draft.kind !== "manual"}
+                className="field font-num disabled:opacity-60"
+                value={
+                  draft.kind === "manual"
+                    ? draft.current
+                    : (liveCurrent ?? draft.current)
+                }
+                onChange={(e) =>
+                  setDraft({ ...draft, current: Number(e.target.value) || 0 })
+                }
+              />
+            </F>
+
+            <F
+              label={`Planned ${CADENCE_LABEL[cadence]} ($)`}
+              className="col-span-1"
+            >
+              <input
+                type="number"
+                min={0}
+                step="any"
+                className="field font-num"
+                placeholder="0"
+                value={draft.contributionAmount || ""}
+                onChange={(e) =>
+                  setDraft({
+                    ...draft,
+                    contributionAmount: Number(e.target.value) || 0,
+                  })
+                }
+              />
+            </F>
+
+            <F label="Target date" className="col-span-1">
+              <div className="relative">
+                <Calendar className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground opacity-50" />
+                <input
+                  type="date"
+                  className="field font-num"
+                  value={draft.targetDate ?? ""}
+                  onChange={(e) =>
+                    setDraft({ ...draft, targetDate: e.target.value })
+                  }
+                />
+              </div>
+            </F>
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-3">
+            <div>
+              {onDelete && (
+                <Btn
+                  type="button"
+                  variant="danger"
+                  onClick={() => {
+                    onDelete(draft);
+                    onClose();
+                  }}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete
+                </Btn>
+              )}
+            </div>
+            <div className="flex gap-2">
+              <Btn type="button" onClick={onClose}>
+                Cancel
+              </Btn>
+              <Btn type="submit" variant="gold">
+                <CheckCircle2 className="h-4 w-4" />
+                Save goal
+              </Btn>
+            </div>
+          </div>
+        </form>
+      )}
+    </SlideDrawer>
   );
 }

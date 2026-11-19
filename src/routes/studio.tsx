@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
+  Activity,
   ArrowDownLeft,
   ArrowUpRight,
   Briefcase,
@@ -25,6 +26,7 @@ import {
   AnimatedNumber,
   BudgetShelf,
   CategoryInspectorDrawer,
+  GoalPlannerDrawer,
   GoalRingCard,
   categoryIcon,
   expenseItemIcon,
@@ -97,9 +99,9 @@ export const Route = createFileRoute("/studio")({
 
 const RANGE_OPTIONS: { id: CashRange; label: string; desc: string }[] = [
   { id: "today", label: "Today", desc: "today" },
-  { id: "week", label: "Week", desc: "last 7 days" },
-  { id: "6m", label: "6m", desc: "last 6 months" },
-  { id: "12m", label: "12m", desc: "last 12 months" },
+  { id: "week", label: "1W", desc: "last 7 days" },
+  { id: "6m", label: "6M", desc: "last 6 months" },
+  { id: "12m", label: "12M", desc: "last 12 months" },
   { id: "all", label: "All", desc: "all time" },
 ];
 
@@ -279,22 +281,6 @@ function StudioDashboard() {
       type: "chips",
       options: ["USD", "KHR"],
     },
-  ];
-
-  const studioGoalFields = (): Field<Goal>[] => [
-    {
-      k: "kind",
-      label: "Tracks",
-      type: "select",
-      options: [
-        { value: "cash", label: "Studio cash received (auto)" },
-        { value: "clients", label: "Clients won (auto)" },
-        { value: "manual", label: "Manual studio fund" },
-      ],
-    },
-    { k: "name", label: "Goal name", wide: true },
-    { k: "target", label: "Target (USD or count)", type: "number" },
-    { k: "current", label: "Current saved (manual)", type: "number" },
   ];
 
   const studioCatsMonth = categoryTotals(db, "Studio", thisMonth);
@@ -519,13 +505,11 @@ function StudioDashboard() {
                 onChange={setCashChartMode}
               />
             </div>
-            <div className="mb-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <SlidingTabs
-                stretch
                 size="xs"
                 tone="invert"
                 layoutGroup="ov-cash-range"
-                className="w-full sm:w-auto"
                 value={range}
                 onChange={setRange}
                 options={RANGE_OPTIONS.map((o) => ({
@@ -534,18 +518,22 @@ function StudioDashboard() {
                 }))}
               />
             </div>
-            <div className="mb-3 grid grid-cols-3 gap-3">
+            <div className="mb-3 grid grid-cols-3 gap-3 rounded-2xl bg-muted/35 p-3">
               <Stat
-                label="● Cash in"
+                icon={ArrowDownLeft}
+                label="In"
                 value={compactMoney(cashIn)}
                 fullValue={money(cashIn)}
+                tone="pos"
               />
               <Stat
-                label="○ Studio out"
+                icon={ArrowUpRight}
+                label="Out"
                 value={compactMoney(cashOut)}
                 fullValue={money(cashOut)}
               />
               <Stat
+                icon={Activity}
                 label="Net"
                 value={compactMoney(cashIn - cashOut, "USD", true)}
                 fullValue={money(cashIn - cashOut, "USD", true)}
@@ -727,7 +715,20 @@ function StudioDashboard() {
                             ...d,
                             goals: d.goals.map((x) =>
                               x.id === g.id
-                                ? { ...x, current: x.current + amt }
+                                ? {
+                                    ...x,
+                                    current: x.current + amt,
+                                    contributions: [
+                                      {
+                                        id: uid(),
+                                        date: today(),
+                                        amount: amt,
+                                        cadence: x.cadence ?? "monthly",
+                                        note: "Quick add",
+                                      },
+                                      ...(x.contributions ?? []),
+                                    ],
+                                  }
                                 : x,
                             ),
                           }))
@@ -1146,14 +1147,11 @@ function StudioDashboard() {
         }
       />
 
-      <EditModal
-        item={goalDraft}
+      <GoalPlannerDrawer
+        goal={goalDraft}
+        liveCurrent={goalDraft ? goalValue(goalDraft) : undefined}
+        account="Studio"
         onClose={() => setGoalDraft(null)}
-        title="Studio Goal"
-        subtitle="RothVan Design"
-        presentation="drawer"
-        side="right"
-        fields={studioGoalFields()}
         onSave={(v) =>
           setDB((d) => ({
             ...d,

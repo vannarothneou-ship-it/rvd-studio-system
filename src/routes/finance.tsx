@@ -24,6 +24,7 @@ import {
   AnimatedNumber,
   BudgetShelf,
   CategoryInspectorDrawer,
+  GoalPlannerDrawer,
   GoalRingCard,
   categoryIcon,
   expenseItemIcon,
@@ -105,7 +106,7 @@ export const Route = createFileRoute("/finance")({
 
 const STUDIO_RANGES: { id: CashRange; label: string; desc: string }[] = [
   { id: "today", label: "Today", desc: "today" },
-  { id: "week", label: "Week", desc: "last 7 days" },
+  { id: "week", label: "1W", desc: "last 7 days" },
   { id: "6m", label: "6M", desc: "last 6 months" },
   { id: "12m", label: "12M", desc: "last 12 months" },
   { id: "all", label: "All", desc: "all time" },
@@ -255,6 +256,10 @@ function Page() {
       target: 1000,
       current: 0,
       account: "Studio",
+      cadence: "monthly",
+      contributionAmount: 100,
+      targetDate: "",
+      contributions: [],
     });
   };
 
@@ -291,22 +296,6 @@ function Page() {
       type: "chips",
       options: ["USD", "KHR"],
     },
-  ];
-
-  const goalFields = (): Field<Goal>[] => [
-    {
-      k: "kind",
-      label: "Tracks",
-      type: "select",
-      options: [
-        { value: "cash", label: "Studio cash received (auto)" },
-        { value: "clients", label: "Clients won (auto)" },
-        { value: "manual", label: "Manual studio fund" },
-      ],
-    },
-    { k: "name", label: "Goal name", wide: true },
-    { k: "target", label: "Target (USD or count)", type: "number" },
-    { k: "current", label: "Current saved (manual)", type: "number" },
   ];
 
   const q = query.trim().toLowerCase();
@@ -522,6 +511,7 @@ function Page() {
                 </div>
                 <div className="flex flex-wrap items-center gap-1.5">
                   <SlidingTabs
+                    iconOnly
                     size="xs"
                     tone="invert"
                     layoutGroup="fin-chart-lens"
@@ -530,6 +520,7 @@ function Page() {
                     options={CHART_LENS_OPTIONS.slice(0, 3)}
                   />
                   <SlidingTabs
+                    iconOnly
                     size="xs"
                     layoutGroup="fin-chart-mode"
                     value={chartMode}
@@ -700,7 +691,20 @@ function Page() {
                               ...d,
                               goals: d.goals.map((x) =>
                                 x.id === g.id
-                                  ? { ...x, current: x.current + amt }
+                                  ? {
+                                      ...x,
+                                      current: x.current + amt,
+                                      contributions: [
+                                        {
+                                          id: uid(),
+                                          date: today(),
+                                          amount: amt,
+                                          cadence: x.cadence ?? "monthly",
+                                          note: "Quick add",
+                                        },
+                                        ...(x.contributions ?? []),
+                                      ],
+                                    }
                                   : x,
                               ),
                             }))
@@ -1420,14 +1424,11 @@ function Page() {
         }
       />
 
-      {/* Right-Side Slide-Over Drawer for Studio Goals */}
-      <EditModal
-        presentation="drawer"
-        side="right"
-        item={goal}
-        fields={goalFields()}
-        subtitle="RothVan Design Goal"
-        title="Studio Goal"
+      {/* Right-Side Goal Planner Drawer for Studio Goals */}
+      <GoalPlannerDrawer
+        goal={goal}
+        liveCurrent={goal ? goalNow(goal) : undefined}
+        account="Studio"
         onClose={() => setGoal(null)}
         onSave={(v) =>
           setDB((d) => ({

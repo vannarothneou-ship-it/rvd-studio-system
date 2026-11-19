@@ -18,12 +18,15 @@ import {
 } from "recharts";
 import {
   Activity,
+  ArrowLeftRight,
   BarChart3,
   CreditCard,
   Landmark,
   PieChart as PieIcon,
   Plus,
+  Shapes,
   TrendingUp,
+  type LucideIcon,
 } from "lucide-react";
 import { Btn, Glass, SlidingTabs } from "@/components/rv/ui";
 import {
@@ -89,11 +92,15 @@ export function ChartModeCycleButton({
   );
 }
 
-export const CHART_LENS_OPTIONS: { id: ChartLens; label: string }[] = [
-  { id: "flow", label: "Flow" },
-  { id: "net", label: "Net" },
-  { id: "category", label: "Category" },
-  { id: "method", label: "Card" },
+export const CHART_LENS_OPTIONS: {
+  id: ChartLens;
+  label: string;
+  icon: LucideIcon;
+}[] = [
+  { id: "flow", label: "Flow", icon: ArrowLeftRight },
+  { id: "net", label: "Net", icon: Activity },
+  { id: "category", label: "Category", icon: Shapes },
+  { id: "method", label: "Card", icon: CreditCard },
 ];
 
 function TimeSlotTick({
@@ -1145,8 +1152,8 @@ export function PeriodBarPulseCard({
 
 const CARD_RANGE_OPTIONS: { id: PersonalRange; label: string }[] = [
   { id: "today", label: "Today" },
-  { id: "week", label: "Week" },
-  { id: "1m", label: "Month" },
+  { id: "week", label: "1W" },
+  { id: "1m", label: "1M" },
   { id: "6m", label: "6M" },
   { id: "12m", label: "12M" },
 ];
@@ -1366,20 +1373,19 @@ export function CardSpendingChartCard({
               </span>
               <div className="min-w-0">
                 <h2 className="truncate font-medium leading-tight">
-                  Debit vs Credit
+                  Debit / Credit
                 </h2>
                 <p className="hidden text-xs text-muted-foreground sm:block">
-                  {agg.scopeLabel} · Tap a card tile to filter chart
+                  {agg.scopeLabel}
                 </p>
               </div>
             </div>
             <ChartModeCycleButton mode={mode} onChange={setMode} />
           </div>
-          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <SlidingTabs
-              stretch
               size="xs"
-              className="w-full sm:w-auto"
+              className="shrink-0"
               layoutGroup={`${layoutIdPrefix}-filter`}
               value={cardFilter}
               onChange={setCardFilter}
@@ -1390,10 +1396,9 @@ export function CardSpendingChartCard({
               ]}
             />
             <SlidingTabs
-              stretch
               size="xs"
               tone="invert"
-              className="w-full sm:w-auto"
+              className="shrink-0"
               layoutGroup={`${layoutIdPrefix}-range`}
               value={range}
               onChange={setRange}

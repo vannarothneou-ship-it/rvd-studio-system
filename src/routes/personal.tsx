@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useCallback, useMemo, useState } from "react";
 import {
+  Activity,
   ArrowDownLeft,
   ArrowUpRight,
   PiggyBank,
@@ -16,11 +17,12 @@ import {
   SlidingTabs,
   Stat,
 } from "@/components/rv/ui";
-import { EditModal, upsert, type Field } from "@/components/rv/Crud";
+import { EditModal, upsert } from "@/components/rv/Crud";
 import {
   AnimatedNumber,
   BudgetShelf,
   CategoryInspectorDrawer,
+  GoalPlannerDrawer,
   GoalRingCard,
   categoryIcon,
   expenseItemIcon,
@@ -98,8 +100,8 @@ export const Route = createFileRoute("/personal")({
 
 const PERSONAL_RANGES: { id: PersonalRange; label: string; desc: string }[] = [
   { id: "today", label: "Today", desc: "today" },
-  { id: "week", label: "Week", desc: "last 7 days" },
-  { id: "1m", label: "Month", desc: "this month" },
+  { id: "week", label: "1W", desc: "last 7 days" },
+  { id: "1m", label: "1M", desc: "this month" },
   { id: "6m", label: "6M", desc: "last 6 months" },
   { id: "12m", label: "12M", desc: "last 12 months" },
 ];
@@ -233,14 +235,12 @@ function PersonalPage() {
       target: 2000,
       current: 0,
       account: "Personal",
+      cadence: "monthly",
+      contributionAmount: 100,
+      targetDate: "",
+      contributions: [],
     });
   };
-
-  const goalFields = (): Field<Goal>[] => [
-    { k: "name", label: "Personal goal name", wide: true },
-    { k: "target", label: "Target (USD)", type: "number" },
-    { k: "current", label: "Current saved (USD)", type: "number" },
-  ];
 
   const q = query.trim().toLowerCase();
 
@@ -418,7 +418,7 @@ function PersonalPage() {
           const isGrouped = chartLens === "category" || chartLens === "method";
           return (
             <Glass delay={80} className="h-full">
-              <div className="mb-3 flex items-start justify-between gap-2">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                 <div className="min-w-0">
                   <h2 className="truncate font-medium">
                     {chartLens === "net"
@@ -433,38 +433,39 @@ function PersonalPage() {
                     {pAgg.scopeLabel}
                   </p>
                 </div>
-                <ChartModeCycleButton
-                  mode={chartMode}
-                  onChange={setChartMode}
-                />
-              </div>
-
-              <div className="mb-3">
-                <SlidingTabs
-                  stretch
-                  size="xs"
-                  tone="invert"
-                  layoutGroup="pers-chart-lens"
-                  className="w-full sm:w-auto"
-                  value={chartLens}
-                  onChange={setChartLens}
-                  options={CHART_LENS_OPTIONS}
-                />
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <SlidingTabs
+                    iconOnly
+                    size="xs"
+                    tone="invert"
+                    layoutGroup="pers-chart-lens"
+                    value={chartLens}
+                    onChange={setChartLens}
+                    options={CHART_LENS_OPTIONS}
+                  />
+                  <ChartModeCycleButton
+                    mode={chartMode}
+                    onChange={setChartMode}
+                  />
+                </div>
               </div>
 
               <div className="mb-3 grid grid-cols-3 gap-3 rounded-2xl bg-muted/35 p-3">
                 <Stat
-                  label="Income"
+                  icon={ArrowDownLeft}
+                  label="In"
                   value={compactMoney(personalInRangeTotal)}
                   fullValue={money(personalInRangeTotal)}
                   tone={personalInRangeTotal > 0 ? "pos" : undefined}
                 />
                 <Stat
-                  label="Spending"
+                  icon={ArrowUpRight}
+                  label="Out"
                   value={compactMoney(personalOutRangeTotal)}
                   fullValue={money(personalOutRangeTotal)}
                 />
                 <Stat
+                  icon={Activity}
                   label={
                     personalRange === "today" || personalRange === "week"
                       ? "Net"
@@ -675,16 +676,30 @@ function PersonalPage() {
                     current={g.current}
                     delay={idx * 60}
                     onEdit={() => setGoalDraft(g)}
-                    onQuickAdd={(amt) =>
+                    onQuickAdd={(amt) => {
                       setDB((d) => ({
                         ...d,
                         goals: d.goals.map((x) =>
                           x.id === g.id
-                            ? { ...x, current: x.current + amt }
+                            ? {
+                                ...x,
+                                current: x.current + amt,
+                                contributions: [
+                                  {
+                                    id: uid(),
+                                    date: today(),
+                                    amount: amt,
+                                    cadence: x.cadence ?? "monthly",
+                                    note: "Quick add",
+                                  },
+                                  ...(x.contributions ?? []),
+                                ],
+                              }
                             : x,
                         ),
-                      }))
-                    }
+                      }));
+                      toast.success(`Added +$${amt} to ${g.name}`);
+                    }}
                   />
                 ))}
               </div>
@@ -1007,11 +1022,10 @@ function PersonalPage() {
             }}
           />
           <SlidingTabs
-            stretch
             size="xs"
             tone="invert"
             layoutGroup="pers-top-range"
-            className="w-full sm:w-auto"
+            className="no-scrollbar max-w-full overflow-x-auto sm:w-auto"
             value={personalRange}
             onChange={(next) => {
               setPersonalRange(next);
@@ -1094,16 +1108,12 @@ function PersonalPage() {
         }
       />
 
-      {/* Right-Side Slide-Over Drawer for Personal Saving Goals */}
-      <EditModal
-        presentation="drawer"
-        side="right"
-        item={goalDraft}
-        fields={goalFields()}
-        subtitle="Personal saving goal"
-        title="Saving Goal"
+      {/* Right-Side Goal Planner Drawer (Daily / Monthly / Yearly) */}
+      <GoalPlannerDrawer
+        goal={goalDraft}
+        account="Personal"
         onClose={() => setGoalDraft(null)}
-        onSave={(v) =>
+        onSave={(v) => {
           setDB((d) => ({
             ...d,
             goals: upsert(d.goals, {
@@ -1111,15 +1121,18 @@ function PersonalPage() {
               account: "Personal",
               kind: "manual",
             }),
-          }))
-        }
+          }));
+          toast.success(`Saved "${v.name}"`);
+        }}
         onDelete={
           goalDraft && db.goals.some((x) => x.id === goalDraft.id)
-            ? (v) =>
+            ? (v) => {
                 setDB((d) => ({
                   ...d,
                   goals: d.goals.filter((x) => x.id !== v.id),
-                }))
+                }));
+                toast.message("Saving goal deleted.");
+              }
             : undefined
         }
       />

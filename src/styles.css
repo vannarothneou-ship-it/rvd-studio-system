@@ -544,13 +544,109 @@
 .project-calendar .fc-daygrid-event:active {
   cursor: grabbing;
 }
+.project-calendar .fc-event-special {
+  cursor: pointer !important;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 6px;
+}
+.project-calendar .fc-event-kh,
+.project-calendar .fc-event-kh .fc-event-main,
+.project-calendar .fc-event-kh .fc-event-title,
+.project-calendar .fc-event-kh .fc-event-main-frame {
+  color: #ffe4e6 !important;
+}
+.project-calendar .fc-event-kh {
+  background-color: oklch(0.62 0.2 18 / 28%) !important;
+  border-color: oklch(0.7 0.18 18 / 60%) !important;
+}
+.light .project-calendar .fc-event-kh,
+.light .project-calendar .fc-event-kh .fc-event-main,
+.light .project-calendar .fc-event-kh .fc-event-title,
+.light .project-calendar .fc-event-kh .fc-event-main-frame {
+  color: #9f1239 !important;
+}
+.light .project-calendar .fc-event-kh {
+  background-color: oklch(0.58 0.2 18 / 14%) !important;
+  border-color: oklch(0.58 0.2 18 / 45%) !important;
+}
+.project-calendar .fc-event-sel,
+.project-calendar .fc-event-sel .fc-event-main,
+.project-calendar .fc-event-sel .fc-event-title,
+.project-calendar .fc-event-sel .fc-event-main-frame {
+  color: #fef3c7 !important;
+}
+.project-calendar .fc-event-sel {
+  background-color: oklch(0.83 0.13 82 / 26%) !important;
+  border-color: oklch(0.83 0.13 82 / 58%) !important;
+}
+.light .project-calendar .fc-event-sel,
+.light .project-calendar .fc-event-sel .fc-event-main,
+.light .project-calendar .fc-event-sel .fc-event-title,
+.light .project-calendar .fc-event-sel .fc-event-main-frame {
+  color: #78350f !important;
+}
+.light .project-calendar .fc-event-sel {
+  background-color: oklch(0.75 0.14 78 / 18%) !important;
+  border-color: oklch(0.65 0.14 78 / 48%) !important;
+}
+.project-calendar .fc-event-pop,
+.project-calendar .fc-event-pop .fc-event-main,
+.project-calendar .fc-event-pop .fc-event-title,
+.project-calendar .fc-event-pop .fc-event-main-frame {
+  color: #e0f2fe !important;
+}
+.project-calendar .fc-event-pop {
+  background-color: oklch(0.68 0.14 240 / 26%) !important;
+  border-color: oklch(0.72 0.14 240 / 58%) !important;
+}
+.light .project-calendar .fc-event-pop,
+.light .project-calendar .fc-event-pop .fc-event-main,
+.light .project-calendar .fc-event-pop .fc-event-title,
+.light .project-calendar .fc-event-pop .fc-event-main-frame {
+  color: #075985 !important;
+}
+.light .project-calendar .fc-event-pop {
+  background-color: oklch(0.58 0.15 240 / 14%) !important;
+  border-color: oklch(0.58 0.15 240 / 42%) !important;
+}
+.project-calendar .fc-event-reminder,
+.project-calendar .fc-event-reminder .fc-event-main,
+.project-calendar .fc-event-reminder .fc-event-title,
+.project-calendar .fc-event-reminder .fc-event-main-frame {
+  color: #d1fae5 !important;
+}
+.project-calendar .fc-event-reminder {
+  background-color: oklch(0.72 0.15 158 / 26%) !important;
+  border-color: oklch(0.76 0.14 158 / 60%) !important;
+  font-weight: 600;
+}
+.light .project-calendar .fc-event-reminder,
+.light .project-calendar .fc-event-reminder .fc-event-main,
+.light .project-calendar .fc-event-reminder .fc-event-title,
+.light .project-calendar .fc-event-reminder .fc-event-main-frame {
+  color: #065f46 !important;
+}
+.light .project-calendar .fc-event-reminder {
+  background-color: oklch(0.65 0.15 158 / 15%) !important;
+  border-color: oklch(0.55 0.15 158 / 45%) !important;
+}
+.project-calendar .fc-event-studio,
+.project-calendar .fc-event-studio .fc-event-main {
+  font-weight: 600;
+}
 .project-calendar .fc-daygrid-day-number {
   font-family:
     "Inter", "Plus Jakarta Sans", "Noto Sans Khmer", system-ui, sans-serif;
   font-variant-numeric: tabular-nums;
   padding: 6px;
   font-size: 0.8rem;
+  color: var(--foreground);
+  opacity: 0.82;
+}
+.project-calendar .fc-day-other .fc-daygrid-day-number {
   color: var(--muted-foreground);
+  opacity: 0.55;
 }
 .project-calendar .fc-col-header-cell-cushion {
   font-family: var(--font-sans);

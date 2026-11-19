@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { parseReceiptText } from "./local-receipt-ai";
+import { normalizeKhmerDigits, parseReceiptText } from "./local-receipt-ai";
 
 describe("parseReceiptText (local AI OCR receipt parser)", () => {
+  it("normalizes Khmer digits ០-៩ to ASCII digits", () => {
+    expect(normalizeKhmerDigits("២៤,៥០០ ៛ · ១៨/១១/២០២៦")).toBe(
+      "24,500 ៛ · 18/11/2026",
+    );
+  });
+
   it("parses an ABA USD transfer slip with merchant and reference", () => {
     const sample = `
       ABA BANK
@@ -40,6 +46,49 @@ describe("parseReceiptText (local AI OCR receipt parser)", () => {
     expect(res.date).toBe("2026-11-15");
     expect(res.category).toBe("Transportation");
     expect(res.reference).toBe("ACL44012");
+  });
+
+  it("parses Khmer script receipt with Khmer numerals, merchant, date, and KHR total", () => {
+    const sample = `
+      ហាងកាហ្វេ រ៉ូតវ៉ាន់
+      ថ្ងៃទី ១៨ ខែ វិច្ឆិកា ឆ្នាំ ២០២៦
+      កាហ្វេទឹកកក ១
+      ប្រាក់សរុប: ២៤,៥០០ រៀល
+    `;
+    const res = parseReceiptText(sample, "2026-11-19");
+    expect(res.txType).toBe("expense");
+    expect(res.amount).toBe(24500);
+    expect(res.currency).toBe("KHR");
+    expect(res.date).toBe("2026-11-18");
+    expect(res.category).toBe("Food");
+    expect(res.merchantOrPayer).toContain("ហាងកាហ្វេ");
+  });
+
+  it("parses Khmer gas station handwritten slip under Prius 2012", () => {
+    const sample = `
+      ចាក់សាំង
+      19/11/26
+      Total $18.5
+    `;
+    const res = parseReceiptText(sample, "2026-11-01");
+    expect(res.txType).toBe("expense");
+    expect(res.amount).toBe(18.5);
+    expect(res.currency).toBe("USD");
+    expect(res.date).toBe("2026-11-19");
+    expect(res.category).toBe("Prius 2012");
+  });
+
+  it("parses messy handwritten shorthand notes without dollar sign", () => {
+    const sample = `
+      Coffee & lunch
+      Total 14.5
+      18/11/26
+    `;
+    const res = parseReceiptText(sample, "2026-11-19");
+    expect(res.amount).toBe(14.5);
+    expect(res.currency).toBe("USD");
+    expect(res.date).toBe("2026-11-18");
+    expect(res.category).toBe("Food");
   });
 
   it("classifies PTT Fuel / Prius maintenance under Prius 2012", () => {

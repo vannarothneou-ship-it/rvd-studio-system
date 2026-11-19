@@ -31,6 +31,7 @@ export function SlidingTabs<T extends string>({
   tone = "primary",
   size = "sm",
   stretch = false,
+  iconOnly = false,
   className,
 }: {
   options: readonly SlidingTabOption<T>[];
@@ -40,6 +41,7 @@ export function SlidingTabs<T extends string>({
   size?: "xs" | "sm";
   layoutGroup?: string;
   stretch?: boolean;
+  iconOnly?: boolean;
   className?: string;
 }) {
   return (
@@ -54,15 +56,24 @@ export function SlidingTabs<T extends string>({
       {options.map((opt) => {
         const active = opt.id === value;
         const Icon = opt.icon;
+        const hideLabel = iconOnly && Boolean(Icon);
         return (
           <button
             key={opt.id}
             type="button"
             onClick={() => onChange(opt.id)}
+            aria-label={opt.label}
+            title={opt.label}
             className={cn(
-              "inline-flex min-h-[34px] items-center justify-center gap-1.5 whitespace-nowrap rounded-full font-medium transition-all duration-150 active:scale-[0.96] sm:min-h-0",
-              stretch ? "min-w-0 flex-1" : "shrink-0",
-              size === "xs" ? "px-2.5 py-1" : "px-3 py-1.5",
+              "inline-flex min-h-[34px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full font-medium transition-all duration-150 active:scale-[0.96] sm:min-h-0",
+              stretch && "flex-1",
+              hideLabel
+                ? size === "xs"
+                  ? "px-2.5 py-1.5"
+                  : "px-3 py-2"
+                : size === "xs"
+                  ? "px-2.5 py-1"
+                  : "px-3 py-1.5",
               active
                 ? tone === "invert"
                   ? "bg-foreground text-background shadow-sm"
@@ -70,8 +81,19 @@ export function SlidingTabs<T extends string>({
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {Icon && <Icon className="h-3.5 w-3.5 shrink-0" />}
-            <span className="truncate">{opt.label}</span>
+            {Icon && (
+              <Icon
+                className={cn(
+                  "shrink-0",
+                  hideLabel ? "h-4 w-4" : "h-3.5 w-3.5",
+                )}
+              />
+            )}
+            {hideLabel ? (
+              <span className="sr-only">{opt.label}</span>
+            ) : (
+              <span className="whitespace-nowrap">{opt.label}</span>
+            )}
             {opt.badge !== undefined && (
               <span className="font-num text-[0.68rem] opacity-80">
                 {opt.badge}
@@ -266,7 +288,9 @@ export function SlideDrawer({
               <ArrowLeft className="h-4 w-4" />
             </button>
             <div className="min-w-0">
-              {subtitle ? <span className="label-mono">{subtitle}</span> : null}
+              {subtitle ? (
+                <span className="label-mono block truncate">{subtitle}</span>
+              ) : null}
               <h2 className="truncate font-display text-lg font-bold sm:text-xl">
                 {title}
               </h2>
@@ -278,7 +302,7 @@ export function SlideDrawer({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="hidden h-10 w-10 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:grid"
             >
               <X className="h-4 w-4" />
             </button>
@@ -643,18 +667,23 @@ export function Stat({
   value,
   fullValue,
   tone: t,
+  icon: Icon,
 }: {
   label: string;
   value: string;
   fullValue?: string | undefined;
   tone?: "pos" | "neg" | undefined;
+  icon?: LucideIcon | undefined;
 }) {
   return (
     <div
       className="flex min-w-0 flex-col justify-between gap-0.5"
       title={fullValue ?? value}
     >
-      <p className="label-mono truncate">{label}</p>
+      <p className="label-mono flex items-center gap-1 truncate">
+        {Icon && <Icon className="h-3 w-3 shrink-0 text-primary/80" />}
+        <span className="truncate">{label}</span>
+      </p>
       <p
         className={cn(
           "font-num truncate text-base font-bold leading-tight sm:text-lg",

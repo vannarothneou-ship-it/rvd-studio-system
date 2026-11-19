@@ -177,32 +177,6 @@ function NavWorkIcon({ active }: { active: boolean }) {
   );
 }
 
-function NavSettingsIcon({ active }: { active: boolean }) {
-  return active ? (
-    <svg
-      width={20}
-      height={20}
-      viewBox="0 0 24 24"
-      className="h-5 w-5 shrink-0 transition-transform duration-200 scale-105"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M10.45 2.45a1.65 1.65 0 0 1 3.1 0l.32 1.13a1.65 1.65 0 0 0 2.38.99l1.02-.57a1.65 1.65 0 0 1 2.2 2.2l-.57 1.02a1.65 1.65 0 0 0 .99 2.38l1.13.32a1.65 1.65 0 0 1 0 3.1l-1.13.32a1.65 1.65 0 0 0-.99 2.38l.57 1.02a1.65 1.65 0 0 1-2.2 2.2l-1.02-.57a1.65 1.65 0 0 0-2.38.99l-.32 1.13a1.65 1.65 0 0 1-3.1 0l-.32-1.13a1.65 1.65 0 0 0-2.38-.99l-1.02.57a1.65 1.65 0 0 1-2.2-2.2l.57-1.02a1.65 1.65 0 0 0-.99-2.38l-1.13-.32a1.65 1.65 0 0 1 0-3.1l1.13-.32a1.65 1.65 0 0 0 .99-2.38l-.57-1.02a1.65 1.65 0 0 1 2.2-2.2l1.02.57a1.65 1.65 0 0 0 2.38-.99l.32-1.13ZM12 15.25a3.25 3.25 0 1 0 0-6.5 3.25 3.25 0 0 0 0 6.5Z"
-      />
-    </svg>
-  ) : (
-    <Settings
-      width={20}
-      height={20}
-      className="h-5 w-5 shrink-0 transition-transform duration-200"
-      strokeWidth={1.9}
-    />
-  );
-}
-
 export function Shell({ children }: { children: ReactNode }) {
   return (
     <ReceiptScannerProvider>
@@ -432,11 +406,23 @@ function ShellInner({ children }: { children: ReactNode }) {
                 <Sun className="h-4 w-4" />
               )}
             </button>
+            <Link
+              to="/settings"
+              aria-label="Settings"
+              className={cn(
+                "grid h-9 w-9 place-items-center rounded-full transition-transform duration-150 active:scale-90",
+                isSettings
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+            >
+              <Settings className="h-4 w-4" />
+            </Link>
           </div>
         </div>
       </header>
 
-      {/* Floating Frosted Icon-Only Bottom Dock (Instagram Filled/Outline Style, aligned to inset-x-3) */}
+      {/* Floating Frosted Icon-Only Bottom Dock (5 items, Settings moved to top bar) */}
       <nav
         aria-label="Mobile navigation"
         className={cn(
@@ -446,7 +432,7 @@ function ShellInner({ children }: { children: ReactNode }) {
             : "translate-y-0 opacity-100",
         )}
       >
-        <div className="grid grid-cols-6 items-center">
+        <div className="grid grid-cols-5 items-center">
           <Link
             to="/"
             aria-label="Dashboard"
@@ -512,20 +498,6 @@ function ShellInner({ children }: { children: ReactNode }) {
           >
             <NavWorkIcon active={isWork} />
             <span className="sr-only">Work</span>
-          </Link>
-
-          <Link
-            to="/settings"
-            aria-label="Settings"
-            className={cn(
-              "relative flex min-h-[44px] items-center justify-center rounded-2xl transition-all duration-150 active:scale-90",
-              isSettings
-                ? "text-primary"
-                : "text-muted-foreground/75 hover:text-foreground",
-            )}
-          >
-            <NavSettingsIcon active={isSettings} />
-            <span className="sr-only">Settings</span>
           </Link>
         </div>
       </nav>

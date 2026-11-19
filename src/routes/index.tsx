@@ -2,16 +2,20 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
+  Activity,
   ArrowDownLeft,
   ArrowRight,
   ArrowUpRight,
   Briefcase,
   CheckCircle2,
+  Clock,
   Eye,
   EyeOff,
   FileText,
+  FolderKanban,
   Image as ImageIcon,
   Layers3,
+  PiggyBank,
   Plus,
   ScanLine,
   Sparkles,
@@ -37,6 +41,7 @@ import {
   incomeSourceIcon,
 } from "@/components/rv/FinanceVisuals";
 import { MoneyFlowSankeyCard } from "@/components/rv/MoneyFlowSankey";
+import { DashboardCalendarCard } from "@/components/rv/DashboardCalendar";
 import {
   CHART_LENS_OPTIONS,
   ChartModeCycleButton,
@@ -101,9 +106,9 @@ export const Route = createFileRoute("/")({
 
 const CASH_RANGES: { id: CashRange; label: string }[] = [
   { id: "today", label: "Today" },
-  { id: "week", label: "Week" },
-  { id: "6m", label: "6m" },
-  { id: "12m", label: "12m" },
+  { id: "week", label: "1W" },
+  { id: "6m", label: "6M" },
+  { id: "12m", label: "12M" },
   { id: "all", label: "All" },
 ];
 
@@ -495,22 +500,29 @@ function CommandDashboard() {
 
             <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3.5">
               <Stat
-                label="Cash in"
+                icon={ArrowDownLeft}
+                label="In"
                 value={mask(compactMoney(bal.studioInAll))}
                 fullValue={hideBalances ? undefined : money(bal.studioInAll)}
                 tone="pos"
               />
               <Stat
-                label="Studio out"
+                icon={ArrowUpRight}
+                label="Out"
                 value={mask(compactMoney(bal.studioOutAll))}
                 fullValue={hideBalances ? undefined : money(bal.studioOutAll)}
               />
               <Stat
-                label="Open A/R"
+                icon={FileText}
+                label="A/R"
                 value={mask(compactMoney(bal.openAR))}
                 fullValue={hideBalances ? undefined : money(bal.openAR)}
               />
-              <Stat label="Active" value={String(studioActiveProjects)} />
+              <Stat
+                icon={FolderKanban}
+                label="Active"
+                value={String(studioActiveProjects)}
+              />
             </div>
           </div>
 
@@ -573,6 +585,7 @@ function CommandDashboard() {
 
             <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3.5">
               <Stat
+                icon={Wallet}
                 label="Wallet"
                 value={mask(compactMoney(bal.personalBalance))}
                 fullValue={
@@ -581,7 +594,8 @@ function CommandDashboard() {
                 tone={bal.personalBalance >= 0 ? "pos" : "neg"}
               />
               <Stat
-                label="Month in"
+                icon={ArrowDownLeft}
+                label="In (Mo)"
                 value={mask(compactMoney(bal.personalInMonth))}
                 fullValue={
                   hideBalances ? undefined : money(bal.personalInMonth)
@@ -589,7 +603,8 @@ function CommandDashboard() {
                 tone={bal.personalInMonth > 0 ? "pos" : undefined}
               />
               <Stat
-                label="Month out"
+                icon={ArrowUpRight}
+                label="Out (Mo)"
                 value={mask(compactMoney(bal.personalOutMonth))}
                 fullValue={
                   hideBalances ? undefined : money(bal.personalOutMonth)
@@ -597,7 +612,8 @@ function CommandDashboard() {
                 tone="neg"
               />
               <Stat
-                label="Goals saved"
+                icon={PiggyBank}
+                label="Goals"
                 value={mask(compactMoney(bal.personalGoalsSaved))}
                 fullValue={
                   hideBalances ? undefined : money(bal.personalGoalsSaved)
@@ -667,13 +683,26 @@ function CommandDashboard() {
 
             <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3.5">
               <Stat
-                label="Completed"
+                icon={CheckCircle2}
+                label="Done"
                 value={String(output.workCompleted)}
                 tone="pos"
               />
-              <Stat label="Current tasks" value={String(output.workActive)} />
-              <Stat label="Artworks" value={String(output.totalArtworks)} />
-              <Stat label="Mockups / PDF" value={String(output.mediaCount)} />
+              <Stat
+                icon={Clock}
+                label="Active"
+                value={String(output.workActive)}
+              />
+              <Stat
+                icon={Sparkles}
+                label="Art"
+                value={String(output.totalArtworks)}
+              />
+              <Stat
+                icon={ImageIcon}
+                label="Files"
+                value={String(output.mediaCount)}
+              />
             </div>
           </div>
 
@@ -712,6 +741,9 @@ function CommandDashboard() {
         </Glass>
       </div>
 
+      {/* Unified Schedule & Holidays Calendar (Work + Studio + KH Holidays + ថ្ងៃសីល) */}
+      <DashboardCalendarCard db={db} className="mb-4" />
+
       {/* Money Flow Sankey ("The River") */}
       <MoneyFlowSankeyCard
         db={db}
@@ -735,7 +767,7 @@ function CommandDashboard() {
       >
         <Glass className="flex flex-col justify-between lg:col-span-7">
           <div>
-            <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="font-medium">
                 {cashLens === "net"
                   ? "Net Flow"
@@ -745,44 +777,46 @@ function CommandDashboard() {
                       ? "By Card"
                       : "Cash Flow"}
               </h2>
-              <ChartModeCycleButton mode={cashMode} onChange={setCashMode} />
+              <div className="flex shrink-0 items-center gap-1.5">
+                <SlidingTabs
+                  iconOnly
+                  size="xs"
+                  layoutGroup="dash-cf-lens"
+                  value={cashLens}
+                  onChange={setCashLens}
+                  options={CHART_LENS_OPTIONS}
+                />
+                <ChartModeCycleButton mode={cashMode} onChange={setCashMode} />
+              </div>
             </div>
 
-            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-3 flex items-center justify-between gap-2">
               <SlidingTabs
-                stretch
                 size="xs"
                 tone="invert"
                 layoutGroup="dash-cf-range"
-                className="w-full sm:w-auto"
                 value={cashRange}
                 onChange={setCashRange}
                 options={CASH_RANGES}
-              />
-              <SlidingTabs
-                stretch
-                size="xs"
-                layoutGroup="dash-cf-lens"
-                className="w-full sm:w-auto"
-                value={cashLens}
-                onChange={setCashLens}
-                options={CHART_LENS_OPTIONS}
               />
             </div>
 
             <div className="mb-3 grid grid-cols-3 gap-3 rounded-2xl bg-muted/35 p-3">
               <Stat
-                label="Income"
+                icon={ArrowDownLeft}
+                label="In"
                 value={mask(compactMoney(cashTotals.inVal))}
                 tone="pos"
               />
               <Stat
-                label="Spending"
+                icon={ArrowUpRight}
+                label="Out"
                 value={mask(compactMoney(cashTotals.outVal))}
                 tone="neg"
               />
               <Stat
-                label="Net flow"
+                icon={Activity}
+                label="Net"
                 value={mask(compactMoney(cashTotals.netVal, "USD", true))}
                 tone={cashTotals.netVal >= 0 ? "pos" : "neg"}
               />

@@ -1,7 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Database, Download, Plus, RotateCcw, Upload } from "lucide-react";
+import {
+  Database,
+  Download,
+  Eye,
+  EyeOff,
+  Plus,
+  RotateCcw,
+  Upload,
+} from "lucide-react";
 import { Btn, F, Glass, PageHeader, Stat } from "@/components/rv/ui";
 import { EditModal, nextCode, upsert, type Field } from "@/components/rv/Crud";
 import {
@@ -54,6 +62,8 @@ function Page() {
   const db = useDB((d) => d);
   const s = db.settings;
   const [svc, setSvc] = useState<Service | null>(null);
+  const [showAllServices, setShowAllServices] = useState(false);
+  const [showServicesPanel, setShowServicesPanel] = useState(true);
   const set = <K extends keyof Settings>(k: K, v: Settings[K]) =>
     setDB((d) => ({ ...d, settings: { ...d.settings, [k]: v } }));
   const txt = (k: keyof Settings, label: string, wide = false) => (
@@ -284,48 +294,117 @@ function Page() {
         </Glass>
       </div>
       <Glass delay={120} className="mt-4">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-display text-lg font-bold">Services & rates</h2>
-          <Btn
-            onClick={() =>
-              setSvc({
-                id: uid(),
-                code: nextCode(
-                  "SV-",
-                  db.services.map((x) => x.code),
-                ),
-                pillar: PILLARS[0]!,
-                name: "",
-                unit: "Fixed fee",
-                rate: 0,
-                scope: "",
-                timeline: "",
-                overage: 0,
-              })
-            }
-          >
-            <Plus className="h-4 w-4" />
-            Add
-          </Btn>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {db.services.map((x) => (
-            <button
-              key={x.id}
-              onClick={() => setSvc(x)}
-              className="rounded-2xl border border-border bg-muted/40 p-4 text-left hover:bg-muted"
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h2 className="font-display text-lg font-bold">
+              Services &amp; rates
+            </h2>
+            <span className="font-num text-xs text-muted-foreground">
+              · {db.services.length}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Btn
+              type="button"
+              onClick={() => {
+                if (!showServicesPanel) {
+                  setShowServicesPanel(true);
+                  setShowAllServices(false);
+                } else if (!showAllServices && db.services.length > 3) {
+                  setShowAllServices(true);
+                } else {
+                  setShowServicesPanel(false);
+                  setShowAllServices(false);
+                }
+              }}
+              aria-label={
+                !showServicesPanel
+                  ? "Show services"
+                  : showAllServices
+                    ? "Hide services"
+                    : "Show all services"
+              }
+              title={
+                !showServicesPanel
+                  ? "Show services"
+                  : showAllServices
+                    ? "Hide services"
+                    : `Show all ${db.services.length} services`
+              }
+              className="px-3 text-xs"
             >
-              <p className="label-mono">{x.pillar}</p>
-              <p className="font-medium">{x.name}</p>
-              <p className="font-num text-sm text-primary">
-                {money(x.rate)}{" "}
-                <span className="text-xs text-muted-foreground">
-                  {x.unit.toLowerCase()}
-                </span>
-              </p>
-            </button>
-          ))}
+              {showServicesPanel ? (
+                <Eye className="h-3.5 w-3.5 text-primary" />
+              ) : (
+                <EyeOff className="h-3.5 w-3.5" />
+              )}
+              <span>
+                {!showServicesPanel
+                  ? "Show"
+                  : showAllServices
+                    ? "Hide"
+                    : `Show all (${db.services.length})`}
+              </span>
+            </Btn>
+            <Btn
+              onClick={() =>
+                setSvc({
+                  id: uid(),
+                  code: nextCode(
+                    "SV-",
+                    db.services.map((x) => x.code),
+                  ),
+                  pillar: PILLARS[0]!,
+                  name: "",
+                  unit: "Fixed fee",
+                  rate: 0,
+                  scope: "",
+                  timeline: "",
+                  overage: 0,
+                })
+              }
+            >
+              <Plus className="h-4 w-4" />
+              Add
+            </Btn>
+          </div>
         </div>
+        {showServicesPanel && (
+          <>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {(showAllServices ? db.services : db.services.slice(0, 3)).map(
+                (x) => (
+                  <button
+                    key={x.id}
+                    onClick={() => setSvc(x)}
+                    className="rounded-2xl border border-border bg-muted/40 p-4 text-left transition-colors hover:border-primary/45 hover:bg-muted"
+                  >
+                    <p className="label-mono">{x.pillar}</p>
+                    <p className="font-medium">{x.name}</p>
+                    <p className="font-num text-sm text-primary">
+                      {money(x.rate)}{" "}
+                      <span className="text-xs text-muted-foreground">
+                        {x.unit.toLowerCase()}
+                      </span>
+                    </p>
+                  </button>
+                ),
+              )}
+            </div>
+            {db.services.length > 3 && !showAllServices && (
+              <div className="mt-3 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => setShowAllServices(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+                >
+                  <Eye className="h-3.5 w-3.5" />
+                  Show all {db.services.length} services
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </Glass>
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Glass delay={180} className="min-w-0">

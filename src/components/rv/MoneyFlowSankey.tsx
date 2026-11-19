@@ -2,13 +2,22 @@ import { useMemo, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  BarChart3,
+  Briefcase,
+  PieChart as PieIcon,
+  ShieldCheck,
   Sparkles,
   TrendingUp,
+  Wallet,
+  Workflow,
+  type LucideIcon,
 } from "lucide-react";
 import { Btn, Glass, SlidingTabs } from "@/components/rv/ui";
+import { D3MoneyFlowChart } from "@/components/rv/D3MoneyFlowChart";
 import { categoryIcon } from "@/components/rv/FinanceVisuals";
 import {
   buildMoneyFlowData,
+  shortFlowLabel,
   type BucketId,
   type MoneyFlowAccountScope,
   type MoneyFlowData,
@@ -18,12 +27,32 @@ import {
 import { compactMoney, money, type Account, type DB } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
+type FlowChartType = "river" | "pie" | "bar" | "line";
+
 const RANGE_OPTIONS: { id: MoneyFlowRange; label: string }[] = [
-  { id: "1w", label: "Week" },
-  { id: "1m", label: "Month" },
+  { id: "1w", label: "1W" },
+  { id: "1m", label: "1M" },
   { id: "3m", label: "3M" },
   { id: "12m", label: "12M" },
 ];
+
+const CHART_TYPE_OPTIONS: {
+  id: FlowChartType;
+  label: string;
+  icon: LucideIcon;
+}[] = [
+  { id: "river", label: "River", icon: Workflow },
+  { id: "pie", label: "Pie", icon: PieIcon },
+  { id: "bar", label: "Bar", icon: BarChart3 },
+  { id: "line", label: "Line", icon: TrendingUp },
+];
+
+const BUCKET_ICONS: Record<BucketId, LucideIcon> = {
+  needs: ShieldCheck,
+  wants: Wallet,
+  studio: Briefcase,
+  future: Sparkles,
+};
 
 interface PositionedNode {
   id: string;
@@ -84,17 +113,16 @@ function layoutColumnNodes<
 ): PositionedNode[] {
   if (items.length === 0) return [];
   const totalGap = gap * Math.max(0, items.length - 1);
-  const avail = Math.max(40, usableH - totalGap);
+  const avail = Math.max(48, usableH - totalGap);
   const sum = items.reduce((s, it) => s + it.amount, 0) || 1;
 
-  // Enforce minimum node height then proportionally scale remainder so column fits cleanly
   const rawHeights = items.map((it) =>
     Math.max(minH, (it.amount / sum) * avail),
   );
   const rawSum = rawHeights.reduce((s, h) => s + h, 0) || 1;
   const scale = rawSum > avail ? avail / rawSum : 1;
   const heights = rawHeights.map((h) =>
-    Math.max(items.length > 10 ? 6 : minH * scale, h * scale),
+    Math.max(items.length > 10 ? 8 : minH * scale, h * scale),
   );
   const totalColH =
     heights.reduce((s, h) => s + h, 0) + gap * Math.max(0, items.length - 1);
@@ -127,24 +155,24 @@ function buildSankeyGeometry(
   },
 ) {
   const { width, showSources, compact = false } = opts;
-  const topY = 14;
+  const topY = 16;
   const rowCount = Math.max(
     flow.buckets.length,
     flow.targets.length,
     showSources ? flow.sources.length : 0,
   );
-  const rowStep = compact ? 28 : 30;
-  const height = Math.max(compact ? 250 : 300, rowCount * rowStep + 28);
+  const rowStep = compact ? 34 : 38;
+  const height = Math.max(compact ? 320 : 380, rowCount * rowStep + 34);
   const usableH = height - topY * 2;
-  const barW = compact ? 7 : 8;
+  const barW = compact ? 10 : 12;
 
-  const srcX = compact ? 92 : 124;
-  const bucketX = showSources ? Math.round(width * 0.45) : compact ? 92 : 124;
+  const srcX = compact ? 86 : 112;
+  const bucketX = showSources ? Math.round(width * 0.44) : compact ? 86 : 112;
   const tgtX = showSources
     ? Math.round(width * 0.77)
     : compact
-      ? 214
-      : Math.round(width * 0.68);
+      ? 206
+      : Math.round(width * 0.66);
 
   const sourceNodes = showSources
     ? layoutColumnNodes(
@@ -153,9 +181,9 @@ function buildSankeyGeometry(
         barW,
         topY,
         usableH,
-        12,
         14,
-        (s) => ({ label: s.label }),
+        18,
+        (s) => ({ label: shortFlowLabel(s.label) }),
       )
     : [];
 
@@ -165,8 +193,8 @@ function buildSankeyGeometry(
     barW,
     topY,
     usableH,
-    12,
-    16,
+    14,
+    20,
     (b) => ({
       label: b.label,
       subLabel: `${b.pct}%`,
@@ -180,10 +208,10 @@ function buildSankeyGeometry(
     barW,
     topY,
     usableH,
-    compact ? 7 : 9,
     compact ? 9 : 11,
+    compact ? 11 : 13,
     (t) => ({
-      label: t.label,
+      label: shortFlowLabel(t.label),
       bucketId: t.bucketId,
       target: t,
     }),
@@ -196,7 +224,6 @@ function buildSankeyGeometry(
 
   const ribbons: PositionedRibbon[] = [];
 
-  // Source -> Bucket ribbons
   if (showSources) {
     const srcOutOffset = new Map<string, number>();
     const bktInOffset = new Map<string, number>();
@@ -234,7 +261,6 @@ function buildSankeyGeometry(
     }
   }
 
-  // Bucket -> Target ribbons
   const bktOutOffset = new Map<string, number>();
   const bktOutTotals = new Map<string, number>();
   for (const l of flow.bucketToTargetLinks) {
@@ -345,6 +371,7 @@ export function MoneyFlowSankeyCard({
   className?: string;
 }) {
   const [range, setRange] = useState<MoneyFlowRange>("1m");
+  const [chartType, setChartType] = useState<FlowChartType>("river");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
 
   const flow = useMemo(
@@ -355,7 +382,7 @@ export function MoneyFlowSankeyCard({
   const desktopGeo = useMemo(
     () =>
       buildSankeyGeometry(flow, {
-        width: 740,
+        width: 720,
         showSources: flow.hasIncome,
         compact: false,
       }),
@@ -380,20 +407,17 @@ export function MoneyFlowSankeyCard({
     const formatAmt = (n: number) => (hideBalances ? "••••" : money(n));
     const src = flow.sources.find((s) => s.id === hoveredId);
     if (src)
-      return `${src.label} · ${formatAmt(src.amount)} (${src.count} entries)`;
+      return `${shortFlowLabel(src.label)} · ${formatAmt(src.amount)} (${src.count})`;
     const bkt = flow.buckets.find((b) => b.id === hoveredId);
-    if (bkt)
-      return `${bkt.label} bucket · ${formatAmt(bkt.amount)} (${bkt.pct}%)`;
+    if (bkt) return `${bkt.label} · ${formatAmt(bkt.amount)} (${bkt.pct}%)`;
     const tgt = flow.targets.find((t) => t.id === hoveredId);
     if (tgt) {
-      return `${tgt.label} · ${formatAmt(tgt.amount)}${
-        tgt.category && onSelectCategory ? " · click for timeline" : ""
-      }`;
+      return `${shortFlowLabel(tgt.label)} · ${formatAmt(tgt.amount)}`;
     }
     const rbn = desktopGeo.ribbons.find((r) => r.id === hoveredId);
     if (rbn) return `${rbn.label} · ${formatAmt(rbn.amount)}`;
     return null;
-  }, [hoveredId, flow, desktopGeo.ribbons, hideBalances, onSelectCategory]);
+  }, [hoveredId, flow, desktopGeo.ribbons, hideBalances]);
 
   const isRibbonHighlighted = (r: PositionedRibbon) => {
     if (!hoveredId) return true;
@@ -423,13 +447,29 @@ export function MoneyFlowSankeyCard({
     onSelectCategory(t.account, t.category);
   };
 
+  const pieData = useMemo(
+    () =>
+      flow.targets
+        .filter((t) => !t.isSurplus && t.amount > 0)
+        .slice(0, 8)
+        .map((t) => ({
+          id: t.id,
+          label: shortFlowLabel(t.label),
+          value: Math.round(t.amount * 100) / 100,
+          color: t.color,
+          account: t.account,
+          category: t.category,
+        })),
+    [flow.targets],
+  );
+
   return (
     <Glass className={cn("overflow-hidden", className)}>
-      {/* Header + Timeline Switch */}
+      {/* Header + Icon Chart Type Switcher + Non-Truncating Range Switch */}
       <div className="mb-3 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <TrendingUp className="h-4 w-4 shrink-0 text-primary" />
+            <Workflow className="h-4 w-4 shrink-0 text-primary" />
             <h2 className="truncate font-display text-base font-bold sm:text-lg">
               {accountScope === "Personal" ? "Where it went" : "Money flow"}
             </h2>
@@ -440,24 +480,37 @@ export function MoneyFlowSankeyCard({
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {activeInfo ??
               (flow.hasIncome
-                ? `${flow.scopeLabel} · ${fmt(flow.totalIncome, true)} in · ${fmt(flow.totalSpend, true)} out`
-                : `${flow.scopeLabel} · ${fmt(flow.totalSpend, true)} out · tap a category for its timeline`)}
+                ? `${fmt(flow.totalIncome, true)} in · ${fmt(flow.totalSpend, true)} out`
+                : `${fmt(flow.totalSpend, true)} out`)}
           </p>
         </div>
 
-        <SlidingTabs
-          stretch
-          size="xs"
-          tone="invert"
-          layoutGroup={`${layoutIdPrefix}-range`}
-          className="w-full sm:w-auto sm:min-w-[230px]"
-          value={range}
-          onChange={(next) => {
-            setHoveredId(null);
-            setRange(next);
-          }}
-          options={RANGE_OPTIONS}
-        />
+        <div className="flex flex-wrap items-center justify-between gap-2 sm:flex-nowrap sm:justify-end">
+          <SlidingTabs
+            iconOnly
+            size="xs"
+            layoutGroup={`${layoutIdPrefix}-type`}
+            className="shrink-0"
+            value={chartType}
+            onChange={(next) => {
+              setHoveredId(null);
+              setChartType(next);
+            }}
+            options={CHART_TYPE_OPTIONS}
+          />
+          <SlidingTabs
+            size="xs"
+            tone="invert"
+            layoutGroup={`${layoutIdPrefix}-range`}
+            className="shrink-0"
+            value={range}
+            onChange={(next) => {
+              setHoveredId(null);
+              setRange(next);
+            }}
+            options={RANGE_OPTIONS}
+          />
+        </div>
       </div>
 
       {/* Empty State */}
@@ -465,11 +518,7 @@ export function MoneyFlowSankeyCard({
         <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border/80 bg-muted/20 px-4 py-10 text-center">
           <Sparkles className="mb-2 h-6 w-6 text-primary/80" />
           <p className="text-sm font-semibold text-foreground">
-            No money flow in {flow.scopeLabel}
-          </p>
-          <p className="mt-1 max-w-sm text-xs text-muted-foreground">
-            Log spending or income to see how cash flows from your sources into
-            Needs, Wants, Studio, and Future savings.
+            No flow in {flow.scopeLabel}
           </p>
           {onQuickLog && (
             <div className="mt-4 flex flex-wrap justify-center gap-2">
@@ -479,196 +528,471 @@ export function MoneyFlowSankeyCard({
                 onClick={() => onQuickLog("expense")}
               >
                 <ArrowUpRight className="h-3.5 w-3.5" />
-                Log expense
+                Expense
               </Btn>
               <Btn type="button" onClick={() => onQuickLog("income")}>
                 <ArrowDownLeft className="h-3.5 w-3.5 text-positive" />
-                Log income
+                Income
               </Btn>
             </div>
           )}
         </div>
       ) : (
-        <>
-          {/* Source Pill Summary on Mobile (when income exists) */}
-          {flow.hasIncome && (
-            <div className="no-scrollbar mb-3 flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 md:hidden">
-              {flow.sources.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() =>
-                    setHoveredId((cur) => (cur === s.id ? null : s.id))
-                  }
-                  className={cn(
-                    "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
-                    hoveredId === s.id
-                      ? "border-primary bg-primary/15 text-foreground"
-                      : "border-border bg-muted/40 text-foreground",
-                  )}
-                >
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ background: s.color }}
-                  />
-                  <span className="font-medium">{s.label}</span>
-                  <span className="font-num text-muted-foreground">
-                    {fmt(s.amount, true)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* MOBILE 2-COLUMN SANKEY ("Where it went") */}
-          <div className="md:hidden">
-            <div className="w-full overflow-hidden">
-              <svg
-                viewBox={`0 0 ${mobileGeo.width} ${mobileGeo.height}`}
-                className="h-auto w-full select-none"
-                role="img"
-                aria-label="Money flow river chart"
-              >
-                {mobileGeo.ribbons.map((r) => {
-                  const hi = isRibbonHighlighted(r);
-                  return (
-                    <path
-                      key={r.id}
-                      d={r.d}
-                      fill={r.color}
-                      fillOpacity={hoveredId ? (hi ? 0.62 : 0.09) : 0.34}
-                      className="transition-opacity duration-150"
-                      onClick={() =>
-                        setHoveredId((cur) => (cur === r.toId ? null : r.toId))
-                      }
-                    />
-                  );
-                })}
-
-                {mobileGeo.bucketNodes.map((n) => {
-                  const hi = isNodeHighlighted(n);
-                  const midY = n.y + n.h / 2;
-                  return (
-                    <g
-                      key={n.id}
-                      className="cursor-pointer transition-opacity duration-150"
-                      opacity={hi ? 1 : 0.3}
-                      onClick={() =>
-                        setHoveredId((cur) => (cur === n.id ? null : n.id))
-                      }
-                    >
-                      <rect
-                        x={n.x}
-                        y={n.y}
-                        width={n.w}
-                        height={n.h}
-                        rx={3.5}
-                        fill={n.color}
-                      />
-                      <text
-                        x={n.x - 8}
-                        y={midY - 3}
-                        textAnchor="end"
-                        fill="var(--foreground)"
-                        fontSize={11}
-                        fontWeight={600}
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-12 lg:items-start">
+          {/* Primary Visual Canvas (River / Pie / Bar / Line) */}
+          <div className="min-w-0 lg:col-span-9">
+            {chartType === "river" && (
+              <>
+                {/* Source Pills on Mobile (when income exists) */}
+                {flow.hasIncome && (
+                  <div className="no-scrollbar mb-3 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5 md:hidden">
+                    {flow.sources.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() =>
+                          setHoveredId((cur) => (cur === s.id ? null : s.id))
+                        }
+                        className={cn(
+                          "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
+                          hoveredId === s.id
+                            ? "border-primary bg-primary/15 text-foreground"
+                            : "border-border bg-muted/40 text-foreground",
+                        )}
                       >
-                        {n.label}
-                      </text>
-                      <text
-                        x={n.x - 8}
-                        y={midY + 10}
-                        textAnchor="end"
-                        fill="var(--muted-foreground)"
-                        fontSize={10}
-                        className="font-num"
-                      >
-                        {n.subLabel}
-                      </text>
-                    </g>
-                  );
-                })}
+                        <span
+                          className="h-2 w-2 rounded-full"
+                          style={{ background: s.color }}
+                        />
+                        <span className="font-medium">
+                          {shortFlowLabel(s.label)}
+                        </span>
+                        <span className="font-num text-muted-foreground">
+                          {fmt(s.amount, true)}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
 
-                {mobileGeo.targetNodes.map((n) => {
-                  const hi = isNodeHighlighted(n);
-                  const midY = n.y + n.h / 2 + 3.5;
-                  const clickable = Boolean(
-                    n.target?.category && n.target?.account && onSelectCategory,
-                  );
-                  return (
-                    <g
-                      key={n.id}
-                      className={cn(
-                        "transition-opacity duration-150",
-                        clickable && "cursor-pointer",
-                      )}
-                      opacity={hi ? 1 : 0.3}
-                      onClick={() => handleTargetClick(n.target)}
-                    >
-                      <rect
-                        x={n.x}
-                        y={n.y}
-                        width={n.w}
-                        height={n.h}
-                        rx={3.5}
-                        fill={n.color}
-                      />
-                      <text
-                        x={n.x + n.w + 7}
-                        y={midY}
-                        fill="var(--foreground)"
-                        fontSize={10.5}
-                        fontWeight={500}
-                      >
-                        {n.label.length > 14
-                          ? `${n.label.slice(0, 13)}…`
-                          : n.label}{" "}
-                        <tspan
-                          fill="var(--muted-foreground)"
-                          className="font-num"
+                {/* Mobile Bigger 2-Column Sankey */}
+                <div className="md:hidden">
+                  <svg
+                    viewBox={`0 0 ${mobileGeo.width} ${mobileGeo.height}`}
+                    className="h-auto min-h-[290px] w-full select-none"
+                    role="img"
+                    aria-label="Money flow river chart"
+                  >
+                    {mobileGeo.ribbons.map((r) => {
+                      const hi = isRibbonHighlighted(r);
+                      return (
+                        <path
+                          key={r.id}
+                          d={r.d}
+                          fill={r.color}
+                          fillOpacity={hoveredId ? (hi ? 0.65 : 0.09) : 0.36}
+                          className="transition-opacity duration-150"
+                          onClick={() =>
+                            setHoveredId((cur) =>
+                              cur === r.toId ? null : r.toId,
+                            )
+                          }
+                        />
+                      );
+                    })}
+
+                    {mobileGeo.bucketNodes.map((n) => {
+                      const hi = isNodeHighlighted(n);
+                      const midY = n.y + n.h / 2;
+                      return (
+                        <g
+                          key={n.id}
+                          className="cursor-pointer transition-opacity duration-150"
+                          opacity={hi ? 1 : 0.3}
+                          onClick={() =>
+                            setHoveredId((cur) => (cur === n.id ? null : n.id))
+                          }
                         >
-                          {fmt(n.amount, true)}
-                        </tspan>
-                      </text>
-                    </g>
+                          <rect
+                            x={n.x}
+                            y={n.y}
+                            width={n.w}
+                            height={n.h}
+                            rx={4.5}
+                            fill={n.color}
+                          />
+                          <text
+                            x={n.x - 9}
+                            y={midY - 3}
+                            textAnchor="end"
+                            fill="var(--foreground)"
+                            fontSize={12}
+                            fontWeight={600}
+                          >
+                            {n.label}
+                          </text>
+                          <text
+                            x={n.x - 9}
+                            y={midY + 11}
+                            textAnchor="end"
+                            fill="var(--muted-foreground)"
+                            fontSize={10.5}
+                            className="font-num"
+                          >
+                            {n.subLabel}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {mobileGeo.targetNodes.map((n) => {
+                      const hi = isNodeHighlighted(n);
+                      const midY = n.y + n.h / 2 + 4;
+                      const clickable = Boolean(
+                        n.target?.category &&
+                        n.target?.account &&
+                        onSelectCategory,
+                      );
+                      return (
+                        <g
+                          key={n.id}
+                          className={cn(
+                            "transition-opacity duration-150",
+                            clickable && "cursor-pointer",
+                          )}
+                          opacity={hi ? 1 : 0.3}
+                          onClick={() => handleTargetClick(n.target)}
+                        >
+                          <rect
+                            x={n.x}
+                            y={n.y}
+                            width={n.w}
+                            height={n.h}
+                            rx={4.5}
+                            fill={n.color}
+                          />
+                          <text
+                            x={n.x + n.w + 8}
+                            y={midY}
+                            fill="var(--foreground)"
+                            fontSize={11.5}
+                            fontWeight={500}
+                          >
+                            {n.label.length > 11
+                              ? `${n.label.slice(0, 10)}…`
+                              : n.label}{" "}
+                            <tspan
+                              fill="var(--muted-foreground)"
+                              className="font-num"
+                              fontWeight={600}
+                            >
+                              {fmt(n.amount, true)}
+                            </tspan>
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+
+                {/* Desktop Bigger 3-Column Sankey */}
+                <div className="hidden md:block">
+                  <svg
+                    viewBox={`0 0 ${desktopGeo.width} ${desktopGeo.height}`}
+                    className="h-auto min-h-[360px] w-full select-none"
+                    role="img"
+                    aria-label="Interactive money flow Sankey diagram"
+                  >
+                    {desktopGeo.ribbons.map((r) => {
+                      const hi = isRibbonHighlighted(r);
+                      return (
+                        <path
+                          key={r.id}
+                          d={r.d}
+                          fill={r.color}
+                          fillOpacity={hoveredId ? (hi ? 0.62 : 0.08) : 0.34}
+                          className="cursor-pointer transition-opacity duration-150"
+                          onMouseEnter={() => setHoveredId(r.id)}
+                          onMouseLeave={() => setHoveredId(null)}
+                        >
+                          <title>
+                            {r.label}: {fmt(r.amount)}
+                          </title>
+                        </path>
+                      );
+                    })}
+
+                    {desktopGeo.sourceNodes.map((n) => {
+                      const hi = isNodeHighlighted(n);
+                      const midY = n.y + n.h / 2;
+                      return (
+                        <g
+                          key={n.id}
+                          className="cursor-pointer transition-opacity duration-150"
+                          opacity={hi ? 1 : 0.28}
+                          onMouseEnter={() => setHoveredId(n.id)}
+                          onMouseLeave={() => setHoveredId(null)}
+                        >
+                          <rect
+                            x={n.x}
+                            y={n.y}
+                            width={n.w}
+                            height={n.h}
+                            rx={5}
+                            fill={n.color}
+                          />
+                          <text
+                            x={n.x - 10}
+                            y={midY - 2}
+                            textAnchor="end"
+                            fill="var(--foreground)"
+                            fontSize={12.5}
+                            fontWeight={600}
+                          >
+                            {n.label}
+                          </text>
+                          <text
+                            x={n.x - 10}
+                            y={midY + 13}
+                            textAnchor="end"
+                            fill="var(--muted-foreground)"
+                            fontSize={11.5}
+                            className="font-num"
+                          >
+                            {fmt(n.amount, true)}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {desktopGeo.bucketNodes.map((n) => {
+                      const hi = isNodeHighlighted(n);
+                      const midY = n.y + n.h / 2;
+                      const pillText = `${n.label} ${n.subLabel ?? ""}`;
+                      const pillW = Math.max(76, pillText.length * 6.8 + 24);
+                      return (
+                        <g
+                          key={n.id}
+                          className="cursor-pointer transition-opacity duration-150"
+                          opacity={hi ? 1 : 0.28}
+                          onMouseEnter={() => setHoveredId(n.id)}
+                          onMouseLeave={() => setHoveredId(null)}
+                        >
+                          <rect
+                            x={n.x}
+                            y={n.y}
+                            width={n.w}
+                            height={n.h}
+                            rx={5}
+                            fill={n.color}
+                          />
+                          {desktopGeo.showSources ? (
+                            <g
+                              transform={`translate(${n.x - pillW / 2 + 5}, ${midY - 12})`}
+                            >
+                              <rect
+                                width={pillW}
+                                height={24}
+                                rx={12}
+                                fill="var(--card)"
+                                fillOpacity={0.95}
+                                stroke="var(--border)"
+                                strokeWidth={1}
+                              />
+                              <circle cx={12} cy={12} r={4} fill={n.color} />
+                              <text
+                                x={21}
+                                y={15.5}
+                                fill="var(--foreground)"
+                                fontSize={11}
+                                fontWeight={600}
+                              >
+                                {n.label}{" "}
+                                <tspan
+                                  fill="var(--muted-foreground)"
+                                  className="font-num"
+                                >
+                                  {n.subLabel}
+                                </tspan>
+                              </text>
+                            </g>
+                          ) : (
+                            <>
+                              <text
+                                x={n.x - 12}
+                                y={midY - 2}
+                                textAnchor="end"
+                                fill="var(--foreground)"
+                                fontSize={13}
+                                fontWeight={600}
+                              >
+                                {n.label}
+                              </text>
+                              <text
+                                x={n.x - 12}
+                                y={midY + 13}
+                                textAnchor="end"
+                                fill="var(--muted-foreground)"
+                                fontSize={11.5}
+                                className="font-num"
+                              >
+                                {n.subLabel} · {fmt(n.amount, true)}
+                              </text>
+                            </>
+                          )}
+                        </g>
+                      );
+                    })}
+
+                    {desktopGeo.targetNodes.map((n) => {
+                      const hi = isNodeHighlighted(n);
+                      const midY = n.y + n.h / 2 + 4.5;
+                      const clickable = Boolean(
+                        n.target?.category &&
+                        n.target?.account &&
+                        onSelectCategory,
+                      );
+                      return (
+                        <g
+                          key={n.id}
+                          className={cn(
+                            "transition-opacity duration-150",
+                            clickable && "cursor-pointer",
+                          )}
+                          opacity={hi ? 1 : 0.28}
+                          onMouseEnter={() => setHoveredId(n.id)}
+                          onMouseLeave={() => setHoveredId(null)}
+                          onClick={() => handleTargetClick(n.target)}
+                        >
+                          <rect
+                            x={n.x}
+                            y={n.y}
+                            width={n.w}
+                            height={n.h}
+                            rx={5}
+                            fill={n.color}
+                          />
+                          <text
+                            x={n.x + n.w + 10}
+                            y={midY}
+                            fill="var(--foreground)"
+                            fontSize={12.5}
+                            fontWeight={500}
+                          >
+                            {n.label.length > 16
+                              ? `${n.label.slice(0, 15)}…`
+                              : n.label}{" "}
+                            <tspan
+                              fill="var(--muted-foreground)"
+                              className="font-num"
+                              fontWeight={600}
+                            >
+                              {fmt(n.amount, true)}
+                            </tspan>
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              </>
+            )}
+
+            {chartType !== "river" && (
+              <D3MoneyFlowChart
+                chartType={chartType}
+                range={range}
+                pieData={pieData}
+                buckets={flow.buckets}
+                timelinePoints={flow.timelinePoints}
+                hasIncome={flow.hasIncome}
+                totalSpend={flow.totalSpend}
+                formatMoney={(n) => fmt(n, false)}
+                formatCompact={(n) => fmt(n, true)}
+                onSelectCategory={onSelectCategory}
+                onHoverId={setHoveredId}
+              />
+            )}
+          </div>
+
+          {/* Right / Bottom Compact Icon-Driven Summary */}
+          <div className="space-y-4 border-t border-border/60 pt-4 lg:col-span-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
+            <div className="flex items-center gap-3">
+              <KeptDonutRing pct={flow.keptPct} hasIncome={flow.hasIncome} />
+              <div className="min-w-0">
+                <p className="label-mono">
+                  {flow.hasIncome ? "Leftover" : "Total out"}
+                </p>
+                <p className="font-num truncate text-xl font-extrabold tracking-tight text-foreground sm:text-2xl">
+                  {fmt(flow.hasIncome ? flow.totalKept : flow.totalSpend)}
+                </p>
+                <p className="font-num truncate text-[0.7rem] text-muted-foreground">
+                  {flow.hasIncome
+                    ? `of ${fmt(flow.totalIncome, true)}`
+                    : `${flow.targets.length} groups`}
+                </p>
+              </div>
+            </div>
+
+            {/* Proportional Bucket Strip */}
+            <div>
+              <div className="mb-2.5 flex h-2.5 w-full overflow-hidden rounded-full bg-muted/60">
+                {flow.buckets.map((b) => (
+                  <div
+                    key={b.id}
+                    style={{
+                      width: `${Math.max(3, b.pct)}%`,
+                      background: b.color,
+                    }}
+                    className="h-full border-r border-background/60 last:border-r-0 transition-all duration-300"
+                    title={`${b.label}: ${b.pct}%`}
+                  />
+                ))}
+              </div>
+              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-1">
+                {flow.buckets.map((b) => {
+                  const BIcon = BUCKET_ICONS[b.id];
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() =>
+                        setHoveredId((cur) => (cur === b.id ? null : b.id))
+                      }
+                      onMouseEnter={() => setHoveredId(b.id)}
+                      onMouseLeave={() => setHoveredId(null)}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-2 rounded-xl px-2 py-1.5 text-left text-xs transition-colors",
+                        hoveredId === b.id
+                          ? "bg-primary/15 text-foreground"
+                          : "bg-muted/25 hover:bg-muted/60",
+                      )}
+                    >
+                      <span className="flex min-w-0 items-center gap-1.5 font-medium text-foreground">
+                        <BIcon
+                          className="h-3.5 w-3.5 shrink-0"
+                          style={{ color: b.color }}
+                        />
+                        <span className="truncate">{b.label}</span>
+                      </span>
+                      <span className="font-num flex shrink-0 items-center gap-1.5">
+                        <span className="font-semibold">
+                          {fmt(b.amount, true)}
+                        </span>
+                        <span className="text-[0.68rem] text-muted-foreground">
+                          {b.pct}%
+                        </span>
+                      </span>
+                    </button>
                   );
                 })}
-              </svg>
+              </div>
             </div>
 
-            {/* Mobile Bucket Legend */}
-            <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border/60 pt-2.5 text-xs">
-              {flow.buckets.map((b) => (
-                <button
-                  key={b.id}
-                  type="button"
-                  onClick={() =>
-                    setHoveredId((cur) => (cur === b.id ? null : b.id))
-                  }
-                  className={cn(
-                    "inline-flex items-center gap-1.5 text-left transition-opacity",
-                    hoveredId && hoveredId !== b.id
-                      ? "opacity-45"
-                      : "opacity-100",
-                  )}
-                >
-                  <span
-                    className="h-2.5 w-2.5 rounded-[3px]"
-                    style={{ background: b.color }}
-                  />
-                  <span className="font-medium text-foreground">{b.label}</span>
-                  <span className="font-num text-muted-foreground">
-                    {b.pct}%
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {/* Mobile Tappable Top Categories Strip */}
-            {flow.topCategories.length > 0 && onSelectCategory && (
-              <div className="mt-3 space-y-1 border-t border-border/60 pt-2.5">
-                <p className="label-mono">Tap category for timeline</p>
-                <div className="grid grid-cols-2 gap-1.5">
+            {/* Top Categories (Compact Icon Cards) */}
+            {flow.topCategories.length > 0 && (
+              <div className="border-t border-border/60 pt-3">
+                <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-1">
                   {flow.topCategories.slice(0, 4).map((cat) => {
                     const Icon = categoryIcon(cat.category);
                     return (
@@ -676,20 +1000,20 @@ export function MoneyFlowSankeyCard({
                         key={cat.key}
                         type="button"
                         onClick={() =>
-                          onSelectCategory(cat.account, cat.category)
+                          onSelectCategory?.(cat.account, cat.category)
                         }
-                        className="flex min-w-0 items-center justify-between gap-2 rounded-xl border border-border/70 bg-muted/30 px-2.5 py-2 text-left transition-colors active:scale-[0.98]"
+                        className="flex min-w-0 items-center justify-between gap-1.5 rounded-xl border border-border/60 bg-muted/25 px-2.5 py-2 text-left text-xs transition-colors hover:border-primary/45 hover:bg-muted/60 active:scale-[0.98]"
                       >
-                        <div className="flex min-w-0 items-center gap-1.5">
+                        <span className="flex min-w-0 items-center gap-1.5">
                           <Icon
                             className="h-3.5 w-3.5 shrink-0"
                             style={{ color: cat.color }}
                           />
-                          <span className="truncate text-xs font-medium text-foreground">
-                            {cat.category}
+                          <span className="truncate font-medium text-foreground">
+                            {shortFlowLabel(cat.category)}
                           </span>
-                        </div>
-                        <span className="font-num shrink-0 text-xs font-semibold text-foreground">
+                        </span>
+                        <span className="font-num shrink-0 font-semibold text-foreground">
                           {fmt(cat.amount, true)}
                         </span>
                       </button>
@@ -699,328 +1023,7 @@ export function MoneyFlowSankeyCard({
               </div>
             )}
           </div>
-
-          {/* DESKTOP 3-COLUMN SANKEY + SUMMARY SIDEBAR */}
-          <div className="hidden md:grid md:grid-cols-12 md:items-start md:gap-6">
-            {/* SVG River Canvas */}
-            <div className="md:col-span-8">
-              <svg
-                viewBox={`0 0 ${desktopGeo.width} ${desktopGeo.height}`}
-                className="h-auto w-full select-none"
-                role="img"
-                aria-label="Interactive money flow Sankey diagram"
-              >
-                {desktopGeo.ribbons.map((r) => {
-                  const hi = isRibbonHighlighted(r);
-                  return (
-                    <path
-                      key={r.id}
-                      d={r.d}
-                      fill={r.color}
-                      fillOpacity={hoveredId ? (hi ? 0.58 : 0.08) : 0.32}
-                      className="cursor-pointer transition-opacity duration-150"
-                      onMouseEnter={() => setHoveredId(r.id)}
-                      onMouseLeave={() => setHoveredId(null)}
-                    >
-                      <title>
-                        {r.label}: {fmt(r.amount)}
-                      </title>
-                    </path>
-                  );
-                })}
-
-                {/* Column 1: Income Sources (when present) */}
-                {desktopGeo.sourceNodes.map((n) => {
-                  const hi = isNodeHighlighted(n);
-                  const midY = n.y + n.h / 2;
-                  return (
-                    <g
-                      key={n.id}
-                      className="cursor-pointer transition-opacity duration-150"
-                      opacity={hi ? 1 : 0.28}
-                      onMouseEnter={() => setHoveredId(n.id)}
-                      onMouseLeave={() => setHoveredId(null)}
-                    >
-                      <rect
-                        x={n.x}
-                        y={n.y}
-                        width={n.w}
-                        height={n.h}
-                        rx={4}
-                        fill={n.color}
-                      />
-                      <text
-                        x={n.x - 10}
-                        y={midY - 2}
-                        textAnchor="end"
-                        fill="var(--foreground)"
-                        fontSize={11.5}
-                        fontWeight={600}
-                      >
-                        {n.label}
-                      </text>
-                      <text
-                        x={n.x - 10}
-                        y={midY + 12}
-                        textAnchor="end"
-                        fill="var(--muted-foreground)"
-                        fontSize={11}
-                        className="font-num"
-                      >
-                        {fmt(n.amount, true)}
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {/* Column 2: Buckets */}
-                {desktopGeo.bucketNodes.map((n) => {
-                  const hi = isNodeHighlighted(n);
-                  const midY = n.y + n.h / 2;
-                  const pillText = `${n.label} ${n.subLabel ?? ""}`;
-                  const pillW = Math.max(74, pillText.length * 6.5 + 22);
-                  return (
-                    <g
-                      key={n.id}
-                      className="cursor-pointer transition-opacity duration-150"
-                      opacity={hi ? 1 : 0.28}
-                      onMouseEnter={() => setHoveredId(n.id)}
-                      onMouseLeave={() => setHoveredId(null)}
-                    >
-                      <rect
-                        x={n.x}
-                        y={n.y}
-                        width={n.w}
-                        height={n.h}
-                        rx={4}
-                        fill={n.color}
-                      />
-                      {desktopGeo.showSources ? (
-                        <g
-                          transform={`translate(${n.x - pillW / 2 + 4}, ${midY - 11})`}
-                        >
-                          <rect
-                            width={pillW}
-                            height={22}
-                            rx={11}
-                            fill="var(--card)"
-                            fillOpacity={0.94}
-                            stroke="var(--border)"
-                            strokeWidth={1}
-                          />
-                          <circle cx={11} cy={11} r={3.5} fill={n.color} />
-                          <text
-                            x={19}
-                            y={14.5}
-                            fill="var(--foreground)"
-                            fontSize={10.5}
-                            fontWeight={600}
-                          >
-                            {n.label}{" "}
-                            <tspan
-                              fill="var(--muted-foreground)"
-                              className="font-num"
-                            >
-                              {n.subLabel}
-                            </tspan>
-                          </text>
-                        </g>
-                      ) : (
-                        <>
-                          <text
-                            x={n.x - 10}
-                            y={midY - 2}
-                            textAnchor="end"
-                            fill="var(--foreground)"
-                            fontSize={12}
-                            fontWeight={600}
-                          >
-                            {n.label}
-                          </text>
-                          <text
-                            x={n.x - 10}
-                            y={midY + 12}
-                            textAnchor="end"
-                            fill="var(--muted-foreground)"
-                            fontSize={11}
-                            className="font-num"
-                          >
-                            {n.subLabel} · {fmt(n.amount, true)}
-                          </text>
-                        </>
-                      )}
-                    </g>
-                  );
-                })}
-
-                {/* Column 3: Expense Categories & Savings Targets */}
-                {desktopGeo.targetNodes.map((n) => {
-                  const hi = isNodeHighlighted(n);
-                  const midY = n.y + n.h / 2 + 4;
-                  const clickable = Boolean(
-                    n.target?.category && n.target?.account && onSelectCategory,
-                  );
-                  return (
-                    <g
-                      key={n.id}
-                      className={cn(
-                        "transition-opacity duration-150",
-                        clickable && "cursor-pointer",
-                      )}
-                      opacity={hi ? 1 : 0.28}
-                      onMouseEnter={() => setHoveredId(n.id)}
-                      onMouseLeave={() => setHoveredId(null)}
-                      onClick={() => handleTargetClick(n.target)}
-                    >
-                      <rect
-                        x={n.x}
-                        y={n.y}
-                        width={n.w}
-                        height={n.h}
-                        rx={4}
-                        fill={n.color}
-                      />
-                      <text
-                        x={n.x + n.w + 10}
-                        y={midY}
-                        fill="var(--foreground)"
-                        fontSize={11.5}
-                        fontWeight={500}
-                      >
-                        {n.label.length > 20
-                          ? `${n.label.slice(0, 19)}…`
-                          : n.label}{" "}
-                        <tspan
-                          fill="var(--muted-foreground)"
-                          className="font-num"
-                          fontWeight={600}
-                        >
-                          {fmt(n.amount, true)}
-                        </tspan>
-                      </text>
-                    </g>
-                  );
-                })}
-              </svg>
-            </div>
-
-            {/* Right Summary Column: Kept Ring + By Bucket + Top Spending */}
-            <div className="space-y-5 border-l border-border/60 pl-5 md:col-span-4">
-              {/* Kept Ring Hero */}
-              <div className="flex items-center gap-3.5">
-                <KeptDonutRing pct={flow.keptPct} hasIncome={flow.hasIncome} />
-                <div className="min-w-0">
-                  <p className="text-xs text-muted-foreground">
-                    {flow.scopeLabel}
-                  </p>
-                  <p className="font-num truncate text-2xl font-extrabold tracking-tight text-foreground">
-                    {fmt(flow.hasIncome ? flow.totalKept : flow.totalSpend)}
-                  </p>
-                  <p className="font-num truncate text-xs text-muted-foreground">
-                    {flow.hasIncome
-                      ? `left over from ${fmt(flow.totalIncome, true)} in`
-                      : `spent across ${flow.targets.length} categories`}
-                  </p>
-                </div>
-              </div>
-
-              {/* By Bucket Proportional Bar */}
-              <div>
-                <p className="label-mono mb-2">By bucket</p>
-                <div className="mb-3 flex h-2.5 w-full overflow-hidden rounded-full bg-muted/60">
-                  {flow.buckets.map((b) => (
-                    <div
-                      key={b.id}
-                      style={{
-                        width: `${Math.max(3, b.pct)}%`,
-                        background: b.color,
-                      }}
-                      className="h-full border-r border-background/60 last:border-r-0 transition-all duration-300"
-                      title={`${b.label}: ${b.pct}%`}
-                    />
-                  ))}
-                </div>
-                <ul className="space-y-1.5 text-xs">
-                  {flow.buckets.map((b) => (
-                    <li key={b.id}>
-                      <button
-                        type="button"
-                        onMouseEnter={() => setHoveredId(b.id)}
-                        onMouseLeave={() => setHoveredId(null)}
-                        className="flex w-full items-center justify-between gap-2 rounded-lg px-1 py-0.5 text-left transition-colors hover:bg-muted/50"
-                      >
-                        <span className="flex items-center gap-2 font-medium text-foreground">
-                          <span
-                            className="h-2.5 w-2.5 shrink-0 rounded-full"
-                            style={{ background: b.color }}
-                          />
-                          {b.label}
-                        </span>
-                        <span className="font-num flex items-center gap-3 text-foreground">
-                          <span className="font-semibold">
-                            {fmt(b.amount, true)}
-                          </span>
-                          <span className="w-8 text-right text-muted-foreground">
-                            {b.pct}%
-                          </span>
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              {/* Top Categories with Delta & Click-to-Inspect Timeline */}
-              {flow.topCategories.length > 0 && (
-                <div className="border-t border-border/60 pt-3.5">
-                  <p className="label-mono mb-2">Top spending</p>
-                  <ul className="space-y-1 text-xs">
-                    {flow.topCategories.slice(0, 4).map((cat) => {
-                      const Icon = categoryIcon(cat.category);
-                      return (
-                        <li key={cat.key}>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              onSelectCategory?.(cat.account, cat.category)
-                            }
-                            className="flex w-full items-center justify-between gap-2 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-muted/60"
-                          >
-                            <span className="flex min-w-0 items-center gap-2">
-                              <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                              <span className="truncate font-medium text-foreground">
-                                {cat.category}
-                              </span>
-                            </span>
-                            <span className="font-num flex shrink-0 items-center gap-2">
-                              <span className="font-semibold text-foreground">
-                                {fmt(cat.amount, true)}
-                              </span>
-                              {cat.deltaPct !== null && (
-                                <span
-                                  className={cn(
-                                    "rounded-full px-1.5 py-0.5 text-[0.65rem] font-semibold",
-                                    cat.deltaPct > 0
-                                      ? "bg-destructive/15 text-destructive"
-                                      : "bg-positive/15 text-positive",
-                                  )}
-                                >
-                                  {cat.deltaPct > 0
-                                    ? `↑${cat.deltaPct}%`
-                                    : `↓${Math.abs(cat.deltaPct)}%`}
-                                </span>
-                              )}
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              )}
-            </div>
-          </div>
-        </>
+        </div>
       )}
     </Glass>
   );

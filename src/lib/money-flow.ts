@@ -65,6 +65,15 @@ export interface MoneyFlowCategoryChange {
   color: string;
 }
 
+export interface MoneyFlowTimelinePoint {
+  key: string;
+  label: string;
+  fullDate: string;
+  income: number;
+  spend: number;
+  net: number;
+}
+
 export interface MoneyFlowData {
   range: MoneyFlowRange;
   scopeLabel: string;
@@ -81,6 +90,28 @@ export interface MoneyFlowData {
   sourceToBucketLinks: MoneyFlowLink[];
   bucketToTargetLinks: MoneyFlowLink[];
   topCategories: MoneyFlowCategoryChange[];
+  timelinePoints: MoneyFlowTimelinePoint[];
+}
+
+const SHORT_LABEL_MAP: Record<string, string> = {
+  "Client work": "Client",
+  "Studio Draw": "Studio",
+  "Gift & Refund": "Gift",
+  "Personal income": "Income",
+  "Other income": "Other",
+  "Medical & Healthcare": "Medical",
+  "Personal Spending": "Personal",
+  "Saving & Investing": "Saving",
+  Transportation: "Transit",
+  "Prius 2012": "Prius",
+  "Left in balance": "Leftover",
+  "Software and subscriptions": "Software",
+  "Equipment and tools": "Gear",
+  "Other studio costs": "Studio",
+};
+
+export function shortFlowLabel(label: string): string {
+  return SHORT_LABEL_MAP[label] ?? label;
 }
 
 export interface CategoryTimelinePoint {
@@ -555,6 +586,106 @@ export function buildMoneyFlowData(
       color: BUCKET_META[c.bucketId].color,
     }));
 
+  // 7. Timeline Points for Line / Bar chart modes
+  const timelineBuckets = new Map<string, { income: number; spend: number }>();
+  const addTimelinePoint = (
+    bucketKey: string,
+    kind: "income" | "spend",
+    usd: number,
+  ) => {
+    if (usd <= 0) return;
+    const prev = timelineBuckets.get(bucketKey) ?? { income: 0, spend: 0 };
+    prev[kind] += usd;
+    timelineBuckets.set(bucketKey, prev);
+  };
+
+  let slotKeys: string[] = [];
+  const keyForDate = (d: string) =>
+    range === "1w" || range === "1m" ? d : d.slice(0, 7);
+
+  if (range === "1w") {
+    slotKeys = getTrailingDays(anchorDay, 7);
+  } else if (range === "1m") {
+    const [y, m] = ym.split("-").map(Number);
+    const daysInMonth = y && m ? new Date(Date.UTC(y, m, 0)).getUTCDate() : 30;
+    slotKeys = Array.from(
+      { length: daysInMonth },
+      (_, i) => `${ym}-${String(i + 1).padStart(2, "0")}`,
+    );
+  } else {
+    slotKeys = getTrailingMonths(range === "3m" ? 3 : 12, ym);
+  }
+
+  if (accountScope === "all" || accountScope === "Studio") {
+    const invIds = new Set(
+      db.invoices.filter((i) => isInvoice(i)).map((i) => i.id),
+    );
+    for (const p of db.payments) {
+      if (!invIds.has(p.invoiceId) || !inCurrent(p.date)) continue;
+      addTimelinePoint(
+        keyForDate(p.date),
+        "income",
+        toUSD(p.amount, p.currency, r),
+      );
+    }
+  }
+  if (accountScope === "all" || accountScope === "Personal") {
+    for (const inc of db.personalIncome ?? []) {
+      if (!inCurrent(inc.date)) continue;
+      addTimelinePoint(
+        keyForDate(inc.date),
+        "income",
+        toUSD(inc.amount, inc.currency, r),
+      );
+    }
+  }
+  for (const e of db.expenses) {
+    const acc = expenseAccount(e);
+    if (accountScope !== "all" && acc !== accountScope) continue;
+    if (!inCurrent(e.date)) continue;
+    addTimelinePoint(
+      keyForDate(e.date),
+      "spend",
+      toUSD(e.amount, e.currency, r),
+    );
+  }
+
+  const timelinePoints: MoneyFlowTimelinePoint[] = slotKeys.map((k) => {
+    const vals = timelineBuckets.get(k) ?? { income: 0, spend: 0 };
+    const isDay = k.length === 10;
+    const dt = new Date((isDay ? k : `${k}-01`) + "T00:00:00Z");
+    return {
+      key: k,
+      label:
+        range === "1w"
+          ? dt.toLocaleDateString("en-US", {
+              weekday: "short",
+              timeZone: "UTC",
+            })
+          : range === "1m"
+            ? String(Number(k.slice(8, 10)))
+            : dt.toLocaleDateString("en-US", {
+                month: "short",
+                timeZone: "UTC",
+              }),
+      fullDate: isDay
+        ? dt.toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric",
+            timeZone: "UTC",
+          })
+        : dt.toLocaleDateString("en-US", {
+            month: "long",
+            year: "numeric",
+            timeZone: "UTC",
+          }),
+      income: Math.round(vals.income * 100) / 100,
+      spend: Math.round(vals.spend * 100) / 100,
+      net: Math.round((vals.income - vals.spend) * 100) / 100,
+    };
+  });
+
   return {
     range,
     scopeLabel,
@@ -571,6 +702,7 @@ export function buildMoneyFlowData(
     sourceToBucketLinks,
     bucketToTargetLinks,
     topCategories,
+    timelinePoints,
   };
 }
 
