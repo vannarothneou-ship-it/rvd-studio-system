@@ -182,7 +182,7 @@ export function expenseItemIcon(
 export function AnimatedNumber({
   value,
   format = (n) => money(n),
-  duration = 320,
+  duration = 180,
   className,
 }: {
   value: number;

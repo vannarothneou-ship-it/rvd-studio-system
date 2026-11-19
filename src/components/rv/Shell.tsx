@@ -356,7 +356,7 @@ function ShellInner({ children }: { children: ReactNode }) {
       {/* Floating Frosted Mobile Header (Auto-hides on scroll down) */}
       <header
         className={cn(
-          "no-print fixed inset-x-3 top-[max(0.5rem,env(safe-area-inset-top))] z-40 rounded-2xl border border-white/14 bg-[#121319]/72 px-3 py-1.5 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl backdrop-saturate-180 transition-[transform,opacity] duration-300 ease-out will-change-transform [.light_&]:border-black/10 [.light_&]:bg-[#faf8f4]/78 [.light_&]:shadow-[0_10px_28px_-12px_rgba(0,0,0,0.14),inset_0_1px_0_rgba(255,255,255,0.75)] sm:hidden",
+          "no-print fixed inset-x-3 top-[max(0.5rem,env(safe-area-inset-top))] z-40 rounded-2xl border border-white/14 bg-[#121319]/82 px-3 py-1.5 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-md backdrop-saturate-150 transition-[transform,opacity] duration-200 ease-out will-change-transform [.light_&]:border-black/10 [.light_&]:bg-[#faf8f4]/86 [.light_&]:shadow-[0_10px_28px_-12px_rgba(0,0,0,0.14),inset_0_1px_0_rgba(255,255,255,0.75)] sm:hidden",
           barsHidden
             ? "pointer-events-none -translate-y-[calc(100%+1.5rem)] opacity-0"
             : "translate-y-0 opacity-100",
@@ -426,7 +426,7 @@ function ShellInner({ children }: { children: ReactNode }) {
       <nav
         aria-label="Mobile navigation"
         className={cn(
-          "no-print fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 mx-auto max-w-md rounded-[28px] border border-white/15 bg-[#121319]/75 px-1.5 py-1.5 shadow-[0_18px_40px_-14px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-2xl backdrop-saturate-180 transition-[transform,opacity] duration-300 ease-out will-change-transform [.light_&]:border-black/10 [.light_&]:bg-[#faf8f4]/82 [.light_&]:shadow-[0_16px_36px_-14px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.8)] sm:hidden",
+          "no-print fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 mx-auto max-w-md rounded-[28px] border border-white/15 bg-[#121319]/84 px-1.5 py-1.5 shadow-[0_18px_40px_-14px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-md backdrop-saturate-150 transition-[transform,opacity] duration-200 ease-out will-change-transform [.light_&]:border-black/10 [.light_&]:bg-[#faf8f4]/88 [.light_&]:shadow-[0_16px_36px_-14px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.8)] sm:hidden",
           barsHidden
             ? "pointer-events-none translate-y-[calc(100%+2rem)] opacity-0"
             : "translate-y-0 opacity-100",

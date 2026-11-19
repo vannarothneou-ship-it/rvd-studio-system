@@ -148,4 +148,143 @@ describe("parseReceiptText (local AI OCR receipt parser)", () => {
     expect(res.amount).toBe(36.4);
     expect(res.category).toBe("Utilities");
   });
+
+  it("parses ACLEDA WUCV inward remittance slip cleanly as income (IMG_2065)", () => {
+    const sample = `
+      Transaction Detail
+      WUCV
+      Deposited amount : 300.90 USD
+      Receive amount : 300.90 USD
+      Sent amount : 460.00 CAD
+      MTCN : 6814030769
+      From country : Canada
+      Receiver : Neou Vannaroth
+      USD 017493196
+      Sender : VANNARY NEOU
+      Purpose : Family Expense
+      Occupation/Position: Office Professional
+      The sender is my : Family
+      Date : Nov 18, 2026 09:15 PM
+      Completed : Ref. F3227083693
+      Call center (24/7)
+      023 994 444 | 015 999 233 ACLEDA BANK
+    `;
+    const res = parseReceiptText(sample, "2026-11-19", {
+      ownerNames: ["Roth", "Neou Vannaroth", "Vannaroth Neou"],
+    });
+    expect(res.txType).toBe("income");
+    expect(res.amount).toBe(300.9);
+    expect(res.currency).toBe("USD");
+    expect(res.date).toBe("2026-11-18");
+    expect(res.merchantOrPayer).toBe("Vannary Neou");
+    expect(res.description).toContain("Family Expense");
+    expect(res.category).toBe("Gift & Refund");
+    expect(res.reference).toBe("F3227083693");
+    expect(res.confidence).toBe("high");
+  });
+
+  it("recovers from colon-as-1 OCR corruption and logo glyph noise on ACLEDA slip (IMG_2077)", () => {
+    const corrupted = `
+      ម Transaction Detail
+      WUCV
+      Deposited amount 1300.90 USD
+      Receive amount : 300.90 USD
+      Sent amount : 460.00 CAD
+      MTCN : 6814030769
+      From country : Canada
+      Receiver : Neou Vannaroth
+      USD 017493196
+      Sender : VANNARY NEOU
+      Purpose : Family Expense
+      The sender is my : Family
+      Date : Nov 18, 2026 09:15 PM
+      Completed : Ref. F3227083693
+    `;
+    const res = parseReceiptText(corrupted, "2026-11-19", {
+      ownerNames: ["Neou Vannaroth"],
+    });
+    expect(res.txType).toBe("income");
+    expect(res.amount).toBe(300.9);
+    expect(res.currency).toBe("USD");
+    expect(res.merchantOrPayer).toBe("Vannary Neou");
+    expect(res.category).toBe("Gift & Refund");
+    expect(res.merchantOrPayer).not.toContain("Transaction Detail");
+  });
+
+  it("recovers 300.90 when both primary colon lines lost colons into leading 1", () => {
+    const doubleCorrupted = `
+      ម Transaction Detail
+      Deposited amount 1300.90 USD
+      Receive amount 1300.90 USD
+      Sent amount : 460.00 CAD
+      MTCN : 6814030769
+      From country : Canada
+      Receiver : Neou Vannaroth
+      USD 017493196
+      Sender : VANNARY NEOU
+      Purpose : Family Expense
+      Date : Nov 18, 2026 09:15 PM
+      Completed : Ref. F3227083693
+    `;
+    const res = parseReceiptText(doubleCorrupted, "2026-11-19", {
+      ownerNames: ["Neou Vannaroth"],
+    });
+    expect(res.txType).toBe("income");
+    expect(res.amount).toBe(300.9);
+    expect(res.currency).toBe("USD");
+    expect(res.merchantOrPayer).toBe("Vannary Neou");
+  });
+
+  it("ignores bank account numbers like USD 00412345 and treats owner-as-sender as expense", () => {
+    const outgoing = `
+      ACLEDA mobile
+      Transfer Completed
+      Sender : Neou Vannaroth
+      USD 00412345
+      Receiver : Brown Coffee
+      Amount : 4.50 USD
+      Date : Nov 19, 2026
+    `;
+    const res = parseReceiptText(outgoing, "2026-11-19", {
+      ownerNames: ["Neou Vannaroth"],
+    });
+    expect(res.txType).toBe("expense");
+    expect(res.amount).toBe(4.5);
+    expect(res.currency).toBe("USD");
+    expect(res.merchantOrPayer).toBe("Brown Coffee");
+    expect(res.category).toBe("Food");
+  });
+
+  it("parses exact raw Tesseract eng+khm OCR output from IMG_2065_21fd0218.jpeg accurately", () => {
+    const exactRawOcr = `ស   Transaction Detail
+wucv
+Deposited amount : 300.90 USD
+Receive amount     1300.90 USD
+Sent amount         1460.00 CAD
+MTCN                 16814030769
+From country        : Canada
+Receiver              :Neou Vannaroth
+USD 017493196
+Sender                 : VANNARY NEOU
+Purpose              : Family Expense
+Occupation/Position: Office Professional
+The sender is my  : Family
+Date                 :Nov 18, 2026 09:15 PM
+Completed           : Ref. F3227083693
+Call center (24/7)
+ol  SJ023994 444 | 015 999 233   អេសុលដា ស`;
+
+    const res = parseReceiptText(exactRawOcr, "2026-11-19", {
+      ownerNames: ["Roth", "Neou Vannaroth", "Vannaroth Neou"],
+    });
+    expect(res.txType).toBe("income");
+    expect(res.amount).toBe(300.9);
+    expect(res.currency).toBe("USD");
+    expect(res.date).toBe("2026-11-18");
+    expect(res.merchantOrPayer).toBe("Vannary Neou");
+    expect(res.description).toBe("Family Expense · Canada");
+    expect(res.category).toBe("Gift & Refund");
+    expect(res.reference).toBe("F3227083693");
+    expect(res.confidence).toBe("high");
+  });
 });

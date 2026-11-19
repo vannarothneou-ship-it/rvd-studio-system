@@ -43,6 +43,7 @@ import {
   PERSONAL_CATEGORIES,
   PERSONAL_INCOME_METHODS,
   PERSONAL_INCOME_SOURCES,
+  getDB,
   money,
   setDB,
   shortDate,
@@ -56,6 +57,7 @@ import {
 import {
   parseReceiptText,
   scanReceiptLocally,
+  warmUpReceiptOcr,
   type ReceiptScanMode,
 } from "@/lib/local-receipt-ai";
 import { cn } from "@/lib/utils";
@@ -290,6 +292,10 @@ export function ReceiptScannerDrawer({
       setPreviewUrl(quickUrl);
 
       try {
+        const s = getDB().settings;
+        const ownerNames = [s.ownerName, s.signatoryName, s.abaName].filter(
+          (v) => Boolean(v && v.trim()),
+        );
         const {
           result,
           previewDataUrl,
@@ -304,7 +310,7 @@ export function ReceiptScannerDrawer({
             setScanPct(pct);
             setScanStatus(status);
           },
-          { rotationDeg: nextRot, mode: nextMode },
+          { rotationDeg: nextRot, mode: nextMode, context: { ownerNames } },
         );
 
         setPreviewUrl(previewDataUrl);
@@ -365,6 +371,13 @@ export function ReceiptScannerDrawer({
     },
     [autoRecord, record, rotationDeg, scanMode],
   );
+
+  // Pre-warm on-device AI worker quietly after drawer animation finishes
+  useEffect(() => {
+    if (!open) return;
+    const t = window.setTimeout(() => warmUpReceiptOcr(), 160);
+    return () => window.clearTimeout(t);
+  }, [open]);
 
   // Allow Ctrl/Cmd+V image paste while drawer is open
   useEffect(() => {
@@ -441,7 +454,13 @@ export function ReceiptScannerDrawer({
 
   const handleReparseRaw = () => {
     if (!record) return;
-    const parsed = parseReceiptText(rawText, record.date || today());
+    const s = getDB().settings;
+    const ownerNames = [s.ownerName, s.signatoryName, s.abaName].filter((v) =>
+      Boolean(v && v.trim()),
+    );
+    const parsed = parseReceiptText(rawText, record.date || today(), {
+      ownerNames,
+    });
     const next: RecordedRecord = {
       ...record,
       txType: parsed.txType,
@@ -791,7 +810,9 @@ export function ReceiptScannerDrawer({
                     </span>
                     <div>
                       <p className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                        {record.saved ? "Saved" : "Review & Save"}
+                        {record.txType === "income" ? "Income" : "Expense"} ·{" "}
+                        {record.saved ? "Saved" : "Review"}
+                        {record.confidence !== "high" ? " · Verify" : ""}
                       </p>
                       <p
                         className={cn(

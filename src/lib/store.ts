@@ -588,6 +588,41 @@ function load() {
     /* ignore */
   }
 }
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+let persistDirty = false;
+let persistHooksAttached = false;
+
+export function flushDB() {
+  if (!persistDirty || typeof window === "undefined") return;
+  if (persistTimer !== null) {
+    clearTimeout(persistTimer);
+    persistTimer = null;
+  }
+  persistDirty = false;
+  try {
+    localStorage.setItem(KEY, JSON.stringify(state));
+  } catch {
+    console.warn("Local storage capacity reached.");
+  }
+}
+
+function schedulePersist() {
+  if (typeof window === "undefined") return;
+  persistDirty = true;
+  if (!persistHooksAttached) {
+    persistHooksAttached = true;
+    window.addEventListener("pagehide", flushDB);
+    window.addEventListener("beforeunload", flushDB);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flushDB();
+    });
+  }
+  if (persistTimer !== null) {
+    clearTimeout(persistTimer);
+  }
+  persistTimer = setTimeout(flushDB, 140);
+}
+
 export function getDB() {
   load();
   return state;
@@ -595,15 +630,12 @@ export function getDB() {
 export function setDB(fn: (d: DB) => DB) {
   load();
   state = fn(state);
-  try {
-    localStorage.setItem(KEY, JSON.stringify(state));
-  } catch {
-    console.warn("Local storage capacity reached.");
-  }
   listeners.forEach((l) => l());
+  schedulePersist();
 }
 export function resetDB() {
   setDB(() => seed());
+  flushDB();
 }
 export function useDB<T>(sel: (d: DB) => T): T {
   return useSyncExternalStore(

@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Calendar, Check, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Calendar, Check, Sparkles, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { SlideDrawer } from "@/components/rv/ui";
 import {
@@ -12,6 +12,8 @@ import {
   PERSONAL_CATEGORIES,
   PERSONAL_INCOME_METHODS,
   PERSONAL_INCOME_SOURCES,
+  expenseAccount,
+  getDB,
   today,
   type Currency,
   type Expense,
@@ -49,11 +51,84 @@ export function QuickExpenseDrawer({
 }) {
   const [draft, setDraft] = useState<Expense | null>(item);
   const [amtText, setAmtText] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     setDraft(item);
     setAmtText(item && item.amount > 0 ? String(item.amount) : "");
+    setConfirmDelete(false);
   }, [item]);
+
+  const itemId = item?.id ?? "";
+  const quickPicks = useMemo(() => {
+    if (!itemId) return [];
+    const defaults = [
+      {
+        label: "Coffee",
+        category: "Food",
+        amount: 2.5,
+        currency: "USD" as Currency,
+      },
+      {
+        label: "Lunch",
+        category: "Food",
+        amount: 5,
+        currency: "USD" as Currency,
+      },
+      {
+        label: "Fuel",
+        category: "Prius 2012",
+        amount: 20,
+        currency: "USD" as Currency,
+      },
+      {
+        label: "Grab",
+        category: "Transportation",
+        amount: 3,
+        currency: "USD" as Currency,
+      },
+      {
+        label: "Market",
+        category: "Food",
+        amount: 15,
+        currency: "USD" as Currency,
+      },
+    ];
+    const recent = getDB()
+      .expenses.filter(
+        (e) => expenseAccount(e) === "Personal" && e.description.trim(),
+      )
+      .slice(-40)
+      .reverse();
+    const seen = new Set<string>();
+    const picks: {
+      label: string;
+      category: string;
+      amount: number;
+      currency: Currency;
+    }[] = [];
+    for (const e of recent) {
+      const clean = e.description.trim().slice(0, 20);
+      const key = clean.toLowerCase();
+      if (!clean || seen.has(key)) continue;
+      seen.add(key);
+      picks.push({
+        label: clean,
+        category: e.category || "Food",
+        amount: e.amount,
+        currency: e.currency,
+      });
+      if (picks.length >= 5) break;
+    }
+    for (const def of defaults) {
+      if (picks.length >= 5) break;
+      if (!seen.has(def.label.toLowerCase())) {
+        picks.push(def);
+        seen.add(def.label.toLowerCase());
+      }
+    }
+    return picks;
+  }, [itemId]);
 
   if (!item || !draft) return null;
 
@@ -223,6 +298,41 @@ export function QuickExpenseDrawer({
           </div>
         </div>
 
+        {/* 1-Tap Daily Quick-Picks when adding new expense */}
+        {!isExisting && quickPicks.length > 0 && (
+          <div className="no-scrollbar -mx-1 flex items-center gap-1.5 overflow-x-auto px-1">
+            <span className="inline-flex shrink-0 items-center gap-1 text-[0.66rem] font-semibold uppercase tracking-wider text-muted-foreground">
+              <Sparkles className="h-3 w-3 text-primary" />
+              Quick
+            </span>
+            {quickPicks.map((qp) => (
+              <button
+                key={qp.label}
+                type="button"
+                onClick={() => {
+                  const nextAmt = amtText ? draft.amount : qp.amount;
+                  if (!amtText) setAmtText(String(qp.amount));
+                  setDraft({
+                    ...draft,
+                    category: qp.category,
+                    description: qp.label,
+                    currency: amtText ? draft.currency : qp.currency,
+                    amount: nextAmt,
+                  });
+                }}
+                className={cn(
+                  "shrink-0 rounded-full border px-2.5 py-1 text-[0.7rem] font-medium transition-colors active:scale-95",
+                  draft.description === qp.label
+                    ? "border-primary bg-primary/18 text-primary"
+                    : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {qp.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Optional Note */}
         <input
           type="text"
@@ -254,15 +364,22 @@ export function QuickExpenseDrawer({
             <button
               type="button"
               onClick={() => {
-                if (confirm("Delete this expense?")) {
-                  onDelete(draft);
-                  onClose();
+                if (!confirmDelete) {
+                  setConfirmDelete(true);
+                  return;
                 }
+                onDelete(draft);
+                onClose();
               }}
-              className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl border border-destructive/35 text-xs font-semibold text-destructive transition-colors hover:bg-destructive/10"
+              className={cn(
+                "inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl border text-xs font-semibold transition-colors",
+                confirmDelete
+                  ? "border-destructive bg-destructive text-destructive-foreground"
+                  : "border-destructive/35 text-destructive hover:bg-destructive/10",
+              )}
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Delete Expense
+              {confirmDelete ? "Tap again to delete" : "Delete Expense"}
             </button>
           )}
         </div>
@@ -284,10 +401,12 @@ export function QuickIncomeDrawer({
 }) {
   const [draft, setDraft] = useState<PersonalIncome | null>(item);
   const [amtText, setAmtText] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     setDraft(item);
     setAmtText(item && item.amount > 0 ? String(item.amount) : "");
+    setConfirmDelete(false);
   }, [item]);
 
   if (!item || !draft) return null;
@@ -488,15 +607,22 @@ export function QuickIncomeDrawer({
             <button
               type="button"
               onClick={() => {
-                if (confirm("Delete this income entry?")) {
-                  onDelete(draft);
-                  onClose();
+                if (!confirmDelete) {
+                  setConfirmDelete(true);
+                  return;
                 }
+                onDelete(draft);
+                onClose();
               }}
-              className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl border border-destructive/35 text-xs font-semibold text-destructive transition-colors hover:bg-destructive/10"
+              className={cn(
+                "inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl border text-xs font-semibold transition-colors",
+                confirmDelete
+                  ? "border-destructive bg-destructive text-destructive-foreground"
+                  : "border-destructive/35 text-destructive hover:bg-destructive/10",
+              )}
             >
               <Trash2 className="h-3.5 w-3.5" />
-              Delete Income
+              {confirmDelete ? "Tap again to delete" : "Delete Income"}
             </button>
           )}
         </div>
