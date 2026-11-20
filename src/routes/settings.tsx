@@ -192,6 +192,9 @@ function Page() {
         throw new Error("Invalid attachment data");
       }
 
+      const backupMediaCount = isObject(p.mediaBlobs)
+        ? Object.keys(p.mediaBlobs).length
+        : 0;
       const restoredMedia = isObject(p.mediaBlobs)
         ? await restoreMediaBlobs(p.mediaBlobs)
         : 0;
@@ -225,6 +228,11 @@ function Page() {
       toast.success(
         `Backup restored. ${restoredMedia} original attachments recovered.`,
       );
+      if (restoredMedia < backupMediaCount) {
+        toast.warning(
+          `${backupMediaCount - restoredMedia} attachments could not be restored in this browser.`,
+        );
+      }
     } catch (error) {
       toast.error(
         error instanceof Error && error.message === "Incomplete backup file"
