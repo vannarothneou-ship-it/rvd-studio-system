@@ -324,7 +324,7 @@ function Page() {
     () =>
       [...db.payments]
         .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 8),
+        .slice(0, showAllPayments ? db.payments.length : 8),
     [db.payments, showAllPayments],
   );
 
