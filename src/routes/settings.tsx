@@ -125,7 +125,9 @@ function Page() {
       const mediaIds = [
         ...snapshot.projects.flatMap((project) => project.media ?? []),
         ...(snapshot.workTasks ?? []).flatMap((task) => task.media ?? []),
-        ...(snapshot.reminders ?? []).flatMap((reminder) => reminder.media ?? []),
+        ...(snapshot.reminders ?? []).flatMap(
+          (reminder) => reminder.media ?? [],
+        ),
       ].map((media) => media.id);
       const mediaBlobs = await exportMediaBlobs(mediaIds);
       const backup = {
@@ -185,10 +187,7 @@ function Page() {
       ) {
         throw new Error("Incomplete backup file");
       }
-      if (
-        p.mediaBlobs !== undefined &&
-        !isObject(p.mediaBlobs)
-      ) {
+      if (p.mediaBlobs !== undefined && !isObject(p.mediaBlobs)) {
         throw new Error("Invalid attachment data");
       }
 
@@ -263,7 +262,8 @@ function Page() {
                 Database Backup &amp; Restore
               </h2>
               <p className="truncate text-xs text-muted-foreground">
-                Export and restore records, reminders and original project attachments
+                Export and restore records, reminders and original project
+                attachments
               </p>
             </div>
           </div>
@@ -272,7 +272,9 @@ function Page() {
         <div className="mb-3 flex items-start gap-2.5 rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
           <p>
-            <strong className="font-semibold text-foreground">Local browser storage.</strong>{" "}
+            <strong className="font-semibold text-foreground">
+              Local browser storage.
+            </strong>{" "}
             Your records are saved in this browser on this device. They do not
             automatically sync to another device or another user. Download a
             backup before clearing browser data or moving to a new device.
