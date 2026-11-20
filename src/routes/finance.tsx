@@ -447,7 +447,7 @@ function Page() {
               </p>
               <p
                 className={cn(
-                  "font-num mt-2 text-4xl font-extrabold",
+                  "font-num mt-2 text-3xl font-extrabold sm:text-4xl",
                   studioNetRange < 0 && "text-destructive",
                 )}
               >
