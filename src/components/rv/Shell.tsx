@@ -513,8 +513,15 @@ function ShellInner({ children }: { children: ReactNode }) {
       </nav>
 
       {/* Desktop Floating Top Navigation */}
-      <nav className="no-print fixed left-1/2 top-4 z-40 hidden w-[min(calc(100vw-2rem),84rem)] -translate-x-1/2 sm:block">
-        <div className="glass-strong flex items-center justify-between gap-2.5 rounded-full p-2">
+      <nav
+        className={cn(
+          "no-print fixed left-1/2 top-4 z-40 hidden w-[min(calc(100vw-2rem),84rem)] -translate-x-1/2 will-change-transform transition-[transform,opacity] duration-300 ease-out sm:block",
+          barsHidden
+            ? "pointer-events-none -translate-y-24 opacity-0"
+            : "translate-y-0 opacity-100",
+        )}
+      >
+        <div className="glass-strong flex items-center justify-between gap-2.5 rounded-full border border-white/12 bg-[#17181d]/78 p-2 shadow-[0_16px_44px_-20px_rgba(0,0,0,0.7)] backdrop-blur-2xl backdrop-saturate-150 transition-[background-color,border-color,box-shadow] duration-300 hover:border-primary/25 hover:shadow-[0_20px_52px_-20px_rgba(0,0,0,0.72)] [.light_&]:border-black/10 [.light_&]:bg-white/78">
           {/* Top-Level Workspace Switcher: Dashboard · Studio · Personal · Work */}
           <div className="shrink-0">
             <WorkspaceSwitcher
@@ -534,7 +541,7 @@ function ShellInner({ children }: { children: ReactNode }) {
                     key={it.to}
                     to={it.to}
                     className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-[background-color,color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-sm active:scale-[0.97]",
                       on
                         ? "bg-primary/18 text-primary"
                         : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -613,7 +620,7 @@ function ShellInner({ children }: { children: ReactNode }) {
         </div>
       </nav>
 
-      <main className="mx-auto max-w-6xl px-3 pt-[4.25rem] sm:px-4 sm:pt-24">
+      <main key={path} className="page-enter mx-auto max-w-6xl px-3 pt-[4.25rem] sm:px-4 sm:pt-24">
         {children}
       </main>
       <OfflineIndicator />
