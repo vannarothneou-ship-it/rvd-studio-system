@@ -14,6 +14,7 @@ import {
   cashFlowSeries,
   cashReceived,
   categoryLimit,
+  clientDeleteBlocker,
   categoryTotals,
   combinedCashFlowSeries,
   compactMoney,
@@ -35,6 +36,8 @@ import {
   normalizeServicePillar,
   parseTimelineDays,
   periodBreakdownBars,
+  projectDeleteBlocker,
+  serviceDeleteBlocker,
   personalCategoryTotals,
   personalIncomeSourceTotals,
   personalIncomeTotal,
@@ -69,6 +72,56 @@ const inv = (p: Partial<Invoice>): Invoice => ({
   ],
   images: [],
   ...p,
+});
+
+describe("relationship-safe deletion", () => {
+  it("blocks client deletion while projects or documents still reference it", () => {
+    const db = getDB();
+    const clientId = db.clients[0]!.id;
+    expect(clientDeleteBlocker(db, clientId)).toBeTruthy();
+    expect(clientDeleteBlocker(db, "unlinked-client")).toBeNull();
+  });
+
+  it("blocks project deletion while documents or expenses reference it", () => {
+    const db = getDB();
+    const projectId = "linked-project";
+    const withDocument = {
+      ...db,
+      invoices: [{ ...db.invoices[0]!, projectId }],
+    };
+    expect(projectDeleteBlocker(withDocument, projectId)).toContain(
+      "commercial",
+    );
+    const withExpense = {
+      ...db,
+      expenses: [{ ...db.expenses[0]!, projectId }],
+    };
+    expect(projectDeleteBlocker(withExpense, projectId)).toContain(
+      "expenses",
+    );
+    expect(projectDeleteBlocker(db, "unlinked-project")).toBeNull();
+  });
+
+  it("blocks service deletion while projects or document line items reference it", () => {
+    const db = getDB();
+    const serviceId = "linked-service";
+    const withProject = {
+      ...db,
+      projects: [{ ...db.projects[0]!, serviceId }],
+    };
+    expect(serviceDeleteBlocker(withProject, serviceId)).toContain("project");
+    const withDocument = {
+      ...db,
+      invoices: [{
+        ...db.invoices[0]!,
+        items: [{ ...db.invoices[0]!.items[0]!, serviceId }],
+      }],
+    };
+    expect(serviceDeleteBlocker(withDocument, serviceId)).toContain(
+      "commercial document",
+    );
+    expect(serviceDeleteBlocker(db, "unlinked-service")).toBeNull();
+  });
 });
 
 describe("invoice rules", () => {
