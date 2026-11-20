@@ -2943,9 +2943,11 @@ export function serviceDeleteBlocker(db: DB, serviceId: string): string | null {
   if (db.projects.some((project) => project.serviceId === serviceId)) {
     return "This service is linked to a project. Change the project's service before deleting it.";
   }
-  if (db.invoices.some((document) =>
-    document.items.some((item) => item.serviceId === serviceId),
-  )) {
+  if (
+    db.invoices.some((document) =>
+      document.items.some((item) => item.serviceId === serviceId),
+    )
+  ) {
     return "This service appears on a commercial document. Keep it to preserve document history.";
   }
   return null;
