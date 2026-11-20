@@ -1,4 +1,4 @@
-import { Briefcase, Layers, Wallet } from "lucide-react";
+import { Briefcase, Eye, EyeOff, Layers, Wallet } from "lucide-react";
 import { Glass, Stat } from "@/components/rv/ui";
 import { AnimatedNumber } from "@/components/rv/FinanceVisuals";
 import {
@@ -8,6 +8,7 @@ import {
   useDB,
   workspaceBalances,
 } from "@/lib/store";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { WorkspaceMode } from "@/components/rv/WorkspaceSwitcher";
 
@@ -17,6 +18,9 @@ export function WorkspaceBalanceCard({
   workspace: WorkspaceMode | "studio";
 }) {
   const db = useDB((d) => d);
+  const [showAmounts, setShowAmounts] = useState(true);
+  const displayMoney = (value: number, compact = false) =>
+    showAmounts ? (compact ? compactMoney(value) : money(value)) : "••••";
   const bal = workspaceBalances(db);
   const output = workspace === "work" ? designOutputSummary(db) : null;
 
@@ -94,15 +98,18 @@ export function WorkspaceBalanceCard({
               ·
             </span>
             <span className="hidden sm:inline">Real-time Wallet Total</span>
+            <button type="button" onClick={() => setShowAmounts((value) => !value)} aria-label={showAmounts ? "Hide balance amounts" : "Show balance amounts"} aria-pressed={!showAmounts} title={showAmounts ? "Hide amounts" : "Show amounts"} className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+              {showAmounts ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+            </button>
           </div>
           <p
             className={cn(
               "font-num mt-1.5 text-3xl font-extrabold tracking-tight sm:text-4xl",
               tone,
             )}
-            title={money(bal.personalBalance)}
+            title={displayMoney(bal.personalBalance)}
           >
-            <AnimatedNumber value={bal.personalBalance} />
+            {showAmounts ? <AnimatedNumber value={bal.personalBalance} /> : "••••"}
           </p>
           <p className="mt-1 hidden text-xs text-muted-foreground sm:block">
             Personal Income minus Personal Expenses across your personal ledger
@@ -112,26 +119,26 @@ export function WorkspaceBalanceCard({
         <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3 sm:grid-cols-4 lg:border-l lg:border-border/70 lg:bg-transparent lg:p-0 lg:pl-6">
           <Stat
             label="Total income"
-            value={compactMoney(bal.personalInAll)}
-            fullValue={money(bal.personalInAll)}
+            value={displayMoney(bal.personalInAll, true)}
+            fullValue={displayMoney(bal.personalInAll)}
             tone={bal.personalInAll > 0 ? "pos" : undefined}
           />
           <Stat
             label="Total spending"
-            value={compactMoney(bal.personalOutAll)}
-            fullValue={money(bal.personalOutAll)}
+            value={displayMoney(bal.personalOutAll, true)}
+            fullValue={displayMoney(bal.personalOutAll)}
             tone="neg"
           />
           <Stat
             label="This month net"
-            value={compactMoney(bal.personalMonthNet, "USD", true)}
-            fullValue={money(bal.personalMonthNet, "USD", true)}
+            value={showAmounts ? compactMoney(bal.personalMonthNet, "USD", true) : "••••"}
+            fullValue={displayMoney(bal.personalMonthNet)}
             tone={bal.personalMonthNet >= 0 ? "pos" : "neg"}
           />
           <Stat
             label="Saved goals"
-            value={compactMoney(bal.personalGoalsSaved)}
-            fullValue={money(bal.personalGoalsSaved)}
+            value={displayMoney(bal.personalGoalsSaved, true)}
+            fullValue={displayMoney(bal.personalGoalsSaved)}
             tone="pos"
           />
         </div>
@@ -147,15 +154,18 @@ export function WorkspaceBalanceCard({
           <span className="font-medium text-foreground">Studio Workspace</span>
           <span aria-hidden="true">·</span>
           <span>Real-time Current Balance (All ledger entries)</span>
+          <button type="button" onClick={() => setShowAmounts((value) => !value)} aria-label={showAmounts ? "Hide balance amounts" : "Show balance amounts"} aria-pressed={!showAmounts} title={showAmounts ? "Hide amounts" : "Show amounts"} className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+            {showAmounts ? <Eye className="h-3.5 w-3.5" /> : <EyeOff className="h-3.5 w-3.5" />}
+          </button>
         </div>
         <p
           className={cn(
             "font-num mt-1.5 text-3xl font-extrabold tracking-tight sm:text-4xl",
             bal.studioBalance >= 0 ? "text-foreground" : "text-destructive",
           )}
-          title={money(bal.studioBalance)}
+          title={displayMoney(bal.studioBalance)}
         >
-          <AnimatedNumber value={bal.studioBalance} />
+          {showAmounts ? <AnimatedNumber value={bal.studioBalance} /> : "••••"}
         </p>
         <p className="mt-1 hidden text-xs text-muted-foreground sm:block">
           Paid Studio Invoices minus Studio Operating Expenses across RothVan
@@ -166,24 +176,24 @@ export function WorkspaceBalanceCard({
       <div className="grid grid-cols-2 gap-4 border-t border-border/70 pt-3 sm:grid-cols-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
         <Stat
           label="Cash in"
-          value={compactMoney(bal.studioInAll)}
-          fullValue={money(bal.studioInAll)}
+          value={displayMoney(bal.studioInAll, true)}
+          fullValue={displayMoney(bal.studioInAll)}
           tone="pos"
         />
         <Stat
           label="Studio out"
-          value={compactMoney(bal.studioOutAll)}
-          fullValue={money(bal.studioOutAll)}
+          value={displayMoney(bal.studioOutAll, true)}
+          fullValue={displayMoney(bal.studioOutAll)}
         />
         <Stat
           label="Open A/R"
-          value={compactMoney(bal.openAR)}
-          fullValue={money(bal.openAR)}
+          value={displayMoney(bal.openAR, true)}
+          fullValue={displayMoney(bal.openAR)}
         />
         <Stat
           label="This month net"
-          value={compactMoney(bal.studioMonthNet, "USD", true)}
-          fullValue={money(bal.studioMonthNet, "USD", true)}
+          value={showAmounts ? compactMoney(bal.studioMonthNet, "USD", true) : "••••"}
+          fullValue={displayMoney(bal.studioMonthNet)}
           tone={bal.studioMonthNet >= 0 ? "pos" : "neg"}
         />
       </div>
