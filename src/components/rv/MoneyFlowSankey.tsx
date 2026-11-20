@@ -2,6 +2,8 @@ import { useMemo, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
+  Eye,
+  EyeOff,
   BarChart3,
   Briefcase,
   PieChart as PieIcon,
@@ -155,14 +157,14 @@ function buildSankeyGeometry(
   },
 ) {
   const { width, showSources, compact = false } = opts;
-  const topY = 16;
+  const topY = compact ? 12 : 16;
   const rowCount = Math.max(
     flow.buckets.length,
     flow.targets.length,
     showSources ? flow.sources.length : 0,
   );
-  const rowStep = compact ? 34 : 38;
-  const height = Math.max(compact ? 320 : 380, rowCount * rowStep + 34);
+  const rowStep = compact ? 27 : 38;
+  const height = Math.max(compact ? 250 : 380, rowCount * rowStep + (compact ? 20 : 34));
   const usableH = height - topY * 2;
   const barW = compact ? 10 : 12;
 
@@ -373,6 +375,8 @@ export function MoneyFlowSankeyCard({
   const [range, setRange] = useState<MoneyFlowRange>("1m");
   const [chartType, setChartType] = useState<FlowChartType>("river");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [showBalances, setShowBalances] = useState(!hideBalances);
+  const balancesHidden = hideBalances || !showBalances;
 
   const flow = useMemo(
     () => buildMoneyFlowData(db, range, accountScope, anchorMonth),
@@ -400,11 +404,11 @@ export function MoneyFlowSankeyCard({
   );
 
   const fmt = (n: number, compact = false) =>
-    hideBalances ? "••••" : compact ? compactMoney(n) : money(n);
+    balancesHidden ? "••••" : compact ? compactMoney(n) : money(n);
 
   const activeInfo = useMemo(() => {
     if (!hoveredId) return null;
-    const formatAmt = (n: number) => (hideBalances ? "••••" : money(n));
+    const formatAmt = (n: number) => (balancesHidden ? "••••" : money(n));
     const src = flow.sources.find((s) => s.id === hoveredId);
     if (src)
       return `${shortFlowLabel(src.label)} · ${formatAmt(src.amount)} (${src.count})`;
@@ -417,7 +421,7 @@ export function MoneyFlowSankeyCard({
     const rbn = desktopGeo.ribbons.find((r) => r.id === hoveredId);
     if (rbn) return `${rbn.label} · ${formatAmt(rbn.amount)}`;
     return null;
-  }, [hoveredId, flow, desktopGeo.ribbons, hideBalances]);
+  }, [hoveredId, flow, desktopGeo.ribbons, balancesHidden]);
 
   const isRibbonHighlighted = (r: PositionedRibbon) => {
     if (!hoveredId) return true;
@@ -476,6 +480,16 @@ export function MoneyFlowSankeyCard({
             <span className="font-num hidden text-xs text-muted-foreground sm:inline">
               · {flow.scopeLabel}
             </span>
+            <button
+              type="button"
+              onClick={() => setShowBalances((value) => !value)}
+              aria-label={balancesHidden ? "Show financial amounts" : "Hide financial amounts"}
+              aria-pressed={balancesHidden}
+              title={balancesHidden ? "Show amounts" : "Hide amounts"}
+              className="ml-1 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border/70 text-muted-foreground transition-[background-color,color,transform] duration-200 hover:bg-muted hover:text-foreground active:scale-90"
+            >
+              {balancesHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </button>
           </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
             {activeInfo ??
@@ -579,7 +593,7 @@ export function MoneyFlowSankeyCard({
                 <div className="md:hidden">
                   <svg
                     viewBox={`0 0 ${mobileGeo.width} ${mobileGeo.height}`}
-                    className="h-auto min-h-[290px] w-full select-none"
+                    className="flow-chart-in h-auto w-full select-none"
                     role="img"
                     aria-label="Money flow river chart"
                   >
@@ -591,7 +605,7 @@ export function MoneyFlowSankeyCard({
                           d={r.d}
                           fill={r.color}
                           fillOpacity={hoveredId ? (hi ? 0.65 : 0.09) : 0.36}
-                          className="transition-opacity duration-150"
+                          className="flow-ribbon-in transition-opacity duration-200"
                           onClick={() =>
                             setHoveredId((cur) =>
                               cur === r.toId ? null : r.toId,
@@ -607,7 +621,7 @@ export function MoneyFlowSankeyCard({
                       return (
                         <g
                           key={n.id}
-                          className="cursor-pointer transition-opacity duration-150"
+                          className="flow-node-in cursor-pointer transition-opacity duration-200"
                           opacity={hi ? 1 : 0.3}
                           onClick={() =>
                             setHoveredId((cur) => (cur === n.id ? null : n.id))
@@ -657,7 +671,7 @@ export function MoneyFlowSankeyCard({
                         <g
                           key={n.id}
                           className={cn(
-                            "transition-opacity duration-150",
+                            "flow-node-in transition-opacity duration-200",
                             clickable && "cursor-pointer",
                           )}
                           opacity={hi ? 1 : 0.3}
@@ -699,7 +713,7 @@ export function MoneyFlowSankeyCard({
                 <div className="hidden md:block">
                   <svg
                     viewBox={`0 0 ${desktopGeo.width} ${desktopGeo.height}`}
-                    className="h-auto min-h-[360px] w-full select-none"
+                    className="flow-chart-in h-auto w-full select-none"
                     role="img"
                     aria-label="Interactive money flow Sankey diagram"
                   >
