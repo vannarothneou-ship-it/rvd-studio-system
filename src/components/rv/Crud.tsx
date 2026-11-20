@@ -38,7 +38,7 @@ export function EditModal<T extends { id: string }>({
   presentation?: "modal" | "drawer" | undefined;
   side?: "right" | "left" | undefined;
   onSave: (v: T) => void;
-  onDelete?: ((v: T) => void) | undefined;
+  onDelete?: ((v: T) => void | boolean) | undefined;
   onClose: () => void;
   onFieldChange?: (next: T, key: string) => T;
   footerExtra?: (v: T, patch: (p: Partial<T>) => void) => ReactNode;
@@ -215,8 +215,8 @@ export function EditModal<T extends { id: string }>({
             variant="danger"
             onClick={() => {
               if (confirm("Delete this?")) {
-                onDelete(v);
-                onClose();
+                const deleted = onDelete(v);
+                if (deleted !== false) onClose();
               }
             }}
           >
