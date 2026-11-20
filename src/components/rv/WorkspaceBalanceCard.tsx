@@ -226,7 +226,9 @@ export function WorkspaceBalanceCard({
         />
         <Stat
           label="This month net"
-          value={showAmounts ? compactMoney(bal.studioMonthNet, "USD", true) : "••••"}
+          value={
+            showAmounts ? compactMoney(bal.studioMonthNet, "USD", true) : "••••"
+          }
           fullValue={displayMoney(bal.studioMonthNet)}
           tone={bal.studioMonthNet >= 0 ? "pos" : "neg"}
         />
