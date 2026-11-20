@@ -385,4 +385,47 @@ ol  SJ023994 444 | 015 999 233   អេសុលដា ស`;
     expect(parsed.matchedRule).toBe("Circle K Toul Tom Poung");
     expect(parsed.confidence).toBe("high");
   });
+
+  it("ignores Exchange Rate 1 USD = 4,060 KHR and extracts -1.61 USD Debit Amount on ACLEDA QR slips (IMG_2087)", () => {
+    const acledaQr = `
+      Transaction QR to
+      ONNIK COFFEE កោះនរា
+      6,500 ៛
+      Paid From : Neou Vannaroth
+      Account No. : 017 493 196 (USD)
+      Debit Amount : -1.61 USD
+      Receiver : ONNIK COFFEE កោះនរា
+      Amount : 6,500 KHR
+      Exchange Rate : 1 USD = 4,060 KHR
+      Reference No. : 63241023084
+      Date : 20 Nov 2026 | 08:20 AM
+      Call center (24/7)
+      023 994 444 | 015 999 233 ACLEDA BANK
+    `;
+    const res = parseReceiptText(acledaQr, "2026-11-20", {
+      ownerNames: ["Neou Vannaroth", "Roth"],
+      khrRate: 4100,
+    });
+    expect(res.txType).toBe("expense");
+    expect(res.amount).toBe(1.61);
+    expect(res.currency).toBe("USD");
+    expect(res.date).toBe("2026-11-20");
+    expect(res.merchantOrPayer).toBe("ONNIK COFFEE កោះនរា");
+    expect(res.category).toBe("Food");
+    expect(res.method).toBe("Debit");
+    expect(res.reference).toBe("63241023084");
+    expect(res.mathVerified).toBe(true);
+    expect(res.confidence).toBe("high");
+
+    // Even if KHR token failed to parse on 6,500 line, never fall back to $1.00 from Exchange Rate
+    const degradedKhr = acledaQr
+      .replace("6,500 ៛", "6,500 f")
+      .replace("6,500 KHR", "6,500 f");
+    const degradedRes = parseReceiptText(degradedKhr, "2026-11-20", {
+      ownerNames: ["Neou Vannaroth"],
+    });
+    expect(degradedRes.amount).toBe(1.61);
+    expect(degradedRes.currency).toBe("USD");
+    expect(degradedRes.txType).toBe("expense");
+  });
 });

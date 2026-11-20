@@ -141,7 +141,7 @@ export function Glass({
   return (
     <section
       className={cn(
-        "rise rounded-xl border border-border bg-card p-4 sm:p-5",
+        "glass rise p-4 transition-[border-color,background-color] duration-200 sm:p-5",
         className,
       )}
     >
@@ -159,7 +159,12 @@ export function PageHeader({
   action?: ReactNode;
 }) {
   return (
-    <header className="rise mb-3 flex flex-col gap-2.5 sm:mb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+    <header
+      className={cn(
+        "rise mb-3 flex-col gap-2.5 sm:mb-4 sm:flex sm:flex-row sm:items-center sm:justify-between sm:gap-4",
+        action ? "flex" : "hidden sm:flex",
+      )}
+    >
       <div className="min-w-0">
         <h1 className="truncate font-display text-2xl font-bold tracking-[-0.03em] text-foreground sm:text-3xl">
           {title}
@@ -220,13 +225,13 @@ export function Modal({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-xs animate-in fade-in sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm animate-in fade-in sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl border border-border bg-card p-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl animate-in slide-in-from-bottom-8 sm:rounded-xl sm:p-6",
+          "max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl border border-[var(--glass-border)] bg-popover p-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl backdrop-saturate-150 animate-in slide-in-from-bottom-8 sm:rounded-xl sm:p-6",
           wide ? "sm:max-w-3xl" : "sm:max-w-lg",
         )}
       >
@@ -292,11 +297,11 @@ export function SlideDrawer({
       />
       <aside
         className={cn(
-          "drawer-in relative z-10 mt-[env(safe-area-inset-top)] flex max-h-[92dvh] w-full flex-col rounded-t-2xl border-t border-border bg-card shadow-2xl sm:mt-0 sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0 sm:pt-[env(safe-area-inset-top)]",
+          "drawer-in relative z-10 mt-[env(safe-area-inset-top)] flex max-h-[92dvh] w-full flex-col rounded-t-2xl border-t border-[var(--glass-border)] bg-popover shadow-2xl backdrop-blur-2xl backdrop-saturate-150 sm:mt-0 sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0 sm:pt-[env(safe-area-inset-top)]",
           widthClass,
           side === "left"
-            ? "sm:border-r sm:border-border"
-            : "sm:border-l sm:border-border",
+            ? "sm:border-r sm:border-[var(--glass-border)]"
+            : "sm:border-l sm:border-[var(--glass-border)]",
         )}
       >
         <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-border sm:hidden" />

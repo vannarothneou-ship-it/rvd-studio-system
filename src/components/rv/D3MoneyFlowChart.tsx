@@ -635,7 +635,7 @@ export function D3MoneyFlowChart({
     <div className="space-y-3">
       <div
         ref={containerRef}
-        className="relative w-full overflow-hidden rounded-xl border border-border bg-muted/30 p-2 sm:p-3"
+        className="relative w-full overflow-hidden rounded-xl border border-[var(--glass-border)] bg-muted/35 p-2 backdrop-blur-md sm:p-3"
       >
         {/* Center Overlay inside D3 Donut for clean icon + figure readout */}
         {chartType === "pie" && (
@@ -669,7 +669,7 @@ export function D3MoneyFlowChart({
         {tooltip && (
           <div
             style={{ left: tooltip.x, top: tooltip.y }}
-            className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[112%] rounded-xl border border-border bg-popover px-3 py-2 text-xs shadow-xl transition-[left,top] duration-75"
+            className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[112%] rounded-xl border border-[var(--glass-border)] bg-popover px-3 py-2 text-xs shadow-xl backdrop-blur-2xl backdrop-saturate-150 transition-[left,top] duration-75"
           >
             <div className="flex items-center gap-1.5 font-semibold text-foreground">
               <TooltipCatIcon

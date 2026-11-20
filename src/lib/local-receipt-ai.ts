@@ -160,9 +160,13 @@ function isGenericHeaderLine(line: string): boolean {
 interface StructuredSlipFields {
   depositedAmountLine?: string;
   receiveAmountLine?: string;
+  debitAmountLine?: string;
   sentAmountLine?: string;
+  exchangeRate?: number;
   receiver?: string;
   sender?: string;
+  paidFrom?: string;
+  qrMerchant?: string;
   purpose?: string;
   relationship?: string;
   fromCountry?: string;
@@ -187,8 +191,35 @@ function extractStructuredFields(normalized: string): StructuredSlipFields {
 
   let colonCount = 0;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i]!;
     if (line.includes(":")) colonCount++;
+
+    // Detect "Transaction QR to" followed by merchant name on same line or next line
+    const qrInline = line.match(
+      /^(?:transaction\s*qr\s*to|qr\s*payment\s*to|qr\s*to)\s*[:៖-]?\s*(.*)$/i,
+    );
+    if (qrInline) {
+      const rest = (qrInline[1] ?? "").trim();
+      if (rest && !isGenericHeaderLine(rest)) {
+        fields.qrMerchant = rest;
+      } else if (lines[i + 1] && !isGenericHeaderLine(lines[i + 1]!)) {
+        fields.qrMerchant = lines[i + 1]!;
+      }
+      continue;
+    }
+
+    // Parse printed FX exchange rate (e.g. "Exchange Rate : 1 USD = 4,060 KHR") so we use it for math check and exclude it from amount candidates
+    const fxMatch = line.match(
+      /(?:exchange\s*rate|fx\s*rate|ex\.?\s*rate|អត្រាប្តូរប្រាក់).*?1\s*USD\s*[=:]\s*([0-9][0-9,\s]*)/i,
+    );
+    if (fxMatch?.[1]) {
+      const parsedFx = Number(fxMatch[1].replace(/[,\s]/g, ""));
+      if (Number.isFinite(parsedFx) && parsedFx >= 1000 && parsedFx <= 10000) {
+        fields.exchangeRate = parsedFx;
+      }
+      continue;
+    }
 
     const kv = line.match(/^([A-Za-z\u1780-\u17FF/\s().-]{2,36}?)\s*:\s*(.+)$/);
     if (!kv) {
@@ -196,6 +227,8 @@ function extractStructuredFields(normalized: string): StructuredSlipFields {
         fields.depositedAmountLine = line;
       else if (/^receiv(?:e|ed)\s+amount\b/i.test(line))
         fields.receiveAmountLine = line;
+      else if (/^(?:debit|transfer|payment|paid)\s+amount\b/i.test(line))
+        fields.debitAmountLine = line;
       else if (/^sent\s+amount\b/i.test(line)) fields.sentAmountLine = line;
       continue;
     }
@@ -208,12 +241,17 @@ function extractStructuredFields(normalized: string): StructuredSlipFields {
       fields.depositedAmountLine = line;
     } else if (/receiv(?:e|ed)\s*amount/.test(rawKey)) {
       fields.receiveAmountLine = line;
+    } else if (/^(?:debit|transfer|payment|paid)\s*amount$/.test(rawKey)) {
+      fields.debitAmountLine = line;
     } else if (/sent\s*amount/.test(rawKey)) {
       fields.sentAmountLine = line;
     } else if (
       /^(?:receiver|recipient|beneficiary|paid\s*to|to|អ្នកទទួល)$/.test(rawKey)
     ) {
       if (!fields.receiver) fields.receiver = val;
+    } else if (/^paid\s*from$|^from\s*account$/.test(rawKey)) {
+      if (!fields.paidFrom) fields.paidFrom = val;
+      if (!fields.sender) fields.sender = val;
     } else if (/^(?:sender|remitter|payer|sent\s*by|អ្នកផ្ញើ)$/.test(rawKey)) {
       if (!fields.sender) fields.sender = val;
     } else if (/^from$/.test(rawKey) && !/country|date|bank/.test(rawKey)) {
@@ -226,7 +264,11 @@ function extractStructuredFields(normalized: string): StructuredSlipFields {
       if (!fields.purpose) fields.purpose = val;
     } else if (/sender\s*is\s*my|relationship/.test(rawKey)) {
       fields.relationship = val;
-    } else if (/^(?:completed|ref|reference|trx\.?\s*id|trace)$/.test(rawKey)) {
+    } else if (
+      /^(?:completed|ref|reference|reference\s*no\.?|trx\.?\s*id|trace)$/.test(
+        rawKey,
+      )
+    ) {
       const refM = val.match(/(?:ref\.?\s*[:#-]?\s*)?([A-Z0-9-]{5,24})/i);
       if (refM?.[1]) {
         fields.reference = refM[1].trim();
@@ -445,17 +487,26 @@ function extractAmountAndCurrency(
   for (const line of lines) {
     const lower = line.toLowerCase();
 
+    // CRITICAL: Skip exchange rate lines (e.g. "Exchange Rate : 1 USD = 4,060 KHR") so "1 USD" never hijacks total extraction
+    if (
+      /\b(?:exchange\s*rate|fx\s*rate|ex\.?\s*rate|rate\s*:)\b|អត្រាប្តូរប្រាក់|\b1\s*USD\s*=\s*[0-9,.]+\s*KHR\b/i.test(
+        line,
+      )
+    ) {
+      continue;
+    }
+
     // Skip lines that are clearly account IDs, phone numbers, MTCN, references, or timestamps
     const isIdOrMetaLine =
-      /\b(tel|phone|call\s*center|acc(?:ount)?|card\s*no|mtcn|trx|ref|trace|id|time|date|occupation|from\s*country)\b|លេខទូរស័ព្ទ|ទូរស័ព្ទ/.test(
+      /\b(tel|phone|call\s*center|acc(?:ount)?|card\s*no|mtcn|trx|ref|reference|trace|id|time|date|occupation|from\s*country)\b|លេខទូរស័ព្ទ|ទូរស័ព្ទ/.test(
         lower,
       ) &&
-      !/total|ttl|amount|amt|paid|sum|deposited|receiv|sent\s*amount|សរុប|ថ្លៃ/.test(
+      !/total|ttl|amount|amt|paid|sum|deposited|receiv|debit\s*amount|sent\s*amount|សរុប|ថ្លៃ/.test(
         lower,
       );
     if (isIdOrMetaLine) continue;
 
-    // Skip account-number lines immediately under Receiver (e.g., "USD 017493196")
+    // Skip account-number lines immediately under Receiver (e.g., "USD 017493196" or "017 493 196 (USD)")
     if (/^(?:USD|KHR)\s+0\d{5,}$/i.test(line)) continue;
 
     // Skip foreign remittance sent amounts (e.g. "Sent amount : 460.00 CAD")
@@ -465,7 +516,9 @@ function extractAmountAndCurrency(
     }
 
     const isPrimaryBankAmount =
-      /\b(?:deposited\s*amount|receiv(?:e|ed)\s*amount)\b/i.test(lower);
+      /\b(?:deposited\s*amount|receiv(?:e|ed)\s*amount|debit\s*amount|total\s*debit|transfer\s*amount|payment\s*amount|paid\s*amount)\b/i.test(
+        lower,
+      );
     const isGrandTotal =
       /grand\s*total|total\s*paid|total\s*amount|net\s*amount|សរុបរួម|ប្រាក់សរុប|ថ្លៃសរុប|សរុបទាំងអស់/.test(
         lower,
@@ -477,7 +530,7 @@ function extractAmountAndCurrency(
       );
 
     const lineBoost = isPrimaryBankAmount
-      ? 58
+      ? 62
       : isGrandTotal
         ? 50
         : isSentLine
@@ -494,10 +547,14 @@ function extractAmountAndCurrency(
 
     let matchedCurrencyOnLine = false;
 
-    // 1. Explicit USD patterns: $12.50, $18.5, -$14.50, USD 12.50, 12.50 USD, US$ 12.50
+    // 1. Explicit USD patterns: $12.50, $18.5, -$14.50, -1.61 USD, USD 12.50, 12.50 USD, US$ 12.50 (also handle comma decimal typos like -1,61 USD)
+    const normalizedUsdLine = line.replace(
+      /(^|[:\s-])(\d{1,3}),(\d{2})(?=\s*(?:USD\b|U5D\b|US0\b|\$|ដុល្លារ))/gi,
+      "$1$2.$3",
+    );
     const usdRegex =
-      /(?:[-+]?\s*(?:US\$|\$|USD|ដុល្លារ)\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?))|(?:([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)\s*(?:USD\b|\$|ដុល្លារ))/gi;
-    for (const m of line.matchAll(usdRegex)) {
+      /(?:[-+]?\s*(?:US\$|\$|USD|U5D|US0|ដុល្លារ)\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?))|(?:(?:[-+]\s*)?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)\s*(?:USD\b|U5D\b|US0\b|\$|ដុល្លារ))/gi;
+    for (const m of normalizedUsdLine.matchAll(usdRegex)) {
       const token = (m[1] || m[2] || "").trim();
       if (!token || looksLikeAccountOrIdToken(token)) continue;
       const val = parseNumberStr(token);
@@ -508,9 +565,12 @@ function extractAmountAndCurrency(
 
         // Guard: If OCR merged ":" into a leading "1" (e.g. ": 300.90" -> "1300.90" with no comma),
         // add a recovered candidate "300.90" and down-rank the suspicious uncomma'd 4-digit value when colon was lost
-        // Short amounts (e.g. ": 7.00" read as "17.00") are only treated as suspicious when the
-        // slip clearly uses "label : value" lines and this line lost its colon — otherwise a real 12.50 stays 12.50.
+        const hasNegativeSign =
+          /[-−]\s*(?:US\$|\$|USD|ដុល្លារ)?\s*$/.test(
+            normalizedUsdLine.slice(0, m.index ?? 0),
+          ) || /^[-−]/.test(m[0].trim());
         const suspiciousLeadingOne =
+          !hasNegativeSign &&
           !token.includes(",") &&
           ((/^1\d{3}(?:\.\d{1,2})?$/.test(token) &&
             (missingColonOnColonSlip || isPrimaryBankAmount || isTotalLine)) ||
@@ -547,7 +607,7 @@ function extractAmountAndCurrency(
 
     // 2. Explicit KHR patterns: 20,500 KHR, KHR 20,500, ៛20,500, 24,500 រៀល, 15000r
     const khrRegex =
-      /(?:(?:KHR|៛)\s*([0-9]{1,3}(?:[,\s][0-9]{3})+|[0-9]{3,9}))|(?:([0-9]{1,3}(?:[,\s][0-9]{3})+|[0-9]{3,9})\s*(?:KHR|Riels?|រៀល|រៀស|៛|r\b))/gi;
+      /(?:(?:KHR|KH8|៛)\s*([0-9]{1,3}(?:[,\s][0-9]{3})+|[0-9]{3,9}))|(?:([0-9]{1,3}(?:[,\s][0-9]{3})+|[0-9]{3,9})\s*(?:KHR|KH8|Riels?|រៀល|រៀស|៛|r\b))/gi;
     for (const m of line.matchAll(khrRegex)) {
       const token = (m[1] || m[2] || "").trim();
       if (!token || looksLikeAccountOrIdToken(token)) continue;
@@ -564,24 +624,24 @@ function extractAmountAndCurrency(
       }
     }
 
-    // 3. Decimal currency-like fallback on total/amount lines without explicit currency symbol (e.g. "Total 14.5")
+    // 3. Decimal currency-like fallback on total/amount lines without explicit currency symbol (e.g. "Total 14.5" or "Debit Amount : -1.61")
     if (isTotalLine && !isSentLine && !matchedCurrencyOnLine) {
-      const decRegex = /\b([0-9]{1,5}\.[0-9]{1,2})\b/g;
-      for (const m of line.matchAll(decRegex)) {
+      const decRegex = /(?:-|\b)([0-9]{1,5}\.[0-9]{1,2})\b/g;
+      for (const m of normalizedUsdLine.matchAll(decRegex)) {
         const token = m[1] || "";
         const val = parseNumberStr(token);
         if (val > 0 && val < 100_000) {
           candidates.push({
             amount: Math.round(val * 100) / 100,
             currency: "USD",
-            score: lineBoost + 22,
+            score: lineBoost + 24,
             sourceRaw: token,
             line,
           });
         }
       }
 
-      // Handwritten Khmer large integer on total line without currency symbol (e.g. "សរុប 24000")
+      // Handwritten Khmer large integer on total line without currency symbol (e.g. "សរុប 24000" or "Amount : 6,500")
       const largeIntRegex = /\b([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{4,7})\b/g;
       for (const m of line.matchAll(largeIntRegex)) {
         const rawNum = m[1] || "";
@@ -644,7 +704,12 @@ function extractAmountAndCurrency(
   }
 
   // Dual-currency (USD <-> KHR) & line-item sum math cross-verification
-  const rate = khrRate > 100 ? khrRate : 4100;
+  const rate =
+    fields.exchangeRate && fields.exchangeRate > 100
+      ? fields.exchangeRate
+      : khrRate > 100
+        ? khrRate
+        : 4100;
   const usdCandidates = candidates.filter((c) => c.currency === "USD");
   const khrCandidates = candidates.filter((c) => c.currency === "KHR");
   const verifiedUsdValues = new Set<number>();
@@ -867,6 +932,12 @@ function extractMerchantOrPayer(
     if (fields.receiver && !ownerMatchesParty(fields.receiver, ownerNames)) {
       return smartTitleCase(fields.receiver).slice(0, 48);
     }
+    if (
+      fields.qrMerchant &&
+      !ownerMatchesParty(fields.qrMerchant, ownerNames)
+    ) {
+      return smartTitleCase(fields.qrMerchant).slice(0, 48);
+    }
   }
 
   const lines = raw
@@ -1038,13 +1109,24 @@ export function parseReceiptText(
     .toLowerCase();
 
   const receiverIsOwner = ownerMatchesParty(fields.receiver, ownerNames);
-  const senderIsOwner = ownerMatchesParty(fields.sender, ownerNames);
+  const senderIsOwner = ownerMatchesParty(
+    fields.paidFrom ?? fields.sender,
+    ownerNames,
+  );
+  const hasExplicitDebitSignal =
+    Boolean(fields.debitAmountLine) ||
+    Boolean(fields.paidFrom) ||
+    Boolean(fields.qrMerchant) ||
+    /\b(?:debit\s*amount|paid\s*from|transaction\s*qr\s*to)\b/i.test(
+      directionText,
+    );
 
   const hasStrongIncomeSignal =
-    /transfer\s*received|you\s*received|received\s*amount|receive\s*amount|deposited\s*amount|cash\s*in|credited|incoming\s*transfer|salary\s*credited|\+\s*\$|ទទួលប្រាក់|ផ្ទេរចូល|ប្រាក់ខែ|ដាក់ប្រាក់ចូល/.test(
+    !hasExplicitDebitSignal &&
+    (/transfer\s*received|you\s*received|received\s*amount|receive\s*amount|deposited\s*amount|cash\s*in|credited|incoming\s*transfer|salary\s*credited|\+\s*\$|ទទួលប្រាក់|ផ្ទេរចូល|ប្រាក់ខែ|ដាក់ប្រាក់ចូល/.test(
       directionText,
     ) ||
-    (receiverIsOwner && !senderIsOwner);
+      (receiverIsOwner && !senderIsOwner));
 
   let txType: "expense" | "income" = hasStrongIncomeSignal
     ? "income"

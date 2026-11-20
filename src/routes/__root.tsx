@@ -99,7 +99,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           content:
             "Unified command dashboard across RothVan Studio, full-time design work, and personal money with AI receipt scanning.",
         },
-        { name: "theme-color", content: "#010102" },
+        { name: "theme-color", content: "#23211d" },
         { name: "mobile-web-app-capable", content: "yes" },
         { name: "apple-mobile-web-app-capable", content: "yes" },
         {

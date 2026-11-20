@@ -98,7 +98,7 @@ export function PortfolioGalleryCard({
           )}
         >
           {activeMedia?.kind === "image" && activeMedia.dataUrl ? (
-            <div className="relative flex h-full w-full items-center justify-center bg-[#0d0e11] p-3 light:bg-[#efece6]">
+            <div className="relative flex h-full w-full items-center justify-center bg-muted/70 p-3 light:bg-[#efece6]">
               <img
                 src={activeMedia.dataUrl}
                 alt={`${item.title} · ${activeMedia.name}`}

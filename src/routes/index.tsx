@@ -1206,7 +1206,7 @@ function CommandDashboard() {
                   to="/work"
                   className="group overflow-hidden rounded-xl border border-border/80 bg-muted/35 transition-all hover:-translate-y-0.5 hover:border-primary/45"
                 >
-                  <div className="aspect-[16/10] bg-[#0d0e11] p-2 light:bg-[#efece6]">
+                  <div className="aspect-[16/10] bg-muted/70 p-2 light:bg-[#efece6]">
                     {img?.dataUrl && (
                       <img
                         src={img.dataUrl}

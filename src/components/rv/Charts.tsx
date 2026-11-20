@@ -231,7 +231,7 @@ export function SparklineWithDates({
               const p = payload[0]?.payload as SparkPoint | undefined;
               if (!p) return null;
               return (
-                <div className="rounded-xl border border-border bg-popover/95 px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-md">
+                <div className="rounded-xl border border-[var(--glass-border)] bg-popover px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-2xl backdrop-saturate-150">
                   <p className="font-num text-[0.68rem] text-muted-foreground">
                     {p.fullDate || p.label}
                   </p>
@@ -336,7 +336,7 @@ export function TrendChartCanvas({
             ? (row.inCount ?? 0) + (row.outCount ?? 0)
             : undefined);
         return (
-          <div className="min-w-44 rounded-xl border border-border bg-popover/95 px-3 py-2.5 text-xs text-popover-foreground shadow-xl backdrop-blur-md">
+          <div className="min-w-44 rounded-xl border border-[var(--glass-border)] bg-popover px-3 py-2.5 text-xs text-popover-foreground shadow-xl backdrop-blur-2xl backdrop-saturate-150">
             <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-1.5">
               <span className="font-medium text-foreground">
                 {row.fullDate || row.label}
@@ -947,7 +947,7 @@ export function BreakdownPieCard({
                       const pct =
                         total > 0 ? Math.round((s.value / total) * 100) : 0;
                       return (
-                        <div className="rounded-xl border border-border bg-popover/95 px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-md">
+                        <div className="rounded-xl border border-[var(--glass-border)] bg-popover px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-2xl backdrop-saturate-150">
                           <p className="font-medium text-foreground">
                             {s.name}
                           </p>
@@ -1109,7 +1109,7 @@ export function PeriodBarPulseCard({
                 if (!row) return null;
                 const val = numField(row, valueKey);
                 return (
-                  <div className="rounded-xl border border-border bg-popover/95 px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-md">
+                  <div className="rounded-xl border border-[var(--glass-border)] bg-popover px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-2xl backdrop-saturate-150">
                     <p className="font-num text-[0.68rem] text-muted-foreground">
                       {row.fullDate || row.label}
                     </p>
@@ -1300,7 +1300,7 @@ export function CardSpendingChartCard({
           (typeof agg.points)[number] | undefined;
         if (!row) return null;
         return (
-          <div className="min-w-48 rounded-xl border border-border bg-popover/95 px-3 py-2.5 text-xs text-popover-foreground shadow-xl backdrop-blur-md">
+          <div className="min-w-48 rounded-xl border border-[var(--glass-border)] bg-popover px-3 py-2.5 text-xs text-popover-foreground shadow-xl backdrop-blur-2xl backdrop-saturate-150">
             <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-1.5">
               <span className="font-medium text-foreground">
                 {row.fullDate}

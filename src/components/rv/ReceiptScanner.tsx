@@ -687,13 +687,13 @@ export function ReceiptScannerDrawer({
                 }
               }}
               className={cn(
-                "rounded-3xl border border-dashed p-5 text-center transition-colors",
+                "glass rounded-2xl border border-dashed p-5 text-center transition-colors",
                 dragging
                   ? "border-primary bg-primary/15"
-                  : "border-primary/40 bg-gradient-to-b from-primary/10 via-muted/30 to-muted/15",
+                  : "border-primary/40 bg-gradient-to-b from-primary/10 via-muted/25 to-transparent",
               )}
             >
-              <div className="mx-auto mb-2.5 grid h-12 w-12 place-items-center rounded-2xl border border-primary/35 bg-primary/15 text-primary">
+              <div className="mx-auto mb-2.5 grid h-12 w-12 place-items-center rounded-xl border border-primary/35 bg-primary/15 text-primary">
                 <ScanLine className="h-6 w-6" />
               </div>
               <h3 className="font-display text-base font-bold text-foreground">
@@ -791,9 +791,9 @@ export function ReceiptScannerDrawer({
 
           {/* Scanning Progress */}
           {scanning && (
-            <div className="space-y-3 rounded-3xl border border-primary/40 bg-muted/40 p-4 text-center">
+            <div className="glass space-y-3 rounded-2xl border-primary/40 p-4 text-center">
               {previewUrl && (
-                <div className="relative mx-auto h-52 w-full overflow-hidden rounded-2xl border border-primary/35 bg-black/50">
+                <div className="relative mx-auto h-52 w-full overflow-hidden rounded-xl border border-primary/35 bg-black/50">
                   <img
                     src={previewUrl}
                     alt="Scanning receipt"
@@ -902,17 +902,17 @@ export function ReceiptScannerDrawer({
               {/* Summary Card */}
               <div
                 className={cn(
-                  "rounded-3xl border p-4",
+                  "rounded-2xl border p-4 backdrop-blur-xl backdrop-saturate-150 transition-colors",
                   record.saved
-                    ? "border-positive/40 bg-positive/10"
-                    : "border-primary/40 bg-primary/10",
+                    ? "border-positive/40 bg-positive/12"
+                    : "border-primary/40 bg-primary/12",
                 )}
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-center gap-2.5">
                     <span
                       className={cn(
-                        "grid h-10 w-10 shrink-0 place-items-center rounded-2xl",
+                        "grid h-10 w-10 shrink-0 place-items-center rounded-xl",
                         record.saved
                           ? "bg-positive/20 text-positive"
                           : "bg-primary/20 text-primary",
@@ -932,22 +932,30 @@ export function ReceiptScannerDrawer({
                         {record.saved ? "Saved" : "Review"}
                         {record.confidence !== "high" ? " · Verify" : ""}
                       </p>
-                      <p
-                        className={cn(
-                          "font-num text-2xl font-extrabold tracking-tight",
-                          record.txType === "income"
-                            ? "text-positive"
-                            : "text-foreground",
-                        )}
+                      <button
+                        type="button"
+                        onClick={() => setEditing((v) => !v)}
+                        title="Tap to edit amount or details"
+                        className="group mt-0.5 inline-flex items-center gap-1.5 rounded-lg text-left transition-opacity hover:opacity-85 active:scale-[0.98]"
                       >
-                        {money(
-                          record.txType === "income"
-                            ? record.amount
-                            : -record.amount,
-                          record.currency,
-                          true,
-                        )}
-                      </p>
+                        <span
+                          className={cn(
+                            "font-num text-2xl font-extrabold tracking-tight",
+                            record.txType === "income"
+                              ? "text-positive"
+                              : "text-foreground",
+                          )}
+                        >
+                          {money(
+                            record.txType === "income"
+                              ? record.amount
+                              : -record.amount,
+                            record.currency,
+                            true,
+                          )}
+                        </span>
+                        <Pencil className="h-3.5 w-3.5 text-muted-foreground opacity-70 transition-colors group-hover:text-primary group-hover:opacity-100" />
+                      </button>
                     </div>
                   </div>
                   {scanMeta && (
