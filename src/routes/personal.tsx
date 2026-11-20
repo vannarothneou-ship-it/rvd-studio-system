@@ -367,7 +367,7 @@ function PersonalPage() {
               </p>
               <p
                 className={cn(
-                  "font-num mt-2 text-4xl font-extrabold",
+                  "font-num mt-2 text-3xl font-extrabold sm:text-4xl",
                   personalNetRange < 0 && "text-destructive",
                   personalNetRange > 0 && "text-positive",
                 )}
