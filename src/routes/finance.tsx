@@ -1381,7 +1381,7 @@ function Page() {
                       onClick={() => setCombinedVisible((n) => n + 8)}
                       className="px-4 py-1.5 text-xs"
                     >
-                      Show more (
+                      Show 8 more (
                       {combinedLedgerRows.length - combinedVisibleRows.length}{" "}
                       remaining)
                     </Btn>
@@ -1396,6 +1396,18 @@ function Page() {
                     </Btn>
                   </div>
                 )}
+                {combinedVisible > 8 && combinedLedgerRows.length > 8 && (
+                  <div className="mt-2 flex justify-center">
+                    <Btn
+                      type="button"
+                      onClick={() => setCombinedVisible(8)}
+                      className="px-4 py-1.5 text-xs"
+                    >
+                      Show recent 8 only
+                    </Btn>
+                  </div>
+                )}
+
               </>
             )}
           </Glass>
