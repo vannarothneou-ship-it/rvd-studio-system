@@ -1438,18 +1438,7 @@ function Page() {
           setDB((d) => ({
             ...d,
             expenses: upsert(d.expenses, { ...v, account: "Studio" }),
-          })
-                {combinedVisible > 8 && combinedLedgerRows.length > 8 && (
-                  <div className="mt-2 flex justify-center">
-                    <Btn
-                      type="button"
-                      onClick={() => setCombinedVisible(8)}
-                      className="px-4 py-1.5 text-xs"
-                    >
-                      Show recent 8 only
-                    </Btn>
-                  </div>
-                )})
+          }))
         }
         onDelete={
           db.expenses.some((x) => x.id === edit?.id)
