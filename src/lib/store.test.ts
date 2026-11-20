@@ -105,9 +105,7 @@ describe("relationship-safe deletion", () => {
       ...db,
       expenses: [{ ...db.expenses[0]!, projectId }],
     };
-    expect(projectDeleteBlocker(withExpense, projectId)).toContain(
-      "expenses",
-    );
+    expect(projectDeleteBlocker(withExpense, projectId)).toContain("expenses");
     expect(projectDeleteBlocker(db, "unlinked-project")).toBeNull();
   });
 
@@ -121,10 +119,12 @@ describe("relationship-safe deletion", () => {
     expect(serviceDeleteBlocker(withProject, serviceId)).toContain("project");
     const withDocument = {
       ...db,
-      invoices: [{
-        ...db.invoices[0]!,
-        items: [{ ...db.invoices[0]!.items[0]!, serviceId }],
-      }],
+      invoices: [
+        {
+          ...db.invoices[0]!,
+          items: [{ ...db.invoices[0]!.items[0]!, serviceId }],
+        },
+      ],
     };
     expect(serviceDeleteBlocker(withDocument, serviceId)).toContain(
       "commercial document",
