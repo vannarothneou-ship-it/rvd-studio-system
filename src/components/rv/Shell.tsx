@@ -620,7 +620,13 @@ function ShellInner({ children }: { children: ReactNode }) {
         </div>
       </nav>
 
-      <main key={path} className="page-enter mx-auto max-w-6xl px-3 pt-[4.25rem] sm:px-4 sm:pt-24">
+      <main
+        key={path}
+        className={cn(
+          "page-enter mx-auto max-w-6xl px-3 sm:px-4 sm:pt-24",
+          isStudio ? "pt-[6.1rem]" : "pt-[4.25rem]",
+        )}
+      >
         {children}
       </main>
       <OfflineIndicator />
