@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { toast } from "sonner";
 import { ChevronDown, ChevronUp, Plus, Search } from "lucide-react";
 import { Btn, Empty, Glass, PageHeader, Pill, Stat } from "@/components/rv/ui";
 import { EditModal, nextCode, upsert, type Field } from "@/components/rv/Crud";
@@ -12,6 +13,7 @@ import {
   CLIENT_SOURCES,
   CLIENT_STATUSES,
   CLIENT_TYPES,
+  clientDeleteBlocker,
   compactMoney,
   invoiceView,
   money,
@@ -345,11 +347,19 @@ function Page() {
         onSave={(v) => setDB((d) => ({ ...d, clients: upsert(d.clients, v) }))}
         onDelete={
           db.clients.some((c) => c.id === edit?.id)
-            ? (v) =>
+            ? (v) => {
+                const blocker = clientDeleteBlocker(db, v.id);
+                if (blocker) {
+                  toast.error(blocker);
+                  return false;
+                }
                 setDB((d) => ({
                   ...d,
                   clients: d.clients.filter((c) => c.id !== v.id),
-                }))
+                }));
+                toast.success("Client deleted");
+                return true;
+              }
             : undefined
         }
       />
