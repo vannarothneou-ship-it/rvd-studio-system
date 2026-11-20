@@ -77,8 +77,17 @@ const inv = (p: Partial<Invoice>): Invoice => ({
 describe("relationship-safe deletion", () => {
   it("blocks client deletion while projects or documents still reference it", () => {
     const db = getDB();
-    const clientId = db.clients[0]!.id;
-    expect(clientDeleteBlocker(db, clientId)).toBeTruthy();
+    const clientId = "linked-client";
+    const withProject = {
+      ...db,
+      projects: [{ ...db.projects[0]!, clientId }],
+    };
+    expect(clientDeleteBlocker(withProject, clientId)).toContain("projects");
+    const withDocument = {
+      ...db,
+      invoices: [{ ...db.invoices[0]!, clientId }],
+    };
+    expect(clientDeleteBlocker(withDocument, clientId)).toContain("documents");
     expect(clientDeleteBlocker(db, "unlinked-client")).toBeNull();
   });
 
@@ -90,7 +99,7 @@ describe("relationship-safe deletion", () => {
       invoices: [{ ...db.invoices[0]!, projectId }],
     };
     expect(projectDeleteBlocker(withDocument, projectId)).toContain(
-      "commercial",
+      "quotations",
     );
     const withExpense = {
       ...db,
