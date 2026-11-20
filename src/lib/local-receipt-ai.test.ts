@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { normalizeKhmerDigits, parseReceiptText } from "./local-receipt-ai";
+import {
+  extractExchangeRates,
+  extractKhrFigures,
+  isNoisyOcrText,
+  khrCrossCheck,
+  looksLikeOcrNoise,
+  normalizeKhmerDigits,
+  parseReceiptText,
+  pickLargeAmountHints,
+} from "./local-receipt-ai";
 
 describe("parseReceiptText (local AI OCR receipt parser)", () => {
   it("normalizes Khmer digits ០-៩ to ASCII digits", () => {
@@ -312,5 +321,167 @@ ol  SJ023994 444 | 015 999 233   អេសុលដា ស`;
     expect(res.category).toBe("Gift & Refund");
     expect(res.reference).toBe("F3227083693");
     expect(res.confidence).toBe("high");
+  });
+
+  describe("POS screen photo (BizAdvisor supermarket screen, total $39.10 = 160,300 KHR)", () => {
+    // Real OCR output captured from the photo: main pass is garbage, assist passes find the number.
+    const mainPass = `
+      ខ្ន Fe ស '– Hel =v ន Fa 2 វិ គុ a
+      pe 2 | មែ. : 5 : EN = pit
+      ឆ aes cam 160,300 (@ oo
+    `;
+    const hints = {
+      largeAmounts: [{ amount: 39.1, height: 116, conf: 96 }],
+      focusText: "JUHI\n(39.10\n1160,300",
+      extraText: "BizAdvisor\n0.60\n1.50\n31.50\n99.10\n0.00",
+    };
+
+    it("finds nothing without assist hints (old behaviour)", () => {
+      const res = parseReceiptText(mainPass, "2026-11-20");
+      expect(res.amount).not.toBe(39.1);
+    });
+
+    it("reads $39.10 from the tallest number and confirms it with the KHR total", () => {
+      const res = parseReceiptText(mainPass, "2026-11-20", { hints });
+      expect(res.amount).toBe(39.1);
+      expect(res.currency).toBe("USD");
+      expect(res.txType).toBe("expense");
+    });
+
+    it("does not use garbled OCR as the merchant name", () => {
+      const res = parseReceiptText(mainPass, "2026-11-20", { hints });
+      expect(res.merchantOrPayer).toBe("Scanned Slip");
+    });
+  });
+
+  it("pickLargeAmountHints keeps only the clearly tallest amount token", () => {
+    const hints = pickLargeAmountHints([
+      { text: "0.60", conf: 90, height: 36 },
+      { text: "1.50", conf: 90, height: 38 },
+      { text: "99.10", conf: 78, height: 38 },
+      { text: "8993007007238", conf: 95, height: 38 },
+      { text: "39.10", conf: 24, height: 116 },
+    ]);
+    expect(hints).toHaveLength(1);
+    expect(hints[0]?.amount).toBe(39.1);
+  });
+
+  it("extracts KHR totals including a riel sign misread as a leading 1", () => {
+    expect(extractKhrFigures("1160,300")).toEqual(
+      expect.arrayContaining([160300]),
+    );
+    expect(extractExchangeRates("1$ = 4,100.00")).toEqual([4100]);
+  });
+
+  it("khrCrossCheck confirms 39.10 and rejects the misread 99.10", () => {
+    expect(khrCrossCheck(39.1, [160300], [4100])).toBe(true);
+    expect(khrCrossCheck(99.1, [160300], [4100])).toBe(false);
+    expect(khrCrossCheck(39.1, [160300], [])).toBe(true);
+  });
+
+  it("looksLikeOcrNoise flags garbage but not real merchant lines", () => {
+    expect(looksLikeOcrNoise("ខ្ន Fe ស '– Hel =v ន Fa 2 វិ គុ a")).toBe(true);
+    expect(looksLikeOcrNoise("Brown Coffee Tuol Kork")).toBe(false);
+    expect(looksLikeOcrNoise("KFC")).toBe(false);
+  });
+
+  describe("real main-pass OCR of the BizAdvisor POS photo", () => {
+    const realMainPass = `ម                        កី . : យយ
+
+-        -es dS |                        --
+
+រ           +  3                           i   ន រ   ក
+d         |                          —
+SSE 5                 ER                                    a
+
+/
+ក យយ រុក ទស
+Rg | === _ ២ ចំនួន aly uml សុប             4
+= r=            = =—   =  =    4
+និ | 0009007007395 0! —      ន
+an   កកិត កករ រ   0.50
+អាហារ |      = =                     យ
+ញា កិក |!
+
+ក | 0418783510240 = កត និក —   — od
+| ទ្ងីក|ដោះ|គោរឃ្សាំ Aptamil 1D (3) 800g រ ប        |
+ន wwe = ស oon 0 oo (SN
+យេ 7 us          Spay
+ម៉ែ woe. 1 0 ០0 UN =   = FE ក្ក
+
+alll  |22|ឲ.ថងប្រ wm Re a
+
+Jie |                          -          |
+   fgasamaiy    6 សរុបក៊ុងព្រាយ
+gl wn 40
+i                         a
+rts            umsaly(%)       0.00                            a
+២:               1   =                                                  3
+ely                glin(e) 000                             0,3
+7 ប គ
+:  |             DOWER BY BIZADVISOR mmm
+EE ស យ     =
+ន
+`;
+
+    it("is flagged as noisy text so the extra passes run", () => {
+      expect(isNoisyOcrText(realMainPass)).toBe(true);
+      expect(
+        isNoisyOcrText(
+          "ABA BANK\nPAYMENT SUCCESSFUL\n-$14.50\nDate: 18 Nov 2026\nTo: Brown Coffee",
+        ),
+      ).toBe(false);
+    });
+
+    it("with assist hints: $39.10, kid category, no junk merchant", () => {
+      const res = parseReceiptText(realMainPass, "2026-11-20", {
+        hints: {
+          largeAmounts: [{ amount: 39.1, height: 116, conf: 96 }],
+          focusText: "aujugHmw\n(39.10\n$160,300\n",
+        },
+      });
+      expect(res.amount).toBe(39.1);
+      expect(res.currency).toBe("USD");
+      expect(res.category).toBe("Kid");
+      expect(res.merchantOrPayer).toBe("Scanned Slip");
+    });
+  });
+
+  it("does not guess a merchant from garbled browser OCR of the POS photo", () => {
+    const browserRaw = `a    ន oo mld lg TREES
+a wm? ® wm PE iE NINE
+aera.  sia       ន ន រី la
+ម និ
+នន    ic    sar    2         Fl ន i Chad (og
+ថ្ងៃ ន ហា
+កាយ ន i ់
+ស nlp ee រ
+ស = me -- = = SHR រ:
+= me 4
+mee et ed
+Tes Ea ui ppramitWIOA000F8  — 0 រ     ន:
+aes Err ns gee. ទពីធី  យា
+ន a E    >
+= lee = = E———7 joo Ee   SEE
+Ee 7 ae = hgh |
+ne ss faa
+EEE   ក -  =="    Ea Pig
+am) wy %៕ § 3910 Lae
+Fa ន ថទ ai Eo
+TET] eh I EEE
+BE mee WS emma
+RR x  ie ន LET eae Ee 2
+Ea re EET SE a TEE nt
+ម ae Crh
+ae ab ហោ bw GE
+`;
+    const res = parseReceiptText(browserRaw, "2026-11-20", {
+      hints: {
+        largeAmounts: [{ amount: 39.1, height: 116, conf: 96 }],
+        focusText: "(39.10\n$160,300",
+      },
+    });
+    expect(res.amount).toBe(39.1);
+    expect(res.merchantOrPayer).toBe("Scanned Slip");
   });
 });

@@ -59,6 +59,7 @@ import {
   scanReceiptLocally,
   warmUpReceiptOcr,
   type ReceiptScanMode,
+  type ReceiptScanHints,
 } from "@/lib/local-receipt-ai";
 import { cn } from "@/lib/utils";
 
@@ -213,6 +214,7 @@ export function ReceiptScannerDrawer({
   const [editing, setEditing] = useState(false);
   const [lastFile, setLastFile] = useState<File | null>(null);
   const [rawText, setRawText] = useState("");
+  const [hints, setHints] = useState<ReceiptScanHints | null>(null);
   const [showRawText, setShowRawText] = useState(false);
   const [scanMeta, setScanMeta] = useState<{
     angle: number;
@@ -303,6 +305,7 @@ export function ReceiptScannerDrawer({
           rawText: detectedText,
           detectedAngleDeg,
           engineLang,
+          hints: scanHints,
         } = await scanReceiptLocally(
           file,
           today(),
@@ -315,6 +318,7 @@ export function ReceiptScannerDrawer({
 
         setPreviewUrl(previewDataUrl);
         setRawText(detectedText);
+        setHints(scanHints);
         setScanMeta({ angle: detectedAngleDeg, lang: engineLang });
 
         const nextRecord: RecordedRecord = {
@@ -460,6 +464,7 @@ export function ReceiptScannerDrawer({
     );
     const parsed = parseReceiptText(rawText, record.date || today(), {
       ownerNames,
+      ...(hints ? { hints } : {}),
     });
     const next: RecordedRecord = {
       ...record,
