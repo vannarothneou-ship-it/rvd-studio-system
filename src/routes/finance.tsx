@@ -925,7 +925,7 @@ function Page() {
                 {visibleCount > 8 && filteredExpenses.length > 8 && (
                   <div className="mt-2 flex justify-center">
                     <Btn
-                      onClick={() => setVisibleCount(40)}
+                      onClick={() => setVisibleCount(8)}
                       className="px-4 py-1.5 text-xs"
                     >
                       Hide extra rows
@@ -1019,7 +1019,7 @@ function Page() {
           value={month}
           onChange={(next) => {
             setMonth(next);
-            setVisibleCount(40);
+            setVisibleCount(8);
           }}
         />
       </div>
@@ -1286,7 +1286,7 @@ function Page() {
                   value={combinedFilter}
                   onChange={(v) => {
                     setCombinedFilter(v);
-                    setCombinedVisible(50);
+                    setCombinedVisible(8);
                   }}
                   options={[
                     { id: "all", label: "All" },
@@ -1303,7 +1303,7 @@ function Page() {
                     value={combinedQuery}
                     onChange={(e) => {
                       setCombinedQuery(e.target.value);
-                      setCombinedVisible(50);
+                      setCombinedVisible(8);
                     }}
                     placeholder="Search combined ledger…"
                     className="field w-full py-1.5 pl-8 text-xs sm:w-56"
