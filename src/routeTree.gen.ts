@@ -13,9 +13,12 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ClientsRouteImport } from './routes/clients'
 import { Route as FinanceRouteImport } from './routes/finance'
 import { Route as InvoicesRouteImport } from './routes/invoices'
+import { Route as PersonalRouteImport } from './routes/personal'
 import { Route as ProjectsRouteImport } from './routes/projects'
 import { Route as ServicesRouteImport } from './routes/services'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as StudioRouteImport } from './routes/studio'
+import { Route as WorkRouteImport } from './routes/work'
 import { Route as InvoicesIdRouteImport } from './routes/invoices.$id'
 import { Route as PrintIdRouteImport } from './routes/print.$id'
 
@@ -39,6 +42,11 @@ const InvoicesRoute = InvoicesRouteImport.update({
   path: '/invoices',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PersonalRoute = PersonalRouteImport.update({
+  id: '/personal',
+  path: '/personal',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjectsRoute = ProjectsRouteImport.update({
   id: '/projects',
   path: '/projects',
@@ -52,6 +60,16 @@ const ServicesRoute = ServicesRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StudioRoute = StudioRouteImport.update({
+  id: '/studio',
+  path: '/studio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WorkRoute = WorkRouteImport.update({
+  id: '/work',
+  path: '/work',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InvoicesIdRoute = InvoicesIdRouteImport.update({
@@ -70,9 +88,12 @@ export interface FileRoutesByFullPath {
   '/clients': typeof ClientsRoute
   '/finance': typeof FinanceRoute
   '/invoices': typeof InvoicesRouteWithChildren
+  '/personal': typeof PersonalRoute
   '/projects': typeof ProjectsRoute
   '/services': typeof ServicesRoute
   '/settings': typeof SettingsRoute
+  '/studio': typeof StudioRoute
+  '/work': typeof WorkRoute
   '/invoices/$id': typeof InvoicesIdRoute
   '/print/$id': typeof PrintIdRoute
 }
@@ -81,9 +102,12 @@ export interface FileRoutesByTo {
   '/clients': typeof ClientsRoute
   '/finance': typeof FinanceRoute
   '/invoices': typeof InvoicesRouteWithChildren
+  '/personal': typeof PersonalRoute
   '/projects': typeof ProjectsRoute
   '/services': typeof ServicesRoute
   '/settings': typeof SettingsRoute
+  '/studio': typeof StudioRoute
+  '/work': typeof WorkRoute
   '/invoices/$id': typeof InvoicesIdRoute
   '/print/$id': typeof PrintIdRoute
 }
@@ -93,9 +117,12 @@ export interface FileRoutesById {
   '/clients': typeof ClientsRoute
   '/finance': typeof FinanceRoute
   '/invoices': typeof InvoicesRouteWithChildren
+  '/personal': typeof PersonalRoute
   '/projects': typeof ProjectsRoute
   '/services': typeof ServicesRoute
   '/settings': typeof SettingsRoute
+  '/studio': typeof StudioRoute
+  '/work': typeof WorkRoute
   '/invoices/$id': typeof InvoicesIdRoute
   '/print/$id': typeof PrintIdRoute
 }
@@ -106,9 +133,12 @@ export interface FileRouteTypes {
     | '/clients'
     | '/finance'
     | '/invoices'
+    | '/personal'
     | '/projects'
     | '/services'
     | '/settings'
+    | '/studio'
+    | '/work'
     | '/invoices/$id'
     | '/print/$id'
   fileRoutesByTo: FileRoutesByTo
@@ -117,9 +147,12 @@ export interface FileRouteTypes {
     | '/clients'
     | '/finance'
     | '/invoices'
+    | '/personal'
     | '/projects'
     | '/services'
     | '/settings'
+    | '/studio'
+    | '/work'
     | '/invoices/$id'
     | '/print/$id'
   id:
@@ -128,9 +161,12 @@ export interface FileRouteTypes {
     | '/clients'
     | '/finance'
     | '/invoices'
+    | '/personal'
     | '/projects'
     | '/services'
     | '/settings'
+    | '/studio'
+    | '/work'
     | '/invoices/$id'
     | '/print/$id'
   fileRoutesById: FileRoutesById
@@ -140,9 +176,12 @@ export interface RootRouteChildren {
   ClientsRoute: typeof ClientsRoute
   FinanceRoute: typeof FinanceRoute
   InvoicesRoute: typeof InvoicesRouteWithChildren
+  PersonalRoute: typeof PersonalRoute
   ProjectsRoute: typeof ProjectsRoute
   ServicesRoute: typeof ServicesRoute
   SettingsRoute: typeof SettingsRoute
+  StudioRoute: typeof StudioRoute
+  WorkRoute: typeof WorkRoute
   PrintIdRoute: typeof PrintIdRoute
 }
 
@@ -176,6 +215,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InvoicesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/personal': {
+      id: '/personal'
+      path: '/personal'
+      fullPath: '/personal'
+      preLoaderRoute: typeof PersonalRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projects': {
       id: '/projects'
       path: '/projects'
@@ -195,6 +241,20 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/studio': {
+      id: '/studio'
+      path: '/studio'
+      fullPath: '/studio'
+      preLoaderRoute: typeof StudioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/work': {
+      id: '/work'
+      path: '/work'
+      fullPath: '/work'
+      preLoaderRoute: typeof WorkRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/invoices/$id': {
@@ -231,9 +291,12 @@ const rootRouteChildren: RootRouteChildren = {
   ClientsRoute: ClientsRoute,
   FinanceRoute: FinanceRoute,
   InvoicesRoute: InvoicesRouteWithChildren,
+  PersonalRoute: PersonalRoute,
   ProjectsRoute: ProjectsRoute,
   ServicesRoute: ServicesRoute,
   SettingsRoute: SettingsRoute,
+  StudioRoute: StudioRoute,
+  WorkRoute: WorkRoute,
   PrintIdRoute: PrintIdRoute,
 }
 export const routeTree = rootRouteImport

@@ -235,6 +235,32 @@ describe("parseReceiptText (local AI OCR receipt parser)", () => {
     expect(res.merchantOrPayer).toBe("Vannary Neou");
   });
 
+  it("recovers 7.00 when a lost colon turned into a leading 1 (1 7.00 -> 17.00)", () => {
+    const shortCorrupted = `
+      Transaction Detail
+      Deposited amount 17.00 USD
+      Receive amount 17.00 USD
+      Sent amount : 40.00 CAD
+      MTCN : 6814030769
+      From country : Canada
+      Receiver : Neou Vannaroth
+      Sender : VANNARY NEOU
+      Date : Nov 18, 2026 09:15 PM
+    `;
+    const res = parseReceiptText(shortCorrupted, "2026-11-19", {
+      ownerNames: ["Neou Vannaroth"],
+    });
+    expect(res.amount).toBe(7);
+  });
+
+  it("keeps a genuine 12.50 total on a normal slip", () => {
+    const res = parseReceiptText(
+      "ABA BANK\nPAYMENT SUCCESSFUL\n-$12.50\nDate: 18 Nov 2026\nTo: Brown Coffee",
+      "2026-11-19",
+    );
+    expect(res.amount).toBe(12.5);
+  });
+
   it("ignores bank account numbers like USD 00412345 and treats owner-as-sender as expense", () => {
     const outgoing = `
       ACLEDA mobile

@@ -8,20 +8,20 @@ export interface WorkProjectAccent {
 const PRESET_ACCENTS: Record<string, WorkProjectAccent> = {
   dbg: {
     dot: "oklch(0.83 0.14 82)",
-    calBg: "oklch(0.83 0.14 82 / 24%)",
-    calBorder: "oklch(0.83 0.14 82 / 58%)",
+    calBg: "oklch(0.83 0.14 82 / 38%)",
+    calBorder: "oklch(0.83 0.14 82 / 78%)",
     calText: "var(--foreground)",
   },
   connexion: {
     dot: "oklch(0.7 0.14 240)",
-    calBg: "oklch(0.68 0.14 240 / 26%)",
-    calBorder: "oklch(0.68 0.14 240 / 58%)",
+    calBg: "oklch(0.68 0.14 240 / 38%)",
+    calBorder: "oklch(0.68 0.14 240 / 78%)",
     calText: "var(--foreground)",
   },
   ocic: {
     dot: "oklch(0.76 0.14 155)",
-    calBg: "oklch(0.76 0.14 155 / 24%)",
-    calBorder: "oklch(0.76 0.14 155 / 58%)",
+    calBg: "oklch(0.76 0.14 155 / 38%)",
+    calBorder: "oklch(0.76 0.14 155 / 78%)",
     calText: "var(--foreground)",
   },
 };
@@ -29,26 +29,26 @@ const PRESET_ACCENTS: Record<string, WorkProjectAccent> = {
 const PALETTE: WorkProjectAccent[] = [
   {
     dot: "oklch(0.72 0.14 300)",
-    calBg: "oklch(0.72 0.14 300 / 24%)",
-    calBorder: "oklch(0.72 0.14 300 / 58%)",
+    calBg: "oklch(0.72 0.14 300 / 38%)",
+    calBorder: "oklch(0.72 0.14 300 / 78%)",
     calText: "var(--foreground)",
   },
   {
     dot: "oklch(0.74 0.14 45)",
-    calBg: "oklch(0.74 0.14 45 / 24%)",
-    calBorder: "oklch(0.74 0.14 45 / 58%)",
+    calBg: "oklch(0.74 0.14 45 / 38%)",
+    calBorder: "oklch(0.74 0.14 45 / 78%)",
     calText: "var(--foreground)",
   },
   {
     dot: "oklch(0.72 0.12 195)",
-    calBg: "oklch(0.72 0.12 195 / 24%)",
-    calBorder: "oklch(0.72 0.12 195 / 58%)",
+    calBg: "oklch(0.72 0.12 195 / 38%)",
+    calBorder: "oklch(0.72 0.12 195 / 78%)",
     calText: "var(--foreground)",
   },
   {
     dot: "oklch(0.72 0.14 15)",
-    calBg: "oklch(0.72 0.14 15 / 24%)",
-    calBorder: "oklch(0.72 0.14 15 / 58%)",
+    calBg: "oklch(0.72 0.14 15 / 38%)",
+    calBorder: "oklch(0.72 0.14 15 / 78%)",
     calText: "var(--foreground)",
   },
 ];

@@ -4,6 +4,8 @@ import {
   Activity,
   ArrowDownLeft,
   ArrowUpRight,
+  Eye,
+  EyeOff,
   PiggyBank,
   Plus,
   Search,
@@ -76,6 +78,8 @@ import {
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
+const RECENT_ROWS = 8;
+
 export const Route = createFileRoute("/personal")({
   head: () => ({
     meta: [
@@ -118,7 +122,7 @@ function PersonalPage() {
   const [ledgerView, setLedgerView] = useState<LedgerView>("all");
   const [catFilter, setCatFilter] = useState<string>("All");
   const [query, setQuery] = useState("");
-  const [visibleCount, setVisibleCount] = useState(40);
+  const [visibleCount, setVisibleCount] = useState(RECENT_ROWS);
   const [editingLayout, setEditingLayout] = useState(false);
   const [inspectedCategory, setInspectedCategory] = useState<string | null>(
     null,
@@ -612,7 +616,7 @@ function PersonalPage() {
             range={personalRange}
             onRangeChange={(next) => {
               setPersonalRange(next);
-              setVisibleCount(40);
+              setVisibleCount(RECENT_ROWS);
             }}
             layoutIdPrefix="pers-card-spend"
           />
@@ -739,7 +743,7 @@ function PersonalPage() {
                   onChange={(v) => {
                     setLedgerView(v);
                     setCatFilter("All");
-                    setVisibleCount(40);
+                    setVisibleCount(RECENT_ROWS);
                   }}
                   options={[
                     { id: "all", label: "All" },
@@ -754,7 +758,7 @@ function PersonalPage() {
                     value={query}
                     onChange={(e) => {
                       setQuery(e.target.value);
-                      setVisibleCount(40);
+                      setVisibleCount(RECENT_ROWS);
                     }}
                     placeholder="Search note, card, source…"
                     className="field w-full py-1.5 pl-8 text-base sm:w-52 sm:text-xs"
@@ -787,7 +791,7 @@ function PersonalPage() {
                 type="button"
                 onClick={() => {
                   setCatFilter("All");
-                  setVisibleCount(40);
+                  setVisibleCount(RECENT_ROWS);
                 }}
                 className={cn(
                   "rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
@@ -810,7 +814,7 @@ function PersonalPage() {
                     type="button"
                     onClick={() => {
                       setCatFilter(catFilter === c ? "All" : c);
-                      setVisibleCount(40);
+                      setVisibleCount(RECENT_ROWS);
                     }}
                     className={cn(
                       "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
@@ -904,31 +908,25 @@ function PersonalPage() {
                     );
                   })}
                 </ul>
-                {ledgerRows.length > visibleRows.length && (
-                  <div className="mt-3 flex justify-center gap-2">
-                    <Btn
-                      onClick={() => setVisibleCount((n) => n + 60)}
-                      className="px-4 py-1.5 text-xs"
-                    >
-                      Show more ({ledgerRows.length - visibleRows.length}{" "}
-                      remaining)
-                    </Btn>
-                    <Btn
-                      onClick={() => setVisibleCount(ledgerRows.length)}
-                      className="px-4 py-1.5 text-xs"
-                    >
-                      Show all ({ledgerRows.length})
-                    </Btn>
-                  </div>
-                )}
-                {visibleCount > 40 && ledgerRows.length > 40 && (
-                  <div className="mt-2 flex justify-center">
-                    <Btn
-                      onClick={() => setVisibleCount(40)}
-                      className="px-4 py-1.5 text-xs"
-                    >
-                      Hide extra rows
-                    </Btn>
+                {ledgerRows.length > RECENT_ROWS && (
+                  <div className="mt-3 flex justify-center">
+                    {ledgerRows.length > visibleRows.length ? (
+                      <Btn
+                        onClick={() => setVisibleCount(ledgerRows.length)}
+                        className="gap-1.5 px-4 py-1.5 text-xs"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Show all ({ledgerRows.length})
+                      </Btn>
+                    ) : (
+                      <Btn
+                        onClick={() => setVisibleCount(RECENT_ROWS)}
+                        className="gap-1.5 px-4 py-1.5 text-xs"
+                      >
+                        <EyeOff className="h-3.5 w-3.5" />
+                        Show recent {RECENT_ROWS} only
+                      </Btn>
+                    )}
                   </div>
                 )}
               </>
@@ -1018,7 +1016,7 @@ function PersonalPage() {
             value={month}
             onChange={(next) => {
               setMonth(next);
-              setVisibleCount(40);
+              setVisibleCount(RECENT_ROWS);
             }}
           />
           <SlidingTabs
@@ -1029,7 +1027,7 @@ function PersonalPage() {
             value={personalRange}
             onChange={(next) => {
               setPersonalRange(next);
-              setVisibleCount(40);
+              setVisibleCount(RECENT_ROWS);
             }}
             options={PERSONAL_RANGES.map((o) => ({
               id: o.id,

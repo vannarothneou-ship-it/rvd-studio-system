@@ -438,10 +438,14 @@ function extractAmountAndCurrency(
 
         // Guard: If OCR merged ":" into a leading "1" (e.g. ": 300.90" -> "1300.90" with no comma),
         // add a recovered candidate "300.90" and down-rank the suspicious uncomma'd 4-digit value when colon was lost
+        // Short amounts (e.g. ": 7.00" read as "17.00") are only treated as suspicious when the
+        // slip clearly uses "label : value" lines and this line lost its colon — otherwise a real 12.50 stays 12.50.
         const suspiciousLeadingOne =
           !token.includes(",") &&
-          /^1\d{3}(?:\.\d{1,2})?$/.test(token) &&
-          (missingColonOnColonSlip || isPrimaryBankAmount || isTotalLine);
+          ((/^1\d{3}(?:\.\d{1,2})?$/.test(token) &&
+            (missingColonOnColonSlip || isPrimaryBankAmount || isTotalLine)) ||
+            (/^1\d{1,2}(?:\.\d{1,2})?$/.test(token) &&
+              missingColonOnColonSlip));
 
         candidates.push({
           amount: rounded,
