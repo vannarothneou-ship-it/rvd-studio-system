@@ -56,6 +56,77 @@ export async function loadMediaBlob(id: string): Promise<string | null> {
   });
 }
 
+export async function exportMediaBlobs(
+  ids: string[],
+): Promise<Record<string, string>> {
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+  const db = await openMediaDB();
+  if (!db || uniqueIds.length === 0) return {};
+  try {
+    const entries = await Promise.all(
+      uniqueIds.map(
+        (id) =>
+          new Promise<[string, string] | null>((resolve) => {
+            try {
+              const request = db
+                .transaction(STORE_NAME, "readonly")
+                .objectStore(STORE_NAME)
+                .get(id);
+              request.onsuccess = () =>
+                resolve(
+                  typeof request.result === "string"
+                    ? [id, request.result]
+                    : null,
+                );
+              request.onerror = () => resolve(null);
+            } catch {
+              resolve(null);
+            }
+          }),
+      ),
+    );
+    return Object.fromEntries(entries.filter((entry) => entry !== null));
+  } finally {
+    db.close();
+  }
+}
+
+export async function restoreMediaBlobs(
+  blobs: Record<string, unknown>,
+): Promise<number> {
+  const entries = Object.entries(blobs).filter(
+    (entry): entry is [string, string] =>
+      typeof entry[0] === "string" &&
+      typeof entry[1] === "string" &&
+      entry[1].startsWith("data:"),
+  );
+  if (entries.length === 0) return 0;
+  const db = await openMediaDB();
+  if (!db) return 0;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      entries.forEach(([id, dataUrl]) => store.put(dataUrl, id));
+      tx.oncomplete = () => {
+        db.close();
+        resolve(entries.length);
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve(0);
+      };
+      tx.onabort = () => {
+        db.close();
+        resolve(0);
+      };
+    } catch {
+      db.close();
+      resolve(0);
+    }
+  });
+}
+
 export async function deleteMediaBlob(id: string): Promise<void> {
   const db = await openMediaDB();
   if (!db) return;

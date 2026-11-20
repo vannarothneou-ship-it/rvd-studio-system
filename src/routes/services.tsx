@@ -46,6 +46,7 @@ import {
   PRICING_UNITS,
   compactMoney,
   effectiveServiceTags,
+  serviceDeleteBlocker,
   money,
   setDB,
   uid,
@@ -524,9 +525,8 @@ function Services() {
           });
         }}
         onDelete={(v) => {
-          if (db.projects.some((p) => p.serviceId === v.id)) {
-            return "This service is linked to an active or archived project. Change the project's service first.";
-          }
+          const blocker = serviceDeleteBlocker(db, v.id);
+          if (blocker) return blocker;
           setDB((d) => ({
             ...d,
             services: d.services.filter((s) => s.id !== v.id),

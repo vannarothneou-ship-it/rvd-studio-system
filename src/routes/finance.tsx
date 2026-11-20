@@ -735,11 +735,19 @@ function Page() {
                 <button
                   type="button"
                   onClick={() => setShowAllPayments((value) => !value)}
-                  aria-label={showAllPayments ? "Show recent 8 payments" : "Show all payments"}
+                  aria-label={
+                    showAllPayments
+                      ? "Show recent 8 payments"
+                      : "Show all payments"
+                  }
                   title={showAllPayments ? "Show recent 8" : "Show all"}
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                 >
-                  {showAllPayments ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  {showAllPayments ? (
+                    <EyeOff className="h-3.5 w-3.5" />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5" />
+                  )}
                 </button>
               </div>
               <Link
@@ -1407,7 +1415,6 @@ function Page() {
                     </Btn>
                   </div>
                 )}
-
               </>
             )}
           </Glass>

@@ -2919,6 +2919,40 @@ export function deletePayment(db: DB, paymentId: string): DB {
     payments: db.payments.filter((x) => x.id !== paymentId),
   });
 }
+export function clientDeleteBlocker(db: DB, clientId: string): string | null {
+  if (db.projects.some((project) => project.clientId === clientId)) {
+    return "This client has linked projects. Keep the client record to preserve project history.";
+  }
+  if (db.invoices.some((document) => document.clientId === clientId)) {
+    return "This client has linked documents. Keep the client record to preserve billing history.";
+  }
+  return null;
+}
+
+export function projectDeleteBlocker(db: DB, projectId: string): string | null {
+  if (db.invoices.some((document) => document.projectId === projectId)) {
+    return "This project has linked quotations, agreements, invoices or delivery notes. Keep it to preserve document history.";
+  }
+  if (db.expenses.some((expense) => expense.projectId === projectId)) {
+    return "This project has linked expenses. Keep it to preserve financial history.";
+  }
+  return null;
+}
+
+export function serviceDeleteBlocker(db: DB, serviceId: string): string | null {
+  if (db.projects.some((project) => project.serviceId === serviceId)) {
+    return "This service is linked to a project. Change the project's service before deleting it.";
+  }
+  if (
+    db.invoices.some((document) =>
+      document.items.some((item) => item.serviceId === serviceId),
+    )
+  ) {
+    return "This service appears on a commercial document. Keep it to preserve document history.";
+  }
+  return null;
+}
+
 export function updateProject(db: DB, project: Project): DB {
   if (project.start && project.due && project.due < project.start)
     throw new Error("End date must not be before the start date.");
