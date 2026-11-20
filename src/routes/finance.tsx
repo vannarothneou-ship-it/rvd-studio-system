@@ -134,10 +134,10 @@ function Page() {
   const [month, setMonth] = useState(() => today().slice(0, 7));
   const [catFilter, setCatFilter] = useState<string>("All");
   const [query, setQuery] = useState("");
-  const [visibleCount, setVisibleCount] = useState(40);
+  const [visibleCount, setVisibleCount] = useState(8);
   const [combinedFilter, setCombinedFilter] = useState<CombinedFilter>("all");
   const [combinedQuery, setCombinedQuery] = useState("");
-  const [combinedVisible, setCombinedVisible] = useState(50);
+  const [combinedVisible, setCombinedVisible] = useState(8);
   const [editingLayout, setEditingLayout] = useState(false);
   const [inspectedCategory, setInspectedCategory] = useState<string | null>(
     null,
@@ -321,7 +321,7 @@ function Page() {
     () =>
       [...db.payments]
         .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 10),
+        .slice(0, 8),
     [db.payments],
   );
 
@@ -801,7 +801,7 @@ function Page() {
                     value={query}
                     onChange={(e) => {
                       setQuery(e.target.value);
-                      setVisibleCount(40);
+                      setVisibleCount(8);
                     }}
                     placeholder="Search vendor or item..."
                     className="field w-full py-1.5 pl-8 text-base sm:w-56 sm:text-xs"
@@ -893,10 +893,10 @@ function Page() {
                 {filteredExpenses.length > visibleExpenses.length && (
                   <div className="mt-3 flex justify-center gap-2">
                     <Btn
-                      onClick={() => setVisibleCount((n) => n + 60)}
+                      onClick={() => setVisibleCount((n) => n + 8)}
                       className="px-4 py-1.5 text-xs"
                     >
-                      Show more (
+                      Show 8 more (
                       {filteredExpenses.length - visibleExpenses.length}{" "}
                       remaining)
                     </Btn>
@@ -908,7 +908,7 @@ function Page() {
                     </Btn>
                   </div>
                 )}
-                {visibleCount > 40 && filteredExpenses.length > 40 && (
+                {visibleCount > 8 && filteredExpenses.length > 8 && (
                   <div className="mt-2 flex justify-center">
                     <Btn
                       onClick={() => setVisibleCount(40)}
@@ -1363,7 +1363,7 @@ function Page() {
                   <div className="mt-3 flex justify-center gap-2">
                     <Btn
                       type="button"
-                      onClick={() => setCombinedVisible((n) => n + 80)}
+                      onClick={() => setCombinedVisible((n) => n + 8)}
                       className="px-4 py-1.5 text-xs"
                     >
                       Show more (
@@ -1411,7 +1411,18 @@ function Page() {
           setDB((d) => ({
             ...d,
             expenses: upsert(d.expenses, { ...v, account: "Studio" }),
-          }))
+          })
+                {combinedVisible > 8 && combinedLedgerRows.length > 8 && (
+                  <div className="mt-2 flex justify-center">
+                    <Btn
+                      type="button"
+                      onClick={() => setCombinedVisible(8)}
+                      className="px-4 py-1.5 text-xs"
+                    >
+                      Show recent 8 only
+                    </Btn>
+                  </div>
+                )})
         }
         onDelete={
           db.expenses.some((x) => x.id === edit?.id)
