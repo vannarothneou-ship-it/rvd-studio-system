@@ -6,6 +6,7 @@ import {
   Download,
   Eye,
   EyeOff,
+  Info,
   Plus,
   RotateCcw,
   Upload,
@@ -251,6 +252,16 @@ function Page() {
               </p>
             </div>
           </div>
+        </div>
+
+        <div className="mb-3 flex items-start gap-2.5 rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <p>
+            <strong className="font-semibold text-foreground">Local browser storage.</strong>{" "}
+            Your records are saved in this browser on this device. They do not
+            automatically sync to another device or another user. Download a
+            backup before clearing browser data or moving to a new device.
+          </p>
         </div>
 
         <div className="mb-3 grid grid-cols-2 gap-2.5 rounded-2xl bg-muted/35 p-3 sm:grid-cols-4">
