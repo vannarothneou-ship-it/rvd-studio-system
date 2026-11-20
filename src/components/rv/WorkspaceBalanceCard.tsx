@@ -199,11 +199,7 @@ export function WorkspaceBalanceCard({
           )}
           title={displayMoney(bal.studioBalance)}
         >
-          {showAmounts ? (
-            <AnimatedNumber value={bal.studioBalance} />
-          ) : (
-            "••••"
-          )}
+          {showAmounts ? <AnimatedNumber value={bal.studioBalance} /> : "••••"}
         </p>
         <p className="mt-1 hidden text-xs text-muted-foreground sm:block">
           Paid Studio Invoices minus Studio Operating Expenses across RothVan
@@ -230,11 +226,7 @@ export function WorkspaceBalanceCard({
         />
         <Stat
           label="This month net"
-          value={
-            showAmounts
-              ? compactMoney(bal.studioMonthNet, "USD", true)
-              : "••••"
-          }
+          value={showAmounts ? compactMoney(bal.studioMonthNet, "USD", true) : "••••"}
           fullValue={displayMoney(bal.studioMonthNet)}
           tone={bal.studioMonthNet >= 0 ? "pos" : "neg"}
         />
