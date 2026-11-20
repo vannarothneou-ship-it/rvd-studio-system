@@ -56,6 +56,31 @@ export async function loadMediaBlob(id: string): Promise<string | null> {
   });
 }
 
+export async function exportMediaBlobs(
+  ids: string[],
+): Promise<Record<string, string>> {
+  const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
+  const entries = await Promise.all(
+    uniqueIds.map(async (id) => [id, await loadMediaBlob(id)] as const),
+  );
+  return Object.fromEntries(
+    entries.filter((entry): entry is readonly [string, string] => Boolean(entry[1])),
+  );
+}
+
+export async function restoreMediaBlobs(
+  blobs: Record<string, unknown>,
+): Promise<number> {
+  const entries = Object.entries(blobs).filter(
+    (entry): entry is [string, string] =>
+      typeof entry[0] === "string" &&
+      typeof entry[1] === "string" &&
+      entry[1].startsWith("data:"),
+  );
+  await Promise.all(entries.map(([id, dataUrl]) => saveMediaBlob(id, dataUrl)));
+  return entries.length;
+}
+
 export async function deleteMediaBlob(id: string): Promise<void> {
   const db = await openMediaDB();
   if (!db) return;
