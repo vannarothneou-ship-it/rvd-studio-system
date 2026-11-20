@@ -29,14 +29,21 @@ import {
 import { Btn, Glass } from "@/components/rv/ui";
 import { upsert } from "@/components/rv/Crud";
 import {
-  workProjectAccent,
+  workProjectMeta,
   workTaskProjectName,
 } from "@/components/rv/workProjectColors";
 import {
   buildSpecialDaysForYears,
   type CalendarSpecialDay,
 } from "@/lib/kh-holidays";
-import { addDays, setDB, shortDate, today, type WorkTask } from "@/lib/store";
+import {
+  addDays,
+  normalizeWorkStage,
+  setDB,
+  shortDate,
+  today,
+  type WorkTask,
+} from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 interface HolidayToggleState {
@@ -179,9 +186,11 @@ export function WorkTasksCalendar({
             : t.completedDate && t.completedDate >= start
               ? t.completedDate
               : start;
-        const accent = workProjectAccent(proj);
-        const prefix = proj ? `[${proj}] ` : "";
-        const doneMark = t.status === "Completed" ? "✓ " : "";
+        const meta = workProjectMeta(proj);
+        const accent = meta.accent;
+        const prefix = proj ? `[${meta.shortCode}] ` : "";
+        const done = normalizeWorkStage(t.status) === "Completed";
+        const doneMark = done ? "✓ " : "";
 
         return {
           id: t.id,
@@ -192,7 +201,7 @@ export function WorkTasksCalendar({
           backgroundColor: accent.calBg,
           borderColor: accent.calBorder,
           textColor: accent.calText,
-          classNames: t.status === "Completed" ? ["opacity-75"] : [],
+          classNames: done ? ["opacity-75"] : [],
         };
       });
 
@@ -286,12 +295,12 @@ export function WorkTasksCalendar({
   };
 
   const toggleWorkDone = (task: WorkTask) => {
-    const nextDone = task.status !== "Completed";
+    const nextDone = normalizeWorkStage(task.status) !== "Completed";
     setDB((d) => ({
       ...d,
       workTasks: upsert(d.workTasks ?? [], {
         ...task,
-        status: nextDone ? "Completed" : "Current",
+        status: nextDone ? "Completed" : "Design",
         completedDate: nextDone ? todayStr : "",
       }),
     }));
@@ -390,17 +399,18 @@ export function WorkTasksCalendar({
             </span>
             <div className="flex flex-wrap items-center gap-2.5">
               {legendProjects.map((name) => {
-                const accent = workProjectAccent(name);
+                const meta = workProjectMeta(name);
+                const ProjIcon = meta.icon;
                 return (
                   <span
                     key={name}
                     className="inline-flex items-center gap-1.5 font-medium text-foreground/90"
                   >
-                    <span
-                      className="h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: accent.dot }}
+                    <ProjIcon
+                      className="h-3.5 w-3.5 shrink-0"
+                      style={{ color: meta.accent.dot }}
                     />
-                    {name}
+                    {meta.shortCode}
                   </span>
                 );
               })}
@@ -427,10 +437,10 @@ export function WorkTasksCalendar({
               onClick={() => toggleHolidayKind("khHolidays")}
               aria-pressed={holidayToggles.khHolidays}
               className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
+                "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
                 holidayToggles.khHolidays
                   ? "border-rose-500/50 bg-rose-500/20 text-rose-200 light:text-rose-800"
-                  : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
               )}
             >
               <Flag className="h-3 w-3 shrink-0" />
@@ -441,10 +451,10 @@ export function WorkTasksCalendar({
               onClick={() => toggleHolidayKind("thngaiSel")}
               aria-pressed={holidayToggles.thngaiSel}
               className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
+                "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
                 holidayToggles.thngaiSel
-                  ? "border-primary/50 bg-primary/20 text-amber-200 light:text-amber-900"
-                  : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                  ? "border-primary/50 bg-primary/20 text-primary"
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
               )}
             >
               <Moon className="h-3 w-3 shrink-0" />
@@ -455,10 +465,10 @@ export function WorkTasksCalendar({
               onClick={() => toggleHolidayKind("popular")}
               aria-pressed={holidayToggles.popular}
               className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
+                "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
                 holidayToggles.popular
                   ? "border-sky-500/50 bg-sky-500/20 text-sky-200 light:text-sky-800"
-                  : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
               )}
             >
               <Sparkles className="h-3 w-3 shrink-0" />
@@ -610,13 +620,15 @@ export function WorkTasksCalendar({
                   ))}
 
                   {mobileSelectedDayTasks.map((task) => {
-                    const done = task.status === "Completed";
+                    const stage = normalizeWorkStage(task.status);
+                    const done = stage === "Completed";
                     const proj = workTaskProjectName(task);
-                    const accent = workProjectAccent(proj);
+                    const meta = workProjectMeta(proj);
+                    const ProjIcon = meta.icon;
                     return (
                       <div
                         key={task.id}
-                        className="flex items-center gap-2 rounded-xl border border-border/80 bg-card/70 px-2.5 py-2 text-xs"
+                        className="flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2 text-xs"
                       >
                         <button
                           type="button"
@@ -626,7 +638,7 @@ export function WorkTasksCalendar({
                               ? `Reopen ${task.title || task.code}`
                               : `Complete ${task.title || task.code}`
                           }
-                          className="grid h-8 w-8 shrink-0 place-items-center rounded-full hover:bg-accent"
+                          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg hover:bg-accent"
                         >
                           {done ? (
                             <CheckCircle2 className="h-4 w-4 text-positive" />
@@ -648,15 +660,13 @@ export function WorkTasksCalendar({
                             {task.title || task.code}
                           </p>
                           <p className="flex items-center gap-1.5 truncate text-[0.68rem] text-muted-foreground">
-                            {proj && (
-                              <span
-                                className="h-2 w-2 shrink-0 rounded-full"
-                                style={{ backgroundColor: accent.dot }}
-                              />
-                            )}
+                            <ProjIcon
+                              className="h-3 w-3 shrink-0"
+                              style={{ color: meta.accent.dot }}
+                            />
                             <span>
-                              {proj ? `${proj} · ` : ""}
-                              {task.status}
+                              {proj ? `${meta.shortCode} · ` : ""}
+                              {stage}
                             </span>
                           </p>
                         </button>
@@ -714,11 +724,12 @@ export function WorkTasksCalendar({
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {unscheduledTasks.map((task) => {
               const proj = workTaskProjectName(task);
-              const accent = workProjectAccent(proj);
+              const meta = workProjectMeta(proj);
+              const ProjIcon = meta.icon;
               return (
                 <div
                   key={task.id}
-                  className="flex items-center justify-between gap-2 rounded-2xl border border-border bg-muted/50 px-3 py-2.5"
+                  className="flex items-center justify-between gap-2 rounded-xl border border-border bg-muted/50 px-3 py-2.5"
                 >
                   <button
                     type="button"
@@ -726,19 +737,17 @@ export function WorkTasksCalendar({
                     className="min-w-0 flex-1 text-left"
                   >
                     <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                      {proj && (
-                        <span
-                          className="h-2 w-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: accent.dot }}
-                        />
-                      )}
+                      <ProjIcon
+                        className="h-3.5 w-3.5 shrink-0"
+                        style={{ color: meta.accent.dot }}
+                      />
                       <span className="truncate">
                         {task.title || task.code}
                       </span>
                     </p>
                     <p className="font-num mt-0.5 truncate text-xs text-muted-foreground">
-                      {proj ? `${proj} · ` : ""}
-                      {task.designType} · {task.status}
+                      {proj ? `${meta.shortCode} · ` : ""}
+                      {task.designType} · {normalizeWorkStage(task.status)}
                     </p>
                   </button>
                   <Btn

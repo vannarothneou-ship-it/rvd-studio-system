@@ -1,138 +1,17 @@
 import type { ScannedReceiptResult } from "@/lib/receipt-scanner";
+import { today, type LearnedReceiptRule } from "@/lib/store";
 
 export type ReceiptScanMode = "auto" | "khm+eng" | "handwriting";
 
-/** An amount-like token with the pixel height of its text (taller = more prominent on the slip). */
-export interface LargeAmountHint {
-  amount: number;
-  height: number;
-  conf: number;
-}
-
-/**
- * Extra evidence gathered by the scanner's assist passes (see scanReceiptLocally):
- * - largeAmounts: tallest amount tokens from a sparse-text pass; on POS screens the biggest number is the grand total
- * - focusText: OCR of an enlarged crop around that number (reads big/glary digits and the KHR total under it)
- * - extraText: sparse-pass text, used only for keyword/category hints
- */
-export interface ReceiptScanHints {
-  largeAmounts?: LargeAmountHint[];
-  focusText?: string;
-  extraText?: string;
-}
-
 export interface ReceiptParseContext {
   ownerNames?: string[];
-  hints?: ReceiptScanHints;
+  khrRate?: number;
+  learnedRules?: LearnedReceiptRule[];
 }
 
-export interface OcrWordLite {
-  text: string;
-  conf: number;
-  height: number;
-}
-
-/**
- * From sparse-pass words, keep amount-like tokens ("39.10", "$39.10", "(39.10") whose text is clearly
- * taller than the typical number on the slip. Returns the tallest first (max 2).
- */
-export function pickLargeAmountHints(words: OcrWordLite[]): LargeAmountHint[] {
-  const numeric = words.filter((w) => /\d/.test(w.text) && w.height > 0);
-  if (numeric.length === 0) return [];
-  const heights = numeric.map((w) => w.height).sort((a, b) => a - b);
-  const median = heights[Math.floor(heights.length / 2)] ?? 0;
-  const out: LargeAmountHint[] = [];
-  for (const w of numeric) {
-    const m = w.text.trim().match(/^[$([S]?\s*(\d{1,5}\.\d{2})[)\]]?$/);
-    if (!m) continue;
-    if (w.height < Math.max(median * 1.5, 24)) continue;
-    const amount = Number(m[1]);
-    if (!(amount > 0)) continue;
-    out.push({ amount, height: w.height, conf: w.conf });
-  }
-  return out.sort((a, b) => b.height - a.height).slice(0, 2);
-}
-
-/** KHR totals such as "160,300"; also tries the value without a leading "1" (riel sign misread as 1: "1160,300"). */
-export function extractKhrFigures(text: string): number[] {
-  const out = new Set<number>();
-  for (const m of normalizeKhmerDigits(text).matchAll(
-    /(?<![\d.,])(\d{1,4}),(\d{3})(?!\d)/g,
-  )) {
-    const head = m[1]!;
-    const tail = m[2]!;
-    const full = Number(`${head}${tail}`);
-    if (full >= 1000) out.add(full);
-    if (head.length >= 3 && head.startsWith("1")) {
-      const stripped = Number(`${head.slice(1)}${tail}`);
-      if (stripped >= 1000) out.add(stripped);
-    }
-  }
-  return [...out];
-}
-
-/** Exchange rates printed on slips, e.g. "1$ = 4,100.00". */
-export function extractExchangeRates(text: string): number[] {
-  const out: number[] = [];
-  for (const m of normalizeKhmerDigits(text).matchAll(
-    /1\s*\$\s*[=:]\s*([\d,]{4,6}(?:\.\d+)?)/g,
-  )) {
-    const n = Number((m[1] ?? "").replace(/,/g, ""));
-    if (n >= 3500 && n <= 4700) out.push(n);
-  }
-  return out;
-}
-
-/** True when a KHR figure on the slip equals usd x rate (within ~1.2%). Confirms a USD total independently. */
-export function khrCrossCheck(
-  usd: number,
-  khrFigures: number[],
-  rates: number[],
-): boolean {
-  if (!(usd > 0) || khrFigures.length === 0) return false;
-  const bands: Array<[number, number]> =
-    rates.length > 0
-      ? rates.map((r) => [r * 0.988, r * 1.012] as [number, number])
-      : [[3900, 4300]];
-  return khrFigures.some((k) => {
-    const implied = k / usd;
-    return bands.some(([lo, hi]) => implied >= lo && implied <= hi);
-  });
-}
-
-/**
- * True when most of the OCR text is garbage (typical for tilted, glary photos of screens): many lines
- * with no real word and no amount. Used to decide whether the extra "look closer" passes should run.
- */
-export function isNoisyOcrText(raw: string): boolean {
-  const lines = raw
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length >= 3);
-  if (lines.length < 4) return false;
-  const noisy = lines.filter(
-    (l) => looksLikeOcrNoise(l) && !/\d+\.\d{2}/.test(l),
-  ).length;
-  return noisy / lines.length >= 0.4;
-}
-
-/** Garbled OCR lines ("ខ្ន Fe ស '– Hel =v ន Fa 2 …") should never become the merchant name. */
-export function looksLikeOcrNoise(line: string): boolean {
-  const tokens = line.split(/\s+/).filter(Boolean);
-  const hasRealWord = tokens.some(
-    (t) => (t.match(/[A-Za-z\u1780-\u17D3]/g) ?? []).length >= 3,
-  );
-  if (!hasRealWord) return true;
-  // Khmer-only lines need some length: short mixed Khmer marks ("ញា កិក |!") are usually OCR junk
-  if (!/[A-Za-z]/.test(line)) {
-    const khmerLetters = (line.match(/[\u1780-\u17D3]/g) ?? []).length;
-    if (khmerLetters < 6) return true;
-  }
-  if (tokens.length < 4) return false;
-  const wordish = tokens.filter(
-    (t) => (t.match(/[A-Za-z\u1780-\u17D3]/g) ?? []).length >= 3,
-  ).length;
-  return wordish / tokens.length < 0.5;
+export interface LocalScannedReceiptResult extends ScannedReceiptResult {
+  matchedRule?: string;
+  mathVerified?: boolean;
 }
 
 const KHMER_DIGITS: Record<string, string> = {
@@ -485,14 +364,74 @@ interface AmountCandidate {
   isSuspiciousLeadingOne?: boolean;
 }
 
+function extractLineItemMathSum(lines: string[]): number | null {
+  let explicitSum = 0;
+  let explicitCount = 0;
+  let itemizedSum = 0;
+  let itemizedCount = 0;
+
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (
+      /\b(tel|phone|call\s*center|acc|mtcn|trx|ref|trace|id|time|date|total|ttl|subtotal|sub\s*total|tax|vat|service\s*charge|discount|change|cash|paid|tender|balance|received|deposited|sent\s*amount)\b|សរុប|ប្រាក់អាប់|លេខទូរស័ព្ទ/.test(
+        lower,
+      )
+    ) {
+      continue;
+    }
+    if (FOREIGN_CURRENCY_REGEX.test(line)) continue;
+
+    // 1. Explicit "qty x unit [= ext]" e.g. "2 x 3.50 = 7.00" or "3 @ $2.00"
+    const qtyMatch = line.match(
+      /\b([1-9]\d{0,2})\s*[x×@*]\s*\$?\s*([0-9]{1,4}(?:\.[0-9]{1,2})?)(?:[^\d.]+([0-9]{1,4}(?:\.[0-9]{1,2})?))?/i,
+    );
+    if (qtyMatch) {
+      const qty = Number(qtyMatch[1]);
+      const unit = Number(qtyMatch[2]);
+      const ext = qtyMatch[3] ? Number(qtyMatch[3]) : qty * unit;
+      if (qty > 0 && unit > 0 && unit < 5000 && ext > 0) {
+        const expected = qty * unit;
+        if (Math.abs(ext - expected) <= 0.05 || !qtyMatch[3]) {
+          explicitSum += Math.round(expected * 100) / 100;
+          explicitCount += 1;
+          continue;
+        }
+      }
+    }
+
+    // 2. Itemized line ending with a decimal USD amount (e.g. "Iced Latte 3.50")
+    if (/[A-Za-z\u1780-\u17D3]{2,}/.test(line)) {
+      const decMatch = line.match(
+        /(?:\$\s*)?([0-9]{1,4}\.[0-9]{2})\s*(?:\$|USD)?$/i,
+      );
+      if (decMatch?.[1]) {
+        const val = parseNumberStr(decMatch[1]);
+        if (val > 0 && val < 2000) {
+          itemizedSum += val;
+          itemizedCount += 1;
+        }
+      }
+    }
+  }
+
+  if (explicitCount >= 2 && explicitSum > 0.2) {
+    return Math.round(explicitSum * 100) / 100;
+  }
+  if (itemizedCount >= 2 && itemizedSum > 0.2) {
+    return Math.round(itemizedSum * 100) / 100;
+  }
+  return null;
+}
+
 function extractAmountAndCurrency(
   raw: string,
   fields: StructuredSlipFields,
-  hints?: ReceiptScanHints,
+  khrRate = 4100,
 ): {
   amount: number;
   currency: "USD" | "KHR";
   ambiguous: boolean;
+  mathVerified: boolean;
 } {
   const norm = normalizeKhmerDigits(raw);
   const lines = norm
@@ -501,6 +440,7 @@ function extractAmountAndCurrency(
     .filter(Boolean);
 
   const candidates: AmountCandidate[] = [];
+  const lineItemSum = extractLineItemMathSum(lines);
 
   for (const line of lines) {
     const lower = line.toLowerCase();
@@ -527,7 +467,7 @@ function extractAmountAndCurrency(
     const isPrimaryBankAmount =
       /\b(?:deposited\s*amount|receiv(?:e|ed)\s*amount)\b/i.test(lower);
     const isGrandTotal =
-      /grand\s*total|total\s*paid|total\s*amount|net\s*amount|សរុបរួម|សរុបចុងក្រោយ|ប្រាក់សរុប|ថ្លៃសរុប|សរុបទាំងអស់/.test(
+      /grand\s*total|total\s*paid|total\s*amount|net\s*amount|សរុបរួម|ប្រាក់សរុប|ថ្លៃសរុប|សរុបទាំងអស់/.test(
         lower,
       );
     const isTotalLine =
@@ -660,52 +600,6 @@ function extractAmountAndCurrency(
     }
   }
 
-  // Assist-pass evidence: the tallest amount on a POS screen is the grand total; an enlarged crop re-reads it.
-  if (hints) {
-    const round2 = (n: number) => Math.round(n * 100) / 100;
-    (hints.largeAmounts ?? []).slice(0, 2).forEach((h, i) => {
-      candidates.push({
-        amount: round2(h.amount),
-        currency: "USD",
-        score: i === 0 ? 66 : 40,
-        sourceRaw: String(h.amount),
-        line: "[largest number on slip]",
-      });
-    });
-    if (hints.focusText) {
-      for (const m of normalizeKhmerDigits(hints.focusText).matchAll(
-        /(?<![\d.])[$([S]?\s*(\d{1,5}\.\d{2})(?!\d)/g,
-      )) {
-        const v = Number(m[1]);
-        if (v > 0 && v < 100_000) {
-          candidates.push({
-            amount: round2(v),
-            currency: "USD",
-            score: 58,
-            sourceRaw: m[1] ?? "",
-            line: "[enlarged re-read]",
-          });
-        }
-      }
-    }
-  }
-
-  // Independent confirmation: a KHR total on the slip that equals usd x exchange rate
-  const evidenceText = [
-    raw,
-    hints?.focusText ?? "",
-    hints?.extraText ?? "",
-  ].join("\n");
-  const khrFigures = extractKhrFigures(evidenceText);
-  if (khrFigures.length > 0) {
-    const rates = extractExchangeRates(evidenceText);
-    for (const c of candidates) {
-      if (c.currency === "USD" && khrCrossCheck(c.amount, khrFigures, rates)) {
-        c.score += 40;
-      }
-    }
-  }
-
   if (candidates.length === 0) {
     // Broad fallback: any decimal amount in non-foreign text (e.g. 5.50 or 18.5)
     const filteredText = lines
@@ -717,10 +611,13 @@ function extractAmountAndCurrency(
       .map((m) => parseNumberStr(m[1] || ""))
       .filter((n) => n > 0 && n < 50_000);
     if (decMatches.length > 0) {
+      const maxDec = Math.round(Math.max(...decMatches) * 100) / 100;
       return {
-        amount: Math.round(Math.max(...decMatches) * 100) / 100,
+        amount: maxDec,
         currency: "USD",
         ambiguous: decMatches.length > 1,
+        mathVerified:
+          lineItemSum !== null && Math.abs(maxDec - lineItemSum) <= 0.03,
       };
     }
 
@@ -734,10 +631,41 @@ function extractAmountAndCurrency(
         amount: Math.max(...khrMatches),
         currency: "KHR",
         ambiguous: khrMatches.length > 1,
+        mathVerified: false,
       };
     }
 
-    return { amount: 0, currency: "USD", ambiguous: false };
+    return {
+      amount: 0,
+      currency: "USD",
+      ambiguous: false,
+      mathVerified: false,
+    };
+  }
+
+  // Dual-currency (USD <-> KHR) & line-item sum math cross-verification
+  const rate = khrRate > 100 ? khrRate : 4100;
+  const usdCandidates = candidates.filter((c) => c.currency === "USD");
+  const khrCandidates = candidates.filter((c) => c.currency === "KHR");
+  const verifiedUsdValues = new Set<number>();
+  const verifiedKhrValues = new Set<number>();
+
+  for (const u of usdCandidates) {
+    if (u.isSuspiciousLeadingOne) continue;
+    const matchedKhr = khrCandidates.find(
+      (k) =>
+        Math.abs(u.amount * rate - k.amount) / Math.max(1, k.amount) <= 0.12,
+    );
+    if (matchedKhr) {
+      u.score += 42;
+      matchedKhr.score += 18;
+      verifiedUsdValues.add(u.amount);
+      verifiedKhrValues.add(matchedKhr.amount);
+    }
+    if (lineItemSum !== null && Math.abs(u.amount - lineItemSum) <= 0.03) {
+      u.score += 32;
+      verifiedUsdValues.add(u.amount);
+    }
   }
 
   // Consensus aggregation: exact amounts appearing across multiple lines (e.g. Deposited amount + Receive amount)
@@ -810,12 +738,22 @@ function extractAmountAndCurrency(
       runnerUp.directHits > 0 &&
       Math.abs(bestUsd.finalScore - runnerUp.finalScore) < 12,
     );
-    return { amount: bestUsd.amount, currency: "USD", ambiguous };
+    return {
+      amount: bestUsd.amount,
+      currency: "USD",
+      ambiguous,
+      mathVerified: verifiedUsdValues.has(bestUsd.amount),
+    };
   }
   if (bestKhr) {
-    return { amount: bestKhr.amount, currency: "KHR", ambiguous: false };
+    return {
+      amount: bestKhr.amount,
+      currency: "KHR",
+      ambiguous: false,
+      mathVerified: verifiedKhrValues.has(bestKhr.amount),
+    };
   }
-  return { amount: 0, currency: "USD", ambiguous: false };
+  return { amount: 0, currency: "USD", ambiguous: false, mathVerified: false };
 }
 
 function detectCategory(
@@ -846,13 +784,6 @@ function detectCategory(
       return "Gift & Refund";
     }
     return "Other";
-  }
-
-  // Baby formula / diaper brands are unambiguous: check before generic grocery words ("អាហារ", "mart")
-  if (
-    /aptamil|enfamil|similac|pampers|mamypoko|diaper|ទឹកដោះគោម្សៅ/.test(lower)
-  ) {
-    return "Kid";
   }
 
   if (
@@ -891,7 +822,7 @@ function detectCategory(
     return "Medical & Healthcare";
   }
   if (
-    /school|tuition|baby|milk|diaper|kid|toy|pediatric|aptamil|enfamil|similac|formula|pampers|mamypoko|កូន|សាលា|ទឹកដោះគោ|ខោទឹកនោម/.test(
+    /school|tuition|baby|milk|diaper|kid|toy|pediatric|កូន|សាលា|ទឹកដោះគោ|ខោទឹកនោម/.test(
       lower,
     )
   ) {
@@ -961,16 +892,12 @@ function extractMerchantOrPayer(
     }
   }
 
-  // On garbled photos any free-text line is junk: leave the merchant for the user instead of guessing
-  if (isNoisyOcrText(raw)) return "Scanned Slip";
-
   // 3. Pick the first clean descriptive line (supports English + Khmer script)
   for (const line of lines.slice(0, 12)) {
     if (isGenericHeaderLine(line)) continue;
     if (/^[-+$៛\d.,\s:/០-៩|]+$/.test(line)) continue;
     if (/^\d{2,}/.test(line) && !hasReadableLetters(line)) continue;
     if (/^(?:USD|KHR)\s+\d{5,}$/i.test(line)) continue;
-    if (looksLikeOcrNoise(line)) continue;
     if (line.length >= 2 && hasReadableLetters(line)) {
       return smartTitleCase(line).slice(0, 48);
     }
@@ -988,11 +915,110 @@ function extractReference(raw: string, fields: StructuredSlipFields): string {
   return m?.[1]?.trim() ?? "";
 }
 
+export function normalizeMerchantPattern(raw: string): string {
+  return normalizeKhmerDigits(raw)
+    .toLowerCase()
+    .replace(/\b(?:no|ref|trx|id|#)[.:-\s]*[a-z0-9-]+$/i, "")
+    .replace(/[*•·_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function matchLearnedRule(
+  merchantOrPayer: string,
+  normalizedText: string,
+  rules?: LearnedReceiptRule[],
+): LearnedReceiptRule | undefined {
+  if (!rules || rules.length === 0) return undefined;
+  const normMerchant = normalizeMerchantPattern(merchantOrPayer);
+  const normText = normalizeMerchantPattern(normalizedText);
+  const isGeneric = !normMerchant || normMerchant === "scanned slip";
+
+  let best: { rule: LearnedReceiptRule; rank: number } | undefined;
+
+  for (const rule of rules) {
+    const p = rule.pattern.trim().toLowerCase();
+    if (p.length < 3) continue;
+
+    let matchScore = 0;
+    if (!isGeneric && normMerchant === p) {
+      matchScore = 100;
+    } else if (
+      !isGeneric &&
+      (normMerchant.includes(p) ||
+        (normMerchant.length >= 4 && p.includes(normMerchant)))
+    ) {
+      matchScore = 70 + Math.min(20, p.length);
+    } else if (p.length >= 4 && normText.includes(p)) {
+      matchScore = 40 + Math.min(20, p.length);
+    }
+
+    if (matchScore > 0) {
+      const rank = matchScore + Math.min(30, rule.hits * 4);
+      if (!best || rank > best.rank) {
+        best = { rule, rank };
+      }
+    }
+  }
+
+  return best?.rule;
+}
+
+export function learnReceiptRule(
+  rules: LearnedReceiptRule[],
+  entry: {
+    merchantOrPayer: string;
+    txType: "expense" | "income";
+    category: string;
+    method: string;
+  },
+  atDate: string = today(),
+): LearnedReceiptRule[] {
+  const displayPattern = entry.merchantOrPayer.replace(/\s+/g, " ").trim();
+  const pattern = normalizeMerchantPattern(displayPattern);
+  if (!pattern || pattern.length < 3 || pattern === "scanned slip") {
+    return rules;
+  }
+
+  const existingIdx = rules.findIndex((r) => r.pattern === pattern);
+  let next: LearnedReceiptRule[];
+
+  if (existingIdx >= 0) {
+    const existing = rules[existingIdx]!;
+    const updated: LearnedReceiptRule = {
+      ...existing,
+      displayPattern: displayPattern.slice(0, 48),
+      txType: entry.txType,
+      category: entry.category,
+      method: entry.method,
+      hits: (existing.hits || 0) + 1,
+      updatedAt: atDate,
+    };
+    next = rules.map((r, i) => (i === existingIdx ? updated : r));
+  } else {
+    const created: LearnedReceiptRule = {
+      id: `rule_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+      pattern,
+      displayPattern: displayPattern.slice(0, 48),
+      txType: entry.txType,
+      category: entry.category,
+      method: entry.method,
+      hits: 1,
+      updatedAt: atDate,
+    };
+    next = [created, ...rules];
+  }
+
+  return next
+    .sort((a, b) => b.hits - a.hits || b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 120);
+}
+
 export function parseReceiptText(
   ocrText: string,
   fallbackDate: string,
   context?: ReceiptParseContext,
-): ScannedReceiptResult {
+): LocalScannedReceiptResult {
   const cleaned = ocrText.trim();
   const normalized = normalizeKhmerDigits(cleaned);
   const fields = extractStructuredFields(normalized);
@@ -1020,22 +1046,19 @@ export function parseReceiptText(
     ) ||
     (receiverIsOwner && !senderIsOwner);
 
-  const txType: "expense" | "income" = hasStrongIncomeSignal
+  let txType: "expense" | "income" = hasStrongIncomeSignal
     ? "income"
     : "expense";
 
-  const method: "Debit" | "Credit" =
+  let method: "Debit" | "Credit" =
     /credit\s*card|visa\s*credit|mastercard\s*credit|credit\s*limit|credit\s*acc|កាតឥណទាន/.test(
       normalized.toLowerCase(),
     )
       ? "Credit"
       : "Debit";
 
-  const { amount, currency, ambiguous } = extractAmountAndCurrency(
-    normalized,
-    fields,
-    context?.hints,
-  );
+  const { amount, currency, ambiguous, mathVerified } =
+    extractAmountAndCurrency(normalized, fields, context?.khrRate);
   const date = extractDateFromText(normalized, fallbackDate);
   const merchantOrPayer = extractMerchantOrPayer(
     cleaned,
@@ -1043,14 +1066,21 @@ export function parseReceiptText(
     fields,
     ownerNames,
   );
-  const category = detectCategory(
-    txType,
-    context?.hints?.extraText
-      ? `${normalized}\n${context.hints.extraText}`
-      : normalized,
-    fields,
-  );
+  let category = detectCategory(txType, normalized, fields);
   const reference = extractReference(normalized, fields);
+
+  const matched = matchLearnedRule(
+    merchantOrPayer,
+    normalized,
+    context?.learnedRules,
+  );
+  if (matched) {
+    txType = matched.txType;
+    category = matched.category;
+    if (matched.method === "Debit" || matched.method === "Credit") {
+      method = matched.method;
+    }
+  }
 
   let description = "";
   if (fields.purpose && merchantOrPayer !== "Scanned Slip") {
@@ -1067,7 +1097,10 @@ export function parseReceiptText(
   }
 
   const confidence: ScannedReceiptResult["confidence"] =
-    amount > 0 && merchantOrPayer !== "Scanned Slip" && !ambiguous
+    amount > 0 &&
+    (mathVerified ||
+      Boolean(matched) ||
+      (merchantOrPayer !== "Scanned Slip" && !ambiguous))
       ? "high"
       : amount > 0
         ? "medium"
@@ -1086,6 +1119,8 @@ export function parseReceiptText(
     reference,
     confidence,
     notes: cleaned ? "Scanned locally on device (no API)" : "",
+    matchedRule: matched?.displayPattern,
+    mathVerified,
   };
 }
 
@@ -1314,14 +1349,36 @@ function applyAdaptiveEnhancement(
   return out;
 }
 
+async function renderLumaToPngBlob(
+  ctx: CanvasRenderingContext2D,
+  imageData: ImageData,
+  lumaBuf: Uint8ClampedArray,
+  fallbackFile: File,
+): Promise<Blob | File> {
+  const data = imageData.data;
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const v = lumaBuf[p]!;
+    data[i] = v;
+    data[i + 1] = v;
+    data[i + 2] = v;
+    data[i + 3] = 255;
+  }
+  ctx.putImageData(imageData, 0, 0);
+  return new Promise<Blob | File>((resolve) =>
+    ctx.canvas.toBlob((b) => resolve(b ?? fallbackFile), "image/png"),
+  );
+}
+
 async function preprocessImageForOcr(
   file: File,
   options?: { rotationDeg?: number; mode?: ReceiptScanMode },
 ): Promise<{
   ocrBlob: Blob | File;
+  altOcrBlob: Blob | File;
   previewDataUrl: string;
   thumbDataUrl: string;
   detectedAngleDeg: number;
+  isDigitalScreenshot: boolean;
 }> {
   const rotationDeg = (((options?.rotationDeg ?? 0) % 360) + 360) % 360;
   const mode: ReceiptScanMode = options?.mode ?? "auto";
@@ -1407,10 +1464,12 @@ async function preprocessImageForOcr(
 
     let detectedAngleDeg = 0;
     let enhanced: Uint8ClampedArray;
+    let altEnhanced: Uint8ClampedArray;
 
     if (isDigitalScreenshot && mode !== "handwriting") {
       // Crisp digital screenshots (bank apps / e-slips) keep clean anti-aliased edges and colons
       enhanced = applyCleanScreenshotContrast(luma);
+      altEnhanced = applyAdaptiveEnhancement(luma, w, h, "auto");
     } else {
       detectedAngleDeg = estimateSkewAngleDeg(luma, w, h);
       if (detectedAngleDeg !== 0) {
@@ -1427,22 +1486,30 @@ async function preprocessImageForOcr(
         }
       }
       enhanced = applyAdaptiveEnhancement(luma, w, h, mode);
+      altEnhanced = applyAdaptiveEnhancement(
+        luma,
+        w,
+        h,
+        mode === "handwriting" ? "auto" : "handwriting",
+      );
     }
 
-    for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-      const v = enhanced[p]!;
-      data[i] = v;
-      data[i + 1] = v;
-      data[i + 2] = v;
-      data[i + 3] = 255;
-    }
-    ctx.putImageData(imageData, 0, 0);
-
-    const ocrBlob = await new Promise<Blob>((resolve) =>
-      canvas.toBlob((b) => resolve(b ?? file), "image/png"),
+    const ocrBlob = await renderLumaToPngBlob(ctx, imageData, enhanced, file);
+    const altOcrBlob = await renderLumaToPngBlob(
+      ctx,
+      imageData,
+      altEnhanced,
+      file,
     );
 
-    return { ocrBlob, previewDataUrl, thumbDataUrl, detectedAngleDeg };
+    return {
+      ocrBlob,
+      altOcrBlob,
+      previewDataUrl,
+      thumbDataUrl,
+      detectedAngleDeg,
+      isDigitalScreenshot,
+    };
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
@@ -1491,132 +1558,19 @@ export function warmUpReceiptOcr(): void {
   });
 }
 
-interface OcrBox {
-  x0: number;
-  y0: number;
-  x1: number;
-  y1: number;
-}
-
-/** Crops a region of the OCR image, enlarges it ~3x and stretches contrast so big glary digits read cleanly. */
-async function cropEnlargeForOcr(
-  source: Blob,
-  box: OcrBox,
-  pad: { x: number; top: number; bottom: number },
-): Promise<Blob | null> {
-  if (typeof document === "undefined") return null;
-  const bmp = await createImageBitmap(source);
-  try {
-    const x0 = Math.max(0, Math.floor(box.x0 - pad.x));
-    const y0 = Math.max(0, Math.floor(box.y0 - pad.top));
-    const x1 = Math.min(bmp.width, Math.ceil(box.x1 + pad.x));
-    const y1 = Math.min(bmp.height, Math.ceil(box.y1 + pad.bottom));
-    const w = x1 - x0;
-    const h = y1 - y0;
-    if (w < 20 || h < 20) return null;
-    const boxH = Math.max(1, box.y1 - box.y0);
-    const scale = Math.min(4, Math.max(1.5, 260 / boxH));
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.round(w * scale);
-    canvas.height = Math.round(h * scale);
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    if (!ctx) return null;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(bmp, x0, y0, w, h, 0, 0, canvas.width, canvas.height);
-    const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const d = img.data;
-    let lo = 255;
-    let hi = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      const g = Math.round(
-        0.299 * d[i]! + 0.587 * d[i + 1]! + 0.114 * d[i + 2]!,
-      );
-      d[i] = d[i + 1] = d[i + 2] = g;
-      if (g < lo) lo = g;
-      if (g > hi) hi = g;
-    }
-    const range = Math.max(1, hi - lo);
-    for (let i = 0; i < d.length; i += 4) {
-      const v = Math.round(((d[i]! - lo) / range) * 255);
-      d[i] = d[i + 1] = d[i + 2] = v;
-    }
-    ctx.putImageData(img, 0, 0);
-    return await new Promise<Blob | null>((resolve) =>
-      canvas.toBlob((b) => resolve(b), "image/png"),
-    );
-  } finally {
-    bmp.close();
-  }
-}
-
-/**
- * Assist passes for photos of POS screens / busy receipts where the main pass misses the total:
- * 1) sparse-text pass (English) to find the tallest amount on the slip with its position;
- * 2) enlarged crop of that area re-read (also picks up the KHR total under it).
- */
-async function runAssistPasses(
-  ocrBlob: Blob,
-  onProgress?: (pct: number, status: string) => void,
-): Promise<ReceiptScanHints | null> {
-  const { PSM } = await import("tesseract.js");
-  const { worker: engWorker } = await getOcrWorker("eng");
-  onProgress?.(84, "Looking for the biggest number…");
-  await engWorker.setParameters({
-    tessedit_pageseg_mode: PSM.SPARSE_TEXT,
-    preserve_interword_spaces: "1",
-    user_defined_dpi: "300",
-  });
-  const sparse = await engWorker.recognize(ocrBlob, {}, { blocks: true });
-
-  const words: Array<OcrWordLite & { bbox: OcrBox }> = [];
-  for (const b of sparse.data.blocks ?? []) {
-    for (const para of b.paragraphs ?? []) {
-      for (const line of para.lines ?? []) {
-        for (const w of line.words ?? []) {
-          words.push({
-            text: w.text,
-            conf: w.confidence,
-            height: w.bbox.y1 - w.bbox.y0,
-            bbox: w.bbox,
-          });
-        }
-      }
-    }
-  }
-
-  const largeAmounts = pickLargeAmountHints(words);
-  const hints: ReceiptScanHints = {
-    largeAmounts,
-    extraText: sparse.data.text ?? "",
-  };
-
-  const top = largeAmounts[0];
-  if (top) {
-    const source = words.find(
-      (w) =>
-        w.height === top.height && /\d/.test(w.text) && w.text.includes("."),
-    );
-    if (source) {
-      onProgress?.(90, "Re-reading the total up close…");
-      const crop = await cropEnlargeForOcr(ocrBlob, source.bbox, {
-        x: source.height,
-        top: source.height * 0.4,
-        bottom: source.height * 1.0,
-      });
-      if (crop) {
-        await engWorker.setParameters({
-          tessedit_pageseg_mode: PSM.SINGLE_BLOCK,
-          preserve_interword_spaces: "1",
-        });
-        const focus = await engWorker.recognize(crop);
-        hints.focusText = focus.data.text ?? "";
-      }
-    }
-  }
-
-  const useful =
-    (hints.largeAmounts?.length ?? 0) > 0 || Boolean(hints.focusText?.trim());
-  return useful || hints.extraText ? hints : null;
+function scorePassQuality(
+  res: LocalScannedReceiptResult,
+  text: string,
+  ocrConfidence: number,
+): number {
+  return (
+    (res.amount > 0 ? 45 : 0) +
+    (res.mathVerified ? 22 : 0) +
+    (res.confidence === "high" ? 20 : res.confidence === "medium" ? 10 : 0) +
+    (res.merchantOrPayer !== "Scanned Slip" ? 12 : 0) +
+    Math.min(25, Math.max(0, ocrConfidence) * 0.25) +
+    Math.min(15, text.trim().length / 10)
+  );
 }
 
 export async function scanReceiptLocally(
@@ -1629,18 +1583,25 @@ export async function scanReceiptLocally(
     context?: ReceiptParseContext;
   },
 ): Promise<{
-  result: ScannedReceiptResult;
+  result: LocalScannedReceiptResult;
   previewDataUrl: string;
   thumbDataUrl: string;
   rawText: string;
   detectedAngleDeg: number;
   engineLang: "eng+khm" | "eng";
-  hints: ReceiptScanHints | null;
+  ocrConfidence: number;
+  passes: 1 | 2;
 }> {
   const mode: ReceiptScanMode = options?.mode ?? "auto";
   onProgress?.(14, "Preparing & enhancing slip…");
-  const { ocrBlob, previewDataUrl, thumbDataUrl, detectedAngleDeg } =
-    await preprocessImageForOcr(file, options);
+  const {
+    ocrBlob,
+    altOcrBlob,
+    previewDataUrl,
+    thumbDataUrl,
+    detectedAngleDeg,
+    isDigitalScreenshot,
+  } = await preprocessImageForOcr(file, options);
 
   onProgress?.(
     36,
@@ -1658,47 +1619,56 @@ export async function scanReceiptLocally(
     user_defined_dpi: "300",
   });
 
-  onProgress?.(68, "Reading text, handwriting & amounts…");
-  const firstPass = await worker.recognize(ocrBlob);
+  onProgress?.(64, "Pass 1: Reading text, Khmer & amounts…");
+  const firstPass = await worker.recognize(
+    ocrBlob,
+    {},
+    { text: true, blocks: true },
+  );
   let rawText = firstPass.data.text ?? "";
+  let ocrConfidence = Math.round(firstPass.data.confidence || 0);
+  let result = parseReceiptText(rawText, fallbackDate, options?.context);
+  let passes: 1 | 2 = 1;
 
-  if (rawText.trim().length < 14 && mode !== "handwriting") {
-    onProgress?.(82, "Retrying sparse / angled layout…");
+  const needsPass2 =
+    result.amount <= 0 ||
+    ocrConfidence < 74 ||
+    rawText.trim().length < 28 ||
+    (!isDigitalScreenshot && result.confidence !== "high");
+
+  if (needsPass2) {
+    passes = 2;
+    onProgress?.(82, "Pass 2: Adaptive contrast & sparse recovery…");
     await worker.setParameters({
-      tessedit_pageseg_mode: PSM.SPARSE_TEXT,
+      tessedit_pageseg_mode:
+        mode === "handwriting" ? PSM.SINGLE_BLOCK : PSM.SPARSE_TEXT,
       preserve_interword_spaces: "1",
       user_defined_dpi: "300",
     });
-    const retryPass = await worker.recognize(ocrBlob);
-    if ((retryPass.data.text ?? "").trim().length > rawText.trim().length) {
-      rawText = retryPass.data.text ?? rawText;
+    const retryPass = await worker.recognize(
+      altOcrBlob,
+      {},
+      { text: true, blocks: true },
+    );
+    const retryText = retryPass.data.text ?? "";
+    const retryConf = Math.round(retryPass.data.confidence || 0);
+    const retryResult = parseReceiptText(
+      retryText,
+      fallbackDate,
+      options?.context,
+    );
+
+    if (
+      scorePassQuality(retryResult, retryText, retryConf) >
+      scorePassQuality(result, rawText, ocrConfidence)
+    ) {
+      rawText = retryText;
+      ocrConfidence = retryConf;
+      result = retryResult;
     }
   }
 
-  onProgress?.(80, "Checking the amounts…");
-  let result = parseReceiptText(rawText, fallbackDate, options?.context);
-  let hints: ReceiptScanHints | null = null;
-
-  // Photo of a POS screen / glary receipt: the main pass often misses the total, so look closer.
-  if (
-    result.amount <= 0 ||
-    result.confidence !== "high" ||
-    isNoisyOcrText(rawText)
-  ) {
-    try {
-      hints = await runAssistPasses(ocrBlob, onProgress);
-    } catch {
-      hints = null; // assist passes are best-effort; keep the main-pass result
-    }
-    if (hints) {
-      const assisted = parseReceiptText(rawText, fallbackDate, {
-        ...options?.context,
-        hints,
-      });
-      if (assisted.amount > 0) result = assisted;
-    }
-  }
-
+  onProgress?.(95, "Cross-verifying math & learned rules…");
   onProgress?.(100, "Done");
   return {
     result,
@@ -1707,6 +1677,7 @@ export async function scanReceiptLocally(
     rawText,
     detectedAngleDeg,
     engineLang: actualLang,
-    hints,
+    ocrConfidence,
+    passes,
   };
 }

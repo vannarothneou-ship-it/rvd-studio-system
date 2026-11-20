@@ -1,8 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ChevronDown, ChevronUp, Plus, Search } from "lucide-react";
-import { Btn, Empty, Glass, PageHeader, Pill, Stat } from "@/components/rv/ui";
+import {
+  ChevronDown,
+  ChevronUp,
+  LayoutGrid,
+  List,
+  Plus,
+  Search,
+} from "lucide-react";
+import {
+  Btn,
+  Empty,
+  Glass,
+  PageHeader,
+  Pill,
+  SlidingTabs,
+  Stat,
+} from "@/components/rv/ui";
 import { EditModal, nextCode, upsert, type Field } from "@/components/rv/Crud";
 import {
   EditLayoutButton,
@@ -77,6 +92,7 @@ const fields: Field<Client>[] = [
 function Page() {
   const db = useDB((d) => d);
   const [q, setQ] = useState("");
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [showAll, setShowAll] = useState(false);
   const [editingLayout, setEditingLayout] = useState(false);
   const [edit, setEdit] = useState<Client | null>(null);
@@ -192,91 +208,171 @@ function Page() {
         defaultSpan: 12,
         render: () => (
           <Glass delay={180}>
-            <div className="relative mb-4">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-              <input
-                className="field pl-9"
-                placeholder="Search clients"
-                value={q}
-                onChange={(e) => {
-                  setQ(e.target.value);
-                  setShowAll(false);
-                }}
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <input
+                  className="field pl-9"
+                  placeholder="Search clients"
+                  value={q}
+                  onChange={(e) => {
+                    setQ(e.target.value);
+                    setShowAll(false);
+                  }}
+                />
+              </div>
+              <SlidingTabs
+                size="xs"
+                layoutGroup="clients-view-mode"
+                value={viewMode}
+                onChange={setViewMode}
+                options={[
+                  { id: "grid", label: "Grid", icon: LayoutGrid },
+                  { id: "list", label: "List", icon: List },
+                ]}
               />
             </div>
             {rows.length === 0 ? (
               <Empty>No clients yet.</Empty>
             ) : (
               <>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {visibleRows.map((c) => {
-                    const s = stats(c);
-                    return (
-                      <button
-                        type="button"
-                        key={c.id}
-                        onClick={() => setEdit(c)}
-                        className="block rounded-2xl border border-border/70 bg-muted/40 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:bg-muted"
-                      >
-                        <div className="mb-3 flex items-center justify-between gap-2">
-                          {c.avatar ? (
-                            <img
-                              src={c.avatar}
-                              alt={c.name}
-                              className="h-12 w-12 rounded-lg object-cover"
-                            />
-                          ) : (
-                            <span className="grid h-12 w-12 place-items-center rounded-lg bg-primary/15 font-display text-lg text-primary">
-                              {c.name.slice(0, 2).toUpperCase()}
-                            </span>
-                          )}
-                          <Pill s={c.status} />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-num text-xs text-muted-foreground">
-                            {c.code}
-                          </p>
-                          <p className="truncate font-display text-lg font-bold">
-                            {c.name || "Untitled"}
-                          </p>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {c.contact || "—"}
-                            {c.position ? ` · ${c.position}` : ""}
-                          </p>
-                          <p className="mt-1 truncate text-xs text-muted-foreground">
-                            {c.email ||
-                              c.telegram ||
-                              c.phone ||
-                              c.industry ||
-                              c.type}
-                          </p>
-                        </div>
-                        <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                          <div>
-                            <p className="label-mono">Projects</p>
-                            <p className="font-num">{s.projects}</p>
+                {viewMode === "grid" ? (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {visibleRows.map((c) => {
+                      const s = stats(c);
+                      return (
+                        <button
+                          type="button"
+                          key={c.id}
+                          onClick={() => setEdit(c)}
+                          className="block rounded-xl border border-border bg-muted/40 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:bg-muted"
+                        >
+                          <div className="mb-3 flex items-center justify-between gap-2">
+                            {c.avatar ? (
+                              <img
+                                src={c.avatar}
+                                alt={c.name}
+                                className="h-12 w-12 rounded-lg object-cover"
+                              />
+                            ) : (
+                              <span className="grid h-12 w-12 place-items-center rounded-lg bg-primary/15 font-display text-lg text-primary">
+                                {c.name.slice(0, 2).toUpperCase()}
+                              </span>
+                            )}
+                            <Pill s={c.status} />
                           </div>
-                          <div title={money(s.billed)}>
-                            <p className="label-mono">Billed</p>
-                            <p className="font-num">{compactMoney(s.billed)}</p>
-                          </div>
-                          <div title={money(s.owed)}>
-                            <p className="label-mono">Owed</p>
-                            <p
-                              className={
-                                s.owed > 0
-                                  ? "font-num text-destructive"
-                                  : "font-num"
-                              }
-                            >
-                              {compactMoney(s.owed)}
+                          <div className="min-w-0">
+                            <p className="font-num text-xs text-muted-foreground">
+                              {c.code}
+                            </p>
+                            <p className="truncate font-display text-lg font-bold">
+                              {c.name || "Untitled"}
+                            </p>
+                            <p className="truncate text-xs text-muted-foreground">
+                              {c.contact || "—"}
+                              {c.position ? ` · ${c.position}` : ""}
+                            </p>
+                            <p className="mt-1 truncate text-xs text-muted-foreground">
+                              {c.email ||
+                                c.telegram ||
+                                c.phone ||
+                                c.industry ||
+                                c.type}
                             </p>
                           </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                          <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                            <div>
+                              <p className="label-mono">Projects</p>
+                              <p className="font-num">{s.projects}</p>
+                            </div>
+                            <div title={money(s.billed)}>
+                              <p className="label-mono">Billed</p>
+                              <p className="font-num">
+                                {compactMoney(s.billed)}
+                              </p>
+                            </div>
+                            <div title={money(s.owed)}>
+                              <p className="label-mono">Owed</p>
+                              <p
+                                className={
+                                  s.owed > 0
+                                    ? "font-num text-destructive"
+                                    : "font-num"
+                                }
+                              >
+                                {compactMoney(s.owed)}
+                              </p>
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <ul className="divide-y divide-border">
+                    {visibleRows.map((c) => {
+                      const s = stats(c);
+                      return (
+                        <li key={c.id}>
+                          <button
+                            type="button"
+                            onClick={() => setEdit(c)}
+                            className="flex w-full flex-wrap items-center justify-between gap-3 rounded-lg px-2 py-3 text-left transition-colors hover:bg-muted/60 sm:flex-nowrap"
+                          >
+                            <div className="flex min-w-0 flex-1 items-center gap-3">
+                              {c.avatar ? (
+                                <img
+                                  src={c.avatar}
+                                  alt={c.name}
+                                  className="h-10 w-10 shrink-0 rounded-lg object-cover"
+                                />
+                              ) : (
+                                <span className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary/15 font-display text-sm font-bold text-primary">
+                                  {c.name.slice(0, 2).toUpperCase()}
+                                </span>
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-num text-xs text-muted-foreground">
+                                    {c.code}
+                                  </span>
+                                  <span className="truncate text-sm font-semibold text-foreground">
+                                    {c.name || "Untitled"}
+                                  </span>
+                                </div>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {c.contact || "—"}
+                                  {c.position ? ` · ${c.position}` : ""}
+                                  {c.email || c.telegram || c.phone
+                                    ? ` · ${c.email || c.telegram || c.phone}`
+                                    : ""}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex shrink-0 items-center gap-4 pl-13 sm:pl-0">
+                              <div className="text-right text-xs">
+                                <p className="font-num font-semibold text-foreground">
+                                  {compactMoney(s.billed)} billed
+                                </p>
+                                <p className="font-num text-muted-foreground">
+                                  {s.projects}{" "}
+                                  {s.projects === 1 ? "project" : "projects"}
+                                  {s.owed > 0 ? (
+                                    <span className="ml-1.5 text-destructive">
+                                      · {compactMoney(s.owed)} owed
+                                    </span>
+                                  ) : null}
+                                </p>
+                              </div>
+                              <Pill s={c.status} />
+                            </div>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
                 {hasMore && (
                   <div className="mt-4 flex items-center justify-between gap-3 border-t border-border/70 pt-3 text-xs text-muted-foreground">
                     <span>
@@ -307,7 +403,7 @@ function Page() {
         ),
       },
     ],
-    [db, q, rows, visibleRows, hasMore, showAll],
+    [db, q, viewMode, rows, visibleRows, hasMore, showAll],
   );
 
   return (

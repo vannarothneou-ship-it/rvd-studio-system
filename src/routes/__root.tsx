@@ -10,6 +10,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { useRouterState } from "@tanstack/react-router";
+import { MotionConfig } from "motion/react";
 import { Toaster } from "@/components/ui/sonner";
 import { Shell } from "@/components/rv/Shell";
 
@@ -98,7 +99,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           content:
             "Unified command dashboard across RothVan Studio, full-time design work, and personal money with AI receipt scanning.",
         },
-        { name: "theme-color", content: "#0D0E13" },
+        { name: "theme-color", content: "#010102" },
         { name: "mobile-web-app-capable", content: "yes" },
         { name: "apple-mobile-web-app-capable", content: "yes" },
         {
@@ -133,7 +134,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         },
         {
           rel: "stylesheet",
-          href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Merriweather:wght@700;900&family=Noto+Sans+Khmer:wght@400;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap",
+          href: "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+Khmer:wght@400;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap",
         },
         { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
       ],
@@ -172,8 +173,10 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <AppFrame />
+      <MotionConfig reducedMotion="user">
+        {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
+        <AppFrame />
+      </MotionConfig>
     </QueryClientProvider>
   );
 }

@@ -13,6 +13,8 @@ import {
   Coffee,
   Coins,
   CreditCard,
+  Eye,
+  EyeOff,
   Fuel,
   Gift,
   Hammer,
@@ -65,7 +67,10 @@ import {
   addDays,
   categoryLimit,
   compactMoney,
+  expenseAccount,
+  expenseCategoriesFor,
   money,
+  previousMonth,
   setCategoryLimit,
   shortDate,
   toUSD,
@@ -348,10 +353,10 @@ export function LiquidJar({
           />
         </div>
 
-        {/* Bottom-left Percentage Pill */}
+        {/* Bottom-left Percentage Badge */}
         <span
           className={cn(
-            "font-num absolute bottom-2 left-2 z-10 rounded-full border border-border/70 bg-background/90 px-2 py-0.5 font-semibold",
+            "font-num absolute bottom-2 left-2 z-10 rounded-md border border-border bg-background/95 px-1.5 py-0.5 font-semibold",
             size === "sm" ? "text-[0.62rem]" : "text-[0.68rem]",
             overLimit ? "text-destructive" : "text-foreground",
           )}
@@ -583,7 +588,7 @@ export function BudgetShelf({
                         {money(j.totalUSD)} / {money(j.limit)}
                       </p>
                     </div>
-                    <span className="shrink-0 rounded-full border border-destructive/30 bg-destructive/15 px-2.5 py-0.5 font-num text-xs font-semibold text-destructive">
+                    <span className="shrink-0 rounded-md border border-destructive/30 bg-destructive/15 px-2 py-0.5 font-num text-xs font-semibold text-destructive">
                       {j.pct}%
                     </span>
                   </button>
@@ -613,6 +618,9 @@ const TIMELINE_OPTIONS: { id: CategoryTimelineRange; label: string }[] = [
   { id: "all", label: "All" },
 ];
 
+const DEFAULT_INSPECTOR_TX = 6;
+type CompareMode = "prev" | "month" | "category";
+
 export function CategoryInspectorDrawer({
   db,
   account,
@@ -636,12 +644,28 @@ export function CategoryInspectorDrawer({
   const [timelineRange, setTimelineRange] =
     useState<CategoryTimelineRange>("1m");
   const [showAllItems, setShowAllItems] = useState(false);
+  const [compareMode, setCompareMode] = useState<CompareMode>("prev");
+  const [compareMonth, setCompareMonth] = useState(() => previousMonth(month));
+  const [compareCategory, setCompareCategory] = useState(() => {
+    const list = expenseCategoriesFor(account).filter((c) => c !== category);
+    return list[0] ?? category ?? "Other";
+  });
 
   useEffect(() => {
     setLimitInput(String(limit));
     setSavedFlash(false);
     setShowAllItems(false);
-  }, [category, limit]);
+    const others = expenseCategoriesFor(account).filter((c) => c !== category);
+    setCompareCategory((cur) =>
+      cur && cur !== category && others.includes(cur)
+        ? cur
+        : (others[0] ?? category ?? "Other"),
+    );
+  }, [account, category, limit]);
+
+  useEffect(() => {
+    setCompareMonth(previousMonth(month));
+  }, [month]);
 
   useEffect(() => {
     setShowAllItems(false);
@@ -660,6 +684,79 @@ export function CategoryInspectorDrawer({
     if (!category) return null;
     return buildCategoryTimeline(db, account, category, timelineRange, month);
   }, [db, account, category, timelineRange, month]);
+
+  const categoryChoices = useMemo(
+    () => expenseCategoriesFor(account).filter((c) => c !== category),
+    [account, category],
+  );
+
+  const comparison = useMemo(() => {
+    if (!timeline || !category) return null;
+    if (compareMode === "prev") {
+      const targetVal = timeline.prevTotalUSD;
+      const diffUSD = targetVal !== null ? timeline.totalUSD - targetVal : null;
+      return {
+        label: timeline.prevLabel ?? "Prior period",
+        valueUSD: targetVal,
+        diffUSD,
+        deltaPct: timeline.deltaPct,
+      };
+    }
+    if (compareMode === "month") {
+      const r = db.settings.khrRate;
+      const sum = db.expenses
+        .filter(
+          (e) =>
+            expenseAccount(e) === account &&
+            (e.category || "Other") === category &&
+            e.date.startsWith(compareMonth),
+        )
+        .reduce((acc, e) => acc + toUSD(e.amount, e.currency, r), 0);
+      const diffUSD = timeline.totalUSD - sum;
+      const deltaPct =
+        sum > 0 ? Math.round(((timeline.totalUSD - sum) / sum) * 100) : null;
+      const label = /^\d{4}-\d{2}$/.test(compareMonth)
+        ? new Date(compareMonth + "-01T00:00:00Z").toLocaleDateString("en-US", {
+            month: "short",
+            year: "numeric",
+            timeZone: "UTC",
+          })
+        : compareMonth;
+      return { label, valueUSD: sum, diffUSD, deltaPct };
+    }
+    const targetCat = compareCategory || categoryChoices[0] || category;
+    const other = buildCategoryTimeline(
+      db,
+      account,
+      targetCat,
+      timelineRange,
+      month,
+    );
+    const diffUSD = timeline.totalUSD - other.totalUSD;
+    const deltaPct =
+      other.totalUSD > 0
+        ? Math.round(
+            ((timeline.totalUSD - other.totalUSD) / other.totalUSD) * 100,
+          )
+        : null;
+    return {
+      label: `${targetCat} (${other.scopeLabel})`,
+      valueUSD: other.totalUSD,
+      diffUSD,
+      deltaPct,
+    };
+  }, [
+    timeline,
+    category,
+    compareMode,
+    compareMonth,
+    compareCategory,
+    categoryChoices,
+    db,
+    account,
+    timelineRange,
+    month,
+  ]);
 
   if (!category || !timeline) return null;
 
@@ -685,9 +782,10 @@ export function CategoryInspectorDrawer({
     timelineRange === "6m" ||
     timelineRange === "12m" ||
     timelineRange === "all";
+  const hasMoreItems = timeline.items.length > DEFAULT_INSPECTOR_TX;
   const visibleItems = showAllItems
     ? timeline.items
-    : timeline.items.slice(0, 30);
+    : timeline.items.slice(0, DEFAULT_INSPECTOR_TX);
 
   const saveLimit = () => {
     const val = Number(limitInput);
@@ -709,7 +807,7 @@ export function CategoryInspectorDrawer({
         type="button"
         aria-label="Close category inspector"
         onClick={onClose}
-        className="backdrop-in fixed inset-0 bg-black/55 backdrop-blur-xs"
+        className="backdrop-in fixed inset-0 bg-black/70"
       />
 
       {/* Slide-Over Panel */}
@@ -732,7 +830,7 @@ export function CategoryInspectorDrawer({
             onClose();
           }
         }}
-        className="drawer-in glass-strong relative z-10 flex h-full w-full max-w-md flex-col border-l border-border pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-2xl"
+        className="drawer-in relative z-10 flex h-full w-full max-w-md flex-col border-l border-border bg-card pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]"
       >
         {/* Header with Back & Close */}
         <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3 sm:px-5 sm:py-4">
@@ -741,7 +839,7 @@ export function CategoryInspectorDrawer({
               type="button"
               onClick={onClose}
               aria-label="Back"
-              className="inline-flex min-h-[38px] shrink-0 items-center gap-1 rounded-full border border-border bg-muted/60 px-3 py-1.5 text-xs font-semibold text-foreground transition-transform active:scale-95 hover:bg-accent"
+              className="inline-flex min-h-[38px] shrink-0 items-center gap-1 rounded-lg border border-border bg-secondary px-3 py-1.5 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               <span>Back</span>
@@ -759,7 +857,7 @@ export function CategoryInspectorDrawer({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            className="grid h-10 w-10 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           >
             <X className="h-4 w-4" />
           </button>
@@ -780,7 +878,7 @@ export function CategoryInspectorDrawer({
           />
 
           {/* Centered Hero Jar */}
-          <div className="flex flex-col items-center rounded-2xl border border-border/70 bg-muted/25 py-4">
+          <div className="flex flex-col items-center rounded-xl border border-border bg-muted/40 py-4">
             <LiquidJar
               category={category}
               spent={timeline.totalUSD}
@@ -810,7 +908,7 @@ export function CategoryInspectorDrawer({
           </div>
 
           {/* Interactive Category Timeline Trend Chart */}
-          <div className="rounded-2xl border border-border/70 bg-muted/25 p-3.5">
+          <div className="rounded-xl border border-border bg-muted/40 p-3.5">
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="label-mono">{timeline.scopeLabel} trend</span>
               <span className="font-num text-[0.7rem] text-muted-foreground">
@@ -859,7 +957,7 @@ export function CategoryInspectorDrawer({
                         | undefined;
                       if (!pt) return null;
                       return (
-                        <div className="rounded-xl border border-border bg-card/95 px-2.5 py-1.5 text-xs shadow-lg backdrop-blur-md">
+                        <div className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-xs">
                           <p className="font-medium text-foreground">
                             {pt.fullDate}
                           </p>
@@ -883,7 +981,7 @@ export function CategoryInspectorDrawer({
                   )}
                   <Bar
                     dataKey="amount"
-                    radius={[5, 5, 2, 2]}
+                    radius={[4, 4, 2, 2]}
                     maxBarSize={timelineRange === "1m" ? 10 : 28}
                   >
                     {timeline.points.map((pt) => {
@@ -905,43 +1003,101 @@ export function CategoryInspectorDrawer({
             </div>
           </div>
 
-          {/* Period Comparison */}
-          <div className="divide-y divide-border rounded-2xl border border-border/70 bg-muted/25 px-4 text-sm">
-            <div className="flex items-center justify-between py-2.5">
-              <span className="text-muted-foreground">
-                {timeline.scopeLabel}
-              </span>
-              <span className="flex items-center gap-2">
-                {timeline.deltaPct !== null && (
-                  <span
-                    className={cn(
-                      "font-num rounded-full px-1.5 py-0.5 text-[0.65rem] font-semibold",
-                      timeline.deltaPct > 0
-                        ? "bg-destructive/15 text-destructive"
-                        : "bg-positive/15 text-positive",
-                    )}
-                  >
-                    {timeline.deltaPct > 0
-                      ? `↑ ${timeline.deltaPct}%`
-                      : `↓ ${Math.abs(timeline.deltaPct)}%`}
-                  </span>
-                )}
-                <AnimatedNumber
-                  value={timeline.totalUSD}
-                  className="font-num font-semibold"
-                />
-              </span>
+          {/* Enhanced Period / Category Comparison */}
+          <div className="rounded-xl border border-border bg-muted/40 p-3.5 text-sm">
+            <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
+              <span className="label-mono">Compare spend</span>
+              <SlidingTabs
+                size="xs"
+                layoutGroup="cat-compare-mode"
+                value={compareMode}
+                onChange={setCompareMode}
+                options={[
+                  { id: "prev", label: "Prev" },
+                  { id: "month", label: "Month" },
+                  { id: "category", label: "Category" },
+                ]}
+              />
             </div>
-            {timeline.prevTotalUSD !== null && timeline.prevLabel && (
-              <div className="flex items-center justify-between py-2.5">
-                <span className="text-muted-foreground">
-                  {timeline.prevLabel}
-                </span>
-                <span className="font-num text-muted-foreground">
-                  {money(timeline.prevTotalUSD)}
-                </span>
+
+            {compareMode === "month" && (
+              <div className="mb-2.5">
+                <input
+                  type="month"
+                  aria-label="Comparison month"
+                  value={compareMonth}
+                  onChange={(e) => setCompareMonth(e.target.value)}
+                  className="field font-num h-8 py-1 text-xs"
+                />
               </div>
             )}
+
+            {compareMode === "category" && categoryChoices.length > 0 && (
+              <div className="mb-2.5">
+                <Sel
+                  value={compareCategory}
+                  onChange={setCompareCategory}
+                  options={categoryChoices}
+                  placeholder="Pick category…"
+                />
+              </div>
+            )}
+
+            <div className="divide-y divide-border text-xs">
+              <div className="flex items-center justify-between py-2">
+                <span className="truncate text-muted-foreground">
+                  {timeline.scopeLabel} · {category}
+                </span>
+                <span className="flex shrink-0 items-center gap-2">
+                  {comparison?.deltaPct !== null &&
+                    comparison?.deltaPct !== undefined && (
+                      <span
+                        className={cn(
+                          "font-num rounded-md px-1.5 py-0.5 text-[0.65rem] font-semibold",
+                          comparison.deltaPct > 0
+                            ? "bg-destructive/15 text-destructive"
+                            : "bg-positive/15 text-positive",
+                        )}
+                      >
+                        {comparison.deltaPct > 0
+                          ? `↑ ${comparison.deltaPct}%`
+                          : `↓ ${Math.abs(comparison.deltaPct)}%`}
+                      </span>
+                    )}
+                  <AnimatedNumber
+                    value={timeline.totalUSD}
+                    className="font-num font-semibold text-foreground"
+                  />
+                </span>
+              </div>
+              {comparison && comparison.valueUSD !== null && (
+                <div className="flex items-center justify-between gap-2 py-2">
+                  <span className="truncate text-muted-foreground">
+                    vs {comparison.label}
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2 font-num">
+                    {comparison.diffUSD !== null && (
+                      <span
+                        className={cn(
+                          "text-[0.68rem] font-semibold",
+                          comparison.diffUSD > 0
+                            ? "text-destructive"
+                            : comparison.diffUSD < 0
+                              ? "text-positive"
+                              : "text-muted-foreground",
+                        )}
+                      >
+                        {comparison.diffUSD > 0 ? "+" : ""}
+                        {money(comparison.diffUSD)}
+                      </span>
+                    )}
+                    <span className="text-muted-foreground">
+                      {money(comparison.valueUSD)}
+                    </span>
+                  </span>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Editable Monthly Limit */}
@@ -965,7 +1121,7 @@ export function CategoryInspectorDrawer({
                 type="button"
                 onClick={saveLimit}
                 className={cn(
-                  "shrink-0 rounded-xl px-4 py-2 text-xs font-semibold transition-colors",
+                  "shrink-0 rounded-lg px-4 py-2 text-xs font-semibold transition-colors",
                   savedFlash
                     ? "bg-positive text-primary-foreground"
                     : "bg-primary text-primary-foreground hover:opacity-90",
@@ -978,29 +1134,55 @@ export function CategoryInspectorDrawer({
 
           {/* Itemized Transactions */}
           <div>
-            <div className="mb-2.5 flex items-center justify-between">
+            <div className="mb-2.5 flex items-center justify-between gap-2">
               <span className="label-mono">
                 What I paid for ({timeline.items.length})
               </span>
-              {onAddExpense && (
-                <button
-                  type="button"
-                  onClick={() => onAddExpense(account, category)}
-                  className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs font-medium text-primary hover:bg-accent"
-                >
-                  <Plus className="h-3 w-3" />
-                  Add
-                </button>
-              )}
+              <div className="flex items-center gap-1.5">
+                {hasMoreItems && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllItems((v) => !v)}
+                    aria-label={
+                      showAllItems
+                        ? "Show 6 recent transactions"
+                        : `Show all ${timeline.items.length} transactions`
+                    }
+                    className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                  >
+                    {showAllItems ? (
+                      <>
+                        <EyeOff className="h-3 w-3" />
+                        <span>Show {DEFAULT_INSPECTOR_TX}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="h-3 w-3" />
+                        <span>Show all ({timeline.items.length})</span>
+                      </>
+                    )}
+                  </button>
+                )}
+                {onAddExpense && (
+                  <button
+                    type="button"
+                    onClick={() => onAddExpense(account, category)}
+                    className="inline-flex items-center gap-1 rounded-lg border border-border px-2.5 py-1 text-xs font-medium text-primary hover:bg-accent"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add
+                  </button>
+                )}
+              </div>
             </div>
 
             {timeline.items.length === 0 ? (
-              <p className="rounded-2xl border border-border/60 bg-muted/20 p-4 text-center text-xs text-muted-foreground">
+              <p className="rounded-xl border border-border bg-muted/30 p-4 text-center text-xs text-muted-foreground">
                 No {category} transactions in {timeline.scopeLabel}.
               </p>
             ) : (
               <>
-                <ul className="divide-y divide-border rounded-2xl border border-border/70 bg-muted/20">
+                <ul className="divide-y divide-border rounded-xl border border-border bg-muted/30">
                   {visibleItems.map((e) => {
                     const ItemIcon = expenseItemIcon(e);
                     const usd = toUSD(e.amount, e.currency, r);
@@ -1009,9 +1191,9 @@ export function CategoryInspectorDrawer({
                         <button
                           type="button"
                           onClick={() => onEditExpense?.(e)}
-                          className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/50"
+                          className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left transition-colors hover:bg-muted/60"
                         >
-                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-background/50 text-primary">
+                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-background text-primary">
                             <ItemIcon className="h-3.5 w-3.5" />
                           </span>
                           <div className="min-w-0 flex-1">
@@ -1031,15 +1213,25 @@ export function CategoryInspectorDrawer({
                     );
                   })}
                 </ul>
-                {timeline.items.length > 30 && (
+                {hasMoreItems && (
                   <button
                     type="button"
                     onClick={() => setShowAllItems((v) => !v)}
-                    className="mt-2 w-full rounded-xl border border-border/70 py-2 text-xs font-medium text-primary hover:bg-muted/40"
+                    className="mt-2 inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-border py-2 text-xs font-medium text-primary hover:bg-muted/40"
                   >
-                    {showAllItems
-                      ? "Show fewer transactions"
-                      : `Show all ${timeline.items.length} transactions`}
+                    {showAllItems ? (
+                      <>
+                        <EyeOff className="h-3.5 w-3.5" />
+                        <span>Show {DEFAULT_INSPECTOR_TX} recent</span>
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="h-3.5 w-3.5" />
+                        <span>
+                          Show all {timeline.items.length} transactions
+                        </span>
+                      </>
+                    )}
                   </button>
                 )}
               </>
@@ -1049,7 +1241,7 @@ export function CategoryInspectorDrawer({
 
         {/* Sticky Bottom Add Expense Action */}
         {onAddExpense && (
-          <div className="border-t border-border bg-background/80 px-5 py-3.5 backdrop-blur-md">
+          <div className="border-t border-border bg-card/95 px-5 py-3.5">
             <Btn
               type="button"
               variant="gold"

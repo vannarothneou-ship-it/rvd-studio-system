@@ -7,6 +7,7 @@ import {
   ArrowRight,
   ArrowUpRight,
   Briefcase,
+  Check,
   CheckCircle2,
   Clock,
   Eye,
@@ -41,6 +42,7 @@ import {
   incomeSourceIcon,
 } from "@/components/rv/FinanceVisuals";
 import { MoneyFlowSankeyCard } from "@/components/rv/MoneyFlowSankey";
+import { CentralAiBrief } from "@/components/rv/CentralAiBrief";
 import { DashboardCalendarCard } from "@/components/rv/DashboardCalendar";
 import {
   CHART_LENS_OPTIONS,
@@ -50,6 +52,7 @@ import {
   type ChartMode,
 } from "@/components/rv/Charts";
 import { DesignMediaUploader } from "@/components/rv/DesignMediaTools";
+import { workProjectMeta } from "@/components/rv/workProjectColors";
 import {
   QuickExpenseDrawer,
   QuickIncomeDrawer,
@@ -59,11 +62,13 @@ import {
   DEFAULT_WORK_PROJECTS,
   DESIGN_TYPES,
   PERSONAL_CATEGORIES,
-  WORK_STATUSES,
+  WORK_PIPELINE_STAGES,
   compactMoney,
   designOutputSummary,
   expenseAccount,
+  getProjectHealth,
   money,
+  normalizeWorkStage,
   periodBreakdownBars,
   personalSeries,
   setDB,
@@ -77,7 +82,7 @@ import {
   type CashRange,
   type Expense,
   type PersonalIncome,
-  type WorkStatus,
+  type ProjectHealthStatus,
   type WorkTask,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -136,6 +141,10 @@ function CommandDashboard() {
   const [cashLens, setCashLens] = useState<ChartLens>("flow");
   const [feedScope, setFeedScope] = useState<FeedScope>("all");
   const [feedExpanded, setFeedExpanded] = useState(false);
+  const [healthFilter, setHealthFilter] = useState<"all" | ProjectHealthStatus>(
+    "all",
+  );
+  const [healthExpanded, setHealthExpanded] = useState(false);
 
   const [expenseDraft, setExpenseDraft] = useState<Expense | null>(null);
   const [incomeDraft, setIncomeDraft] = useState<PersonalIncome | null>(null);
@@ -187,6 +196,55 @@ function CommandDashboard() {
           p.status === "In production",
       ).length,
     [db.projects],
+  );
+
+  const projectHealthRows = useMemo(() => {
+    const rank: Record<ProjectHealthStatus, number> = {
+      delayed: 0,
+      "at-risk": 1,
+      healthy: 2,
+    };
+    const todayIso = today();
+    return db.projects
+      .map((p) => ({
+        project: p,
+        clientName:
+          db.clients.find((c) => c.id === p.clientId)?.name ?? "No client",
+        health: getProjectHealth(p, todayIso),
+      }))
+      .sort((a, b) => {
+        if (rank[a.health.status] !== rank[b.health.status]) {
+          return rank[a.health.status] - rank[b.health.status];
+        }
+        return (a.project.due || "9999-12-31").localeCompare(
+          b.project.due || "9999-12-31",
+        );
+      });
+  }, [db.projects, db.clients]);
+
+  const healthCounts = useMemo(
+    () => ({
+      all: projectHealthRows.length,
+      healthy: projectHealthRows.filter((x) => x.health.status === "healthy")
+        .length,
+      "at-risk": projectHealthRows.filter((x) => x.health.status === "at-risk")
+        .length,
+      delayed: projectHealthRows.filter((x) => x.health.status === "delayed")
+        .length,
+    }),
+    [projectHealthRows],
+  );
+
+  const filteredHealthRows = useMemo(
+    () =>
+      healthFilter === "all"
+        ? projectHealthRows
+        : projectHealthRows.filter((x) => x.health.status === healthFilter),
+    [projectHealthRows, healthFilter],
+  );
+  const visibleHealthRows = filteredHealthRows.slice(
+    0,
+    healthExpanded ? 24 : 6,
   );
 
   // Unified activity feed across Studio, Personal & Work
@@ -311,7 +369,7 @@ function CommandDashboard() {
         1,
       ),
       title: "",
-      status: portfolioPreset ? "Completed" : "Current",
+      status: portfolioPreset ? "Completed" : "Design",
       designType: DESIGN_TYPES[0],
       artworkCount: 1,
       projectName: projectNames[0] ?? "DBG",
@@ -319,6 +377,7 @@ function CommandDashboard() {
       startDate: d,
       dueDate: d,
       completedDate: portfolioPreset ? d : "",
+      conceptOnly: false,
       notes: "",
       media: [],
       featured: portfolioPreset,
@@ -372,7 +431,7 @@ function CommandDashboard() {
       <PageHeader title="Dashboard" owner={db.settings.ownerName} />
 
       {/* Hero Personal Balance + Banking Quick Tiles */}
-      <Glass className="mb-4 overflow-hidden border-primary/25 bg-gradient-to-br from-primary/12 via-card/85 to-card/70">
+      <Glass className="mb-4 overflow-hidden">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="min-w-0">
             <div className="flex items-center justify-between gap-2">
@@ -386,7 +445,7 @@ function CommandDashboard() {
                 type="button"
                 onClick={toggleHideBalances}
                 aria-label={hideBalances ? "Show balances" : "Hide balances"}
-                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/80 bg-background/45 text-muted-foreground transition-colors hover:text-foreground"
+                className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-muted-foreground transition-colors hover:text-foreground"
               >
                 {hideBalances ? (
                   <Eye className="h-3.5 w-3.5" />
@@ -438,7 +497,7 @@ function CommandDashboard() {
             <button
               type="button"
               onClick={() => openScanner("Personal")}
-              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl border border-primary/45 bg-primary/18 px-2 py-2.5 text-[0.72rem] font-semibold text-primary transition-transform hover:-translate-y-0.5 active:scale-95"
+              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-lg border border-primary/45 bg-primary/15 px-2 py-2.5 text-[0.72rem] font-semibold text-primary transition-colors hover:bg-primary/25 active:scale-95"
             >
               <ScanLine className="h-4 w-4 shrink-0" />
               <span className="whitespace-nowrap">Scan</span>
@@ -446,7 +505,7 @@ function CommandDashboard() {
             <button
               type="button"
               onClick={openNewExpense}
-              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-secondary/75 px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
+              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-lg border border-border bg-secondary px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
             >
               <ArrowUpRight className="h-4 w-4 shrink-0 text-destructive" />
               <span className="whitespace-nowrap">Expense</span>
@@ -454,7 +513,7 @@ function CommandDashboard() {
             <button
               type="button"
               onClick={openNewIncome}
-              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-secondary/75 px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
+              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-lg border border-border bg-secondary px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
             >
               <ArrowDownLeft className="h-4 w-4 shrink-0 text-positive" />
               <span className="whitespace-nowrap">Income</span>
@@ -462,7 +521,7 @@ function CommandDashboard() {
             <Link
               to="/invoices/$id"
               params={{ id: "new" }}
-              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl border border-border bg-secondary/75 px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
+              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-lg border border-border bg-secondary px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
             >
               <FileText className="h-4 w-4 shrink-0 text-primary" />
               <span className="whitespace-nowrap">Invoice</span>
@@ -498,7 +557,7 @@ function CommandDashboard() {
               </Link>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3.5">
+            <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
               <Stat
                 icon={ArrowDownLeft}
                 label="In"
@@ -531,14 +590,14 @@ function CommandDashboard() {
               <Link
                 to="/invoices/$id"
                 params={{ id: "new" }}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
               >
                 <Plus className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">Invoice</span>
               </Link>
               <Link
                 to="/clients"
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-border bg-secondary/75 px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent active:scale-95"
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent active:scale-95"
               >
                 <Users className="h-3.5 w-3.5 shrink-0 text-primary" />
                 <span className="truncate">Clients</span>
@@ -583,7 +642,7 @@ function CommandDashboard() {
               </Link>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3.5">
+            <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
               <Stat
                 icon={Wallet}
                 label="Wallet"
@@ -627,7 +686,7 @@ function CommandDashboard() {
               <button
                 type="button"
                 onClick={openNewExpense}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
               >
                 <Plus className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">Expense</span>
@@ -635,7 +694,7 @@ function CommandDashboard() {
               <button
                 type="button"
                 onClick={openNewIncome}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-border bg-secondary/75 px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent active:scale-95"
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent active:scale-95"
               >
                 <ArrowDownLeft className="h-3.5 w-3.5 shrink-0 text-positive" />
                 <span className="truncate">Income</span>
@@ -681,7 +740,7 @@ function CommandDashboard() {
               </Link>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3.5">
+            <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
               <Stat
                 icon={CheckCircle2}
                 label="Done"
@@ -711,7 +770,7 @@ function CommandDashboard() {
               <button
                 type="button"
                 onClick={() => openNewWorkTask(false)}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
               >
                 <Plus className="h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">Work Task</span>
@@ -719,7 +778,7 @@ function CommandDashboard() {
               <button
                 type="button"
                 onClick={() => openNewWorkTask(true)}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border border-border bg-secondary/75 px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent active:scale-95"
+                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent active:scale-95"
               >
                 <ImageIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
                 <span className="truncate">Portfolio</span>
@@ -740,6 +799,172 @@ function CommandDashboard() {
           </div>
         </Glass>
       </div>
+
+      {/* Project Health Status Overview (Deadline-driven) */}
+      <Glass className="mb-4">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2.5">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-primary">
+              <FolderKanban className="h-4 w-4" />
+            </span>
+            <div className="min-w-0">
+              <h2 className="truncate font-display text-base font-bold leading-tight">
+                Project Health
+              </h2>
+              <p className="truncate text-[0.7rem] text-muted-foreground">
+                Status derived from active project deadlines
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                setHealthFilter("all");
+                setHealthExpanded(false);
+              }}
+              className={cn(
+                "font-num inline-flex min-h-[32px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                healthFilter === "all"
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <span>All</span>
+              <span>{healthCounts.all}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setHealthFilter("healthy");
+                setHealthExpanded(false);
+              }}
+              className={cn(
+                "font-num inline-flex min-h-[32px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                healthFilter === "healthy"
+                  ? "border-positive/55 bg-positive/20 text-positive"
+                  : "border-border bg-secondary text-muted-foreground hover:border-positive/40 hover:text-positive",
+              )}
+            >
+              <span className="h-2 w-2 rounded-full bg-positive" />
+              <span>Healthy</span>
+              <span>{healthCounts.healthy}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setHealthFilter("at-risk");
+                setHealthExpanded(false);
+              }}
+              className={cn(
+                "font-num inline-flex min-h-[32px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                healthFilter === "at-risk"
+                  ? "border-warning/55 bg-warning/20 text-warning"
+                  : "border-border bg-secondary text-muted-foreground hover:border-warning/40 hover:text-warning",
+              )}
+            >
+              <span className="h-2 w-2 rounded-full bg-warning" />
+              <span>At risk</span>
+              <span>{healthCounts["at-risk"]}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setHealthFilter("delayed");
+                setHealthExpanded(false);
+              }}
+              className={cn(
+                "font-num inline-flex min-h-[32px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                healthFilter === "delayed"
+                  ? "border-destructive/55 bg-destructive/20 text-destructive"
+                  : "border-border bg-secondary text-muted-foreground hover:border-destructive/40 hover:text-destructive",
+              )}
+            >
+              <span className="h-2 w-2 rounded-full bg-destructive" />
+              <span>Delayed</span>
+              <span>{healthCounts.delayed}</span>
+            </button>
+            <Link
+              to="/projects"
+              className="ml-1 inline-flex min-h-[32px] items-center gap-1 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs font-semibold text-primary hover:bg-accent"
+            >
+              Projects <ArrowRight className="h-3 w-3" />
+            </Link>
+          </div>
+        </div>
+
+        {visibleHealthRows.length === 0 ? (
+          <p className="rounded-lg border border-border bg-muted/40 py-6 text-center text-xs text-muted-foreground">
+            No projects in{" "}
+            {healthFilter === "all" ? "your pipeline" : healthFilter}.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleHealthRows.map(({ project, clientName, health }) => (
+              <Link
+                key={project.id}
+                to="/projects"
+                className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 p-3 transition-colors hover:border-primary/50 hover:bg-muted/70"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-num shrink-0 text-[0.68rem] text-muted-foreground">
+                      {project.code}
+                    </span>
+                    <p className="truncate text-xs font-semibold text-foreground sm:text-sm">
+                      {project.name || "Untitled project"}
+                    </p>
+                  </div>
+                  <p className="mt-0.5 truncate text-[0.7rem] text-muted-foreground">
+                    {clientName} ·{" "}
+                    {project.due
+                      ? `Due ${shortDate(project.due)}`
+                      : "No due date"}
+                  </p>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-1">
+                  <Pill s={health.label} />
+                  <span
+                    className={cn(
+                      "font-num text-[0.68rem] font-medium",
+                      health.status === "delayed"
+                        ? "text-destructive"
+                        : health.status === "at-risk"
+                          ? "text-warning"
+                          : "text-muted-foreground",
+                    )}
+                  >
+                    {health.reason}
+                  </span>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+
+        {filteredHealthRows.length > 6 && (
+          <div className="mt-3 flex justify-end border-t border-border/60 pt-2.5">
+            <button
+              type="button"
+              onClick={() => setHealthExpanded((v) => !v)}
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              {healthExpanded
+                ? "Show fewer projects"
+                : `Show all ${filteredHealthRows.length} projects`}
+            </button>
+          </div>
+        )}
+      </Glass>
+      <CentralAiBrief
+        db={db}
+        hideBalances={hideBalances}
+        onInspectCategory={(cat) =>
+          setInspectedCategory({ account: "Personal", category: cat })
+        }
+        className="mb-4"
+      />
 
       {/* Unified Schedule & Holidays Calendar (Work + Studio + KH Holidays + ថ្ងៃសីល) */}
       <DashboardCalendarCard db={db} className="mb-4" />
@@ -790,7 +1015,7 @@ function CommandDashboard() {
               </div>
             </div>
 
-            <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="mb-3 flex items-center justify-end gap-2">
               <SlidingTabs
                 size="xs"
                 tone="invert"
@@ -801,7 +1026,7 @@ function CommandDashboard() {
               />
             </div>
 
-            <div className="mb-3 grid grid-cols-3 gap-3 rounded-2xl bg-muted/35 p-3">
+            <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
               <Stat
                 icon={ArrowDownLeft}
                 label="In"
@@ -979,7 +1204,7 @@ function CommandDashboard() {
                 <Link
                   key={it.id}
                   to="/work"
-                  className="group overflow-hidden rounded-2xl border border-border/80 bg-muted/35 transition-all hover:-translate-y-0.5 hover:border-primary/45"
+                  className="group overflow-hidden rounded-xl border border-border/80 bg-muted/35 transition-all hover:-translate-y-0.5 hover:border-primary/45"
                 >
                   <div className="aspect-[16/10] bg-[#0d0e11] p-2 light:bg-[#efece6]">
                     {img?.dataUrl && (
@@ -1106,8 +1331,10 @@ function CommandDashboard() {
                 toast.error("Enter a task or project title.");
                 return;
               }
+              const normalizedStage = normalizeWorkStage(workTaskDraft.status);
               const cleaned: WorkTask = {
                 ...workTaskDraft,
+                status: normalizedStage,
                 company:
                   (workTaskDraft.projectName || workTaskDraft.company).trim() ||
                   "General",
@@ -1119,7 +1346,7 @@ function CommandDashboard() {
                   Number(workTaskDraft.artworkCount) || 1,
                 ),
                 completedDate:
-                  workTaskDraft.status === "Completed"
+                  normalizedStage === "Completed"
                     ? workTaskDraft.completedDate ||
                       workTaskDraft.dueDate ||
                       today()
@@ -1151,6 +1378,8 @@ function CommandDashboard() {
                   const active =
                     (workTaskDraft.projectName || workTaskDraft.company) ===
                     name;
+                  const meta = workProjectMeta(name);
+                  const ProjIcon = meta.icon;
                   return (
                     <button
                       key={name}
@@ -1163,13 +1392,14 @@ function CommandDashboard() {
                         })
                       }
                       className={cn(
-                        "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                        "inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
                         active
                           ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-muted/50 text-muted-foreground hover:text-foreground",
+                          : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                       )}
                     >
-                      {name}
+                      <ProjIcon className="h-3.5 w-3.5 shrink-0" />
+                      <span>{name}</span>
                     </button>
                   );
                 })}
@@ -1188,24 +1418,75 @@ function CommandDashboard() {
               />
             </F>
 
-            <F label="Status" className="col-span-2 sm:col-span-1">
-              <Sel
-                value={workTaskDraft.status}
-                onChange={(v) =>
-                  setWorkTaskDraft({
-                    ...workTaskDraft,
-                    status: v as WorkStatus,
-                    completedDate:
-                      v === "Completed"
-                        ? workTaskDraft.completedDate || today()
-                        : workTaskDraft.completedDate,
-                  })
-                }
-                options={[...WORK_STATUSES]}
-              />
-            </F>
+            <div className="col-span-2 space-y-2 rounded-xl border border-border bg-muted/35 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="label-mono">1-tap workflow stage</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setWorkTaskDraft({
+                      ...workTaskDraft,
+                      conceptOnly: !workTaskDraft.conceptOnly,
+                    })
+                  }
+                  className={cn(
+                    "inline-flex min-h-[30px] items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[0.7rem] font-semibold transition-colors",
+                    workTaskDraft.conceptOnly
+                      ? "border-primary bg-primary/15 text-primary"
+                      : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Check
+                    className={cn(
+                      "h-3 w-3",
+                      workTaskDraft.conceptOnly ? "opacity-100" : "opacity-35",
+                    )}
+                  />
+                  <span>Concept only (skip production)</span>
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {WORK_PIPELINE_STAGES.map((stage) => {
+                  const active =
+                    normalizeWorkStage(workTaskDraft.status) === stage;
+                  const skipped =
+                    Boolean(workTaskDraft.conceptOnly) &&
+                    stage === "Production";
+                  return (
+                    <button
+                      key={stage}
+                      type="button"
+                      disabled={skipped}
+                      onClick={() =>
+                        setWorkTaskDraft({
+                          ...workTaskDraft,
+                          status: stage,
+                          completedDate:
+                            stage === "Completed"
+                              ? workTaskDraft.completedDate || today()
+                              : workTaskDraft.completedDate,
+                        })
+                      }
+                      className={cn(
+                        "inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
+                        active
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : skipped
+                            ? "cursor-not-allowed border-border/50 bg-muted/30 text-muted-foreground/45 line-through"
+                            : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {stage === "Completed" && (
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      )}
+                      <span>{stage}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-            <F label="Design discipline" className="col-span-2 sm:col-span-1">
+            <F label="Design discipline" className="col-span-2">
               <Sel
                 value={workTaskDraft.designType}
                 onChange={(v) =>
@@ -1235,7 +1516,7 @@ function CommandDashboard() {
                 type="date"
                 className="field font-num"
                 value={
-                  workTaskDraft.status === "Completed"
+                  normalizeWorkStage(workTaskDraft.status) === "Completed"
                     ? workTaskDraft.completedDate || workTaskDraft.dueDate
                     : workTaskDraft.dueDate
                 }
@@ -1244,7 +1525,7 @@ function CommandDashboard() {
                     ...workTaskDraft,
                     dueDate: e.target.value,
                     completedDate:
-                      workTaskDraft.status === "Completed"
+                      normalizeWorkStage(workTaskDraft.status) === "Completed"
                         ? e.target.value
                         : workTaskDraft.completedDate,
                   })
@@ -1254,7 +1535,8 @@ function CommandDashboard() {
 
             <div className="col-span-2 space-y-1.5">
               <span className="label-mono">
-                Design mockups (PNG / JPEG / PDF)
+                Design mockups &amp; files (PNG / JPEG / PDF / AI / CAD or
+                Ctrl+V)
               </span>
               <DesignMediaUploader
                 media={workTaskDraft.media}

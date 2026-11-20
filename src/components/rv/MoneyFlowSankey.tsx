@@ -472,8 +472,8 @@ export function MoneyFlowSankeyCard({
 
   return (
     <Glass className={cn("overflow-hidden", className)}>
-      {/* Header + Icon Chart Type Switcher + Non-Truncating Range Switch */}
-      <div className="mb-3 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+      {/* Header + Right-Aligned Chart Type & Range Controls */}
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2.5">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Workflow className="h-4 w-4 shrink-0 text-primary" />
@@ -493,7 +493,7 @@ export function MoneyFlowSankeyCard({
               }
               aria-pressed={balancesHidden}
               title={balancesHidden ? "Show amounts" : "Hide amounts"}
-              className="ml-1 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border/70 text-muted-foreground transition-[background-color,color,transform] duration-200 hover:bg-muted hover:text-foreground active:scale-90"
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               {balancesHidden ? (
                 <EyeOff className="h-3.5 w-3.5" />
@@ -510,7 +510,7 @@ export function MoneyFlowSankeyCard({
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 sm:flex-nowrap sm:justify-end">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
           <SlidingTabs
             iconOnly
             size="xs"
@@ -940,28 +940,28 @@ export function MoneyFlowSankeyCard({
             )}
           </div>
 
-          {/* Right / Bottom Compact Icon-Driven Summary */}
-          <div className="space-y-4 border-t border-border/60 pt-4 lg:col-span-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
+          {/* Right / Bottom Decluttered Summary Column */}
+          <div className="space-y-4 border-t border-border pt-4 lg:col-span-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
             <div className="flex items-center gap-3">
               <KeptDonutRing pct={flow.keptPct} hasIncome={flow.hasIncome} />
               <div className="min-w-0">
                 <p className="label-mono">
                   {flow.hasIncome ? "Leftover" : "Total out"}
                 </p>
-                <p className="font-num truncate text-xl font-extrabold tracking-tight text-foreground sm:text-2xl">
+                <p className="font-num truncate text-xl font-bold tracking-tight text-foreground sm:text-2xl">
                   {fmt(flow.hasIncome ? flow.totalKept : flow.totalSpend)}
                 </p>
-                <p className="font-num truncate text-[0.7rem] text-muted-foreground">
+                <p className="font-num truncate text-[0.72rem] text-muted-foreground">
                   {flow.hasIncome
                     ? `of ${fmt(flow.totalIncome, true)}`
-                    : `${flow.targets.length} groups`}
+                    : `${flow.targets.length} categories`}
                 </p>
               </div>
             </div>
 
-            {/* Proportional Bucket Strip */}
-            <div>
-              <div className="mb-2.5 flex h-2.5 w-full overflow-hidden rounded-full bg-muted/60">
+            {/* Clean Proportional Allocation Bar + Rows */}
+            <div className="space-y-2">
+              <div className="flex h-2 w-full overflow-hidden rounded-full bg-muted">
                 {flow.buckets.map((b) => (
                   <div
                     key={b.id}
@@ -969,12 +969,12 @@ export function MoneyFlowSankeyCard({
                       width: `${Math.max(3, b.pct)}%`,
                       background: b.color,
                     }}
-                    className="h-full border-r border-background/60 last:border-r-0 transition-all duration-300"
+                    className="h-full border-r border-card last:border-r-0 transition-all duration-300"
                     title={`${b.label}: ${b.pct}%`}
                   />
                 ))}
               </div>
-              <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-1">
+              <div className="divide-y divide-border/70">
                 {flow.buckets.map((b) => {
                   const BIcon = BUCKET_ICONS[b.id];
                   return (
@@ -987,10 +987,10 @@ export function MoneyFlowSankeyCard({
                       onMouseEnter={() => setHoveredId(b.id)}
                       onMouseLeave={() => setHoveredId(null)}
                       className={cn(
-                        "flex w-full items-center justify-between gap-2 rounded-xl px-2 py-1.5 text-left text-xs transition-colors",
+                        "flex w-full items-center justify-between gap-2 px-1.5 py-1.5 text-left text-xs transition-colors",
                         hoveredId === b.id
-                          ? "bg-primary/15 text-foreground"
-                          : "bg-muted/25 hover:bg-muted/60",
+                          ? "bg-primary/12 text-foreground"
+                          : "hover:bg-muted/60",
                       )}
                     >
                       <span className="flex min-w-0 items-center gap-1.5 font-medium text-foreground">
@@ -1014,10 +1014,11 @@ export function MoneyFlowSankeyCard({
               </div>
             </div>
 
-            {/* Top Categories (Compact Icon Cards) */}
+            {/* Top Categories (Clean Table List) */}
             {flow.topCategories.length > 0 && (
-              <div className="border-t border-border/60 pt-3">
-                <div className="grid grid-cols-2 gap-1.5 lg:grid-cols-1">
+              <div className="border-t border-border pt-3">
+                <p className="label-mono mb-1.5">Top spending</p>
+                <div className="divide-y divide-border/70">
                   {flow.topCategories.slice(0, 4).map((cat) => {
                     const Icon = categoryIcon(cat.category);
                     return (
@@ -1027,7 +1028,7 @@ export function MoneyFlowSankeyCard({
                         onClick={() =>
                           onSelectCategory?.(cat.account, cat.category)
                         }
-                        className="flex min-w-0 items-center justify-between gap-1.5 rounded-xl border border-border/60 bg-muted/25 px-2.5 py-2 text-left text-xs transition-colors hover:border-primary/45 hover:bg-muted/60 active:scale-[0.98]"
+                        className="flex w-full min-w-0 items-center justify-between gap-2 px-1.5 py-1.5 text-left text-xs transition-colors hover:bg-muted/60"
                       >
                         <span className="flex min-w-0 items-center gap-1.5">
                           <Icon

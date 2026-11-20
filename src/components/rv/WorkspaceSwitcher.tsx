@@ -52,7 +52,7 @@ export function WorkspaceSwitcher({
       role="tablist"
       aria-label="Workspace switcher"
       className={cn(
-        "no-scrollbar inline-flex max-w-full shrink-0 items-center gap-0.5 overflow-x-auto rounded-full border border-border bg-muted/75 p-1 sm:gap-1",
+        "no-scrollbar inline-flex max-w-full shrink-0 items-center gap-0.5 overflow-x-auto rounded-lg border border-border bg-muted p-0.5 sm:gap-1",
         className,
       )}
     >
@@ -68,12 +68,12 @@ export function WorkspaceSwitcher({
             onClick={() => onSwitch(ws.id)}
             title={`${ws.label} — ${ws.subtitle}`}
             className={cn(
-              "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full font-medium transition-colors",
+              "relative inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-colors",
               compact
-                ? "min-h-[36px] px-2.5 py-1.5 text-[0.72rem]"
-                : "min-h-[38px] px-3.5 py-1.5 text-xs sm:text-sm",
+                ? "min-h-[34px] px-2.5 py-1 text-[0.72rem]"
+                : "min-h-[34px] px-3 py-1.5 text-xs sm:text-sm",
               active
-                ? "bg-primary text-primary-foreground shadow-[0_6px_18px_-6px_var(--primary)]"
+                ? "bg-primary text-primary-foreground"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >

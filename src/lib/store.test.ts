@@ -26,6 +26,7 @@ import {
   expenseCategoriesFor,
   expenseTotal,
   getDB,
+  getProjectHealth,
   goalAccount,
   invoiceStatus,
   invoiceTotals,
@@ -33,7 +34,9 @@ import {
   isInvoice,
   needsFollowUp,
   nextInvoiceNo,
+  nextWorkStage,
   normalizeServicePillar,
+  normalizeWorkStage,
   parseTimelineDays,
   periodBreakdownBars,
   projectDeleteBlocker,
@@ -816,5 +819,87 @@ describe("bento dense packing and service tags", () => {
       999,
     );
     expect(clampedTail[clampedTail.length - 1]!.id).toBe("div-end");
+  });
+});
+
+describe("project health indicators and 6-stage work pipeline", () => {
+  it("computes project health status and reasons from deadlines and status", () => {
+    const overdue = getProjectHealth(
+      { status: "In production", due: "2026-11-10" },
+      "2026-11-15",
+    );
+    expect(overdue.status).toBe("delayed");
+    expect(overdue.label).toBe("Delayed");
+    expect(overdue.reason).toBe("5d overdue");
+    expect(overdue.daysUntilDue).toBe(-5);
+
+    const dueToday = getProjectHealth(
+      { status: "Quoted", due: "2026-11-15" },
+      "2026-11-15",
+    );
+    expect(dueToday.status).toBe("at-risk");
+    expect(dueToday.label).toBe("At risk");
+    expect(dueToday.reason).toBe("Due today");
+
+    const dueSoon = getProjectHealth(
+      { status: "In production", due: "2026-11-18" },
+      "2026-11-15",
+    );
+    expect(dueSoon.status).toBe("at-risk");
+    expect(dueSoon.reason).toBe("3d left");
+
+    const onHold = getProjectHealth(
+      { status: "On hold", due: "2026-12-30" },
+      "2026-11-15",
+    );
+    expect(onHold.status).toBe("at-risk");
+    expect(onHold.reason).toBe("On hold");
+
+    const healthy = getProjectHealth(
+      { status: "In production", due: "2026-11-25" },
+      "2026-11-15",
+    );
+    expect(healthy.status).toBe("healthy");
+    expect(healthy.label).toBe("Healthy");
+    expect(healthy.reason).toBe("10d left");
+
+    const noDue = getProjectHealth(
+      { status: "Inquiry", due: "" },
+      "2026-11-15",
+    );
+    expect(noDue.status).toBe("healthy");
+    expect(noDue.reason).toBe("No deadline");
+
+    const delivered = getProjectHealth(
+      { status: "Delivered", due: "2026-10-01" },
+      "2026-11-15",
+    );
+    expect(delivered.status).toBe("healthy");
+    expect(delivered.reason).toBe("Delivered");
+
+    const closed = getProjectHealth(
+      { status: "Closed", due: "2026-10-01" },
+      "2026-11-15",
+    );
+    expect(closed.status).toBe("healthy");
+    expect(closed.reason).toBe("Closed");
+  });
+
+  it("normalizes legacy work stages and advances through 6-stage and concept-only pipelines", () => {
+    expect(normalizeWorkStage("Backlog")).toBe("Request");
+    expect(normalizeWorkStage("Current")).toBe("Design");
+    expect(normalizeWorkStage("In review")).toBe("Review");
+    expect(normalizeWorkStage("Production")).toBe("Production");
+
+    expect(nextWorkStage({ status: "Backlog" })).toBe("Design");
+    expect(nextWorkStage({ status: "Current" })).toBe("Review");
+    expect(nextWorkStage({ status: "In review" })).toBe("Approved");
+    expect(nextWorkStage({ status: "Approved", conceptOnly: false })).toBe(
+      "Production",
+    );
+    expect(nextWorkStage({ status: "Production" })).toBe("Completed");
+    expect(nextWorkStage({ status: "Approved", conceptOnly: true })).toBe(
+      "Completed",
+    );
   });
 });

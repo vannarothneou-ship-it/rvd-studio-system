@@ -5,7 +5,14 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronUp, Plus, Search } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Columns3,
+  List,
+  Plus,
+  Search,
+} from "lucide-react";
 import {
   Btn,
   Empty,
@@ -62,6 +69,7 @@ function Invoices() {
   const [q, setQ] = useState("");
   const [f, setF] = useState("All");
   const [kind, setKind] = useState("All documents");
+  const [viewMode, setViewMode] = useState<"list" | "board">("list");
   const [showAll, setShowAll] = useState(false);
   const [editingLayout, setEditingLayout] = useState(false);
 
@@ -139,7 +147,7 @@ function Invoices() {
         defaultSpan: 12,
         render: () => (
           <Glass delay={120}>
-            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="mb-4 flex flex-col gap-3 lg:flex-row lg:items-center">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                 <input
@@ -152,33 +160,136 @@ function Invoices() {
                   }}
                 />
               </div>
-              <SlidingTabs
-                layoutGroup="invoices-status-tabs"
-                size="xs"
-                value={f}
-                onChange={(next) => {
-                  setF(next);
-                  setShowAll(false);
-                }}
-                options={[
-                  ...(kind === "Invoice" || kind === "All documents"
-                    ? FILTERS
-                    : [
-                        "All",
-                        "Draft",
-                        "Sent",
-                        "Accepted",
-                        "Declined",
-                        "Expired",
-                        "Signed",
-                        "Received",
-                      ]),
-                  "Follow-up due",
-                ].map((x) => ({ id: x, label: x }))}
-              />
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <SlidingTabs
+                  layoutGroup="invoices-status-tabs"
+                  size="xs"
+                  value={f}
+                  onChange={(next) => {
+                    setF(next);
+                    setShowAll(false);
+                  }}
+                  options={[
+                    ...(kind === "Invoice" || kind === "All documents"
+                      ? FILTERS
+                      : [
+                          "All",
+                          "Draft",
+                          "Sent",
+                          "Accepted",
+                          "Declined",
+                          "Expired",
+                          "Signed",
+                          "Received",
+                        ]),
+                    "Follow-up due",
+                  ].map((x) => ({ id: x, label: x }))}
+                />
+                <SlidingTabs
+                  size="xs"
+                  layoutGroup="invoices-view-mode"
+                  value={viewMode}
+                  onChange={setViewMode}
+                  options={[
+                    { id: "list", label: "List", icon: List },
+                    { id: "board", label: "Board", icon: Columns3 },
+                  ]}
+                />
+              </div>
             </div>
             {rows.length === 0 ? (
               <Empty>No invoices match.</Empty>
+            ) : viewMode === "board" ? (
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+                {(
+                  [
+                    {
+                      id: "draft",
+                      title: "Draft",
+                      match: (s: string) => s === "Draft",
+                    },
+                    {
+                      id: "sent",
+                      title: "Sent / Partial",
+                      match: (s: string) =>
+                        ["Sent", "Partial", "Signed"].includes(s),
+                    },
+                    {
+                      id: "overdue",
+                      title: "Overdue / Attention",
+                      match: (s: string) =>
+                        ["Overdue", "Declined", "Expired"].includes(s),
+                    },
+                    {
+                      id: "settled",
+                      title: "Paid / Accepted",
+                      match: (s: string) =>
+                        ["Paid", "Accepted", "Received"].includes(s),
+                    },
+                  ] as const
+                ).map((col) => {
+                  const colRows = rows.filter((r) => col.match(r.v.status));
+                  const colTotalUSD = colRows.reduce(
+                    (sum, r) => sum + r.v.totalUSD,
+                    0,
+                  );
+                  return (
+                    <div
+                      key={col.id}
+                      className="flex min-h-[200px] flex-col rounded-xl border border-border bg-muted/35 p-3"
+                    >
+                      <div className="mb-2.5 flex items-center justify-between gap-2 border-b border-border/60 pb-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-semibold text-foreground">
+                            {col.title}
+                          </p>
+                          <p className="font-num text-[0.68rem] text-muted-foreground">
+                            {compactMoney(colTotalUSD)}
+                          </p>
+                        </div>
+                        <span className="font-num rounded-md bg-secondary px-1.5 py-0.5 text-[0.68rem] text-muted-foreground">
+                          {colRows.length}
+                        </span>
+                      </div>
+
+                      {colRows.length === 0 ? (
+                        <p className="py-6 text-center text-xs text-muted-foreground/80">
+                          No documents
+                        </p>
+                      ) : (
+                        <div className="flex flex-col gap-2">
+                          {colRows.map(({ i, v, c }) => (
+                            <Link
+                              key={i.id}
+                              to="/invoices/$id"
+                              params={{ id: i.id }}
+                              className="block rounded-lg border border-border bg-card p-2.5 transition-colors hover:border-primary/50"
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <span className="font-num text-xs font-semibold text-foreground">
+                                  {i.no}
+                                </span>
+                                <Pill s={v.status} />
+                              </div>
+                              <p className="mt-1 truncate text-xs text-muted-foreground">
+                                {documentKind(i)} · {c?.name ?? "No client"}
+                              </p>
+                              <div className="mt-2 flex items-center justify-between gap-2 border-t border-border/50 pt-1.5 text-xs">
+                                <span className="font-num text-[0.68rem] text-muted-foreground">
+                                  {shortDate(i.due)}
+                                </span>
+                                <span className="font-num font-semibold text-foreground">
+                                  {money(v.total, i.currency)}
+                                </span>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
               <>
                 <ul className="divide-y divide-border">
@@ -187,7 +298,7 @@ function Invoices() {
                       <Link
                         to="/invoices/$id"
                         params={{ id: i.id }}
-                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 hover:bg-muted"
+                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-2 py-3 hover:bg-muted"
                       >
                         <div className="min-w-0">
                           <p className="font-num truncate text-sm">{i.no}</p>
@@ -257,6 +368,7 @@ function Invoices() {
       q,
       kind,
       f,
+      viewMode,
       rows,
       visibleRows,
       hasMore,

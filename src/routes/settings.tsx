@@ -215,6 +215,11 @@ function Page() {
         reminders: Array.isArray(p.reminders)
           ? (p.reminders as NonNullable<typeof prev.reminders>)
           : [],
+        learnedReceiptRules: Array.isArray(p.learnedReceiptRules)
+          ? (p.learnedReceiptRules as NonNullable<
+              typeof prev.learnedReceiptRules
+            >)
+          : [],
         goals: p.goals as typeof prev.goals,
         settings: { ...prev.settings, ...p.settings },
         categoryLimits: isObject(p.categoryLimits)

@@ -1,5 +1,13 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
+import { motion } from "motion/react";
 import {
   ArrowLeft,
   Check,
@@ -30,6 +38,7 @@ export function SlidingTabs<T extends string>({
   onChange,
   tone = "primary",
   size = "sm",
+  layoutGroup,
   stretch = false,
   iconOnly = false,
   className,
@@ -44,10 +53,12 @@ export function SlidingTabs<T extends string>({
   iconOnly?: boolean;
   className?: string;
 }) {
+  const autoGroup = useId();
+  const groupId = layoutGroup ?? autoGroup;
   return (
     <div
       className={cn(
-        "no-scrollbar max-w-full flex-nowrap items-center gap-0.5 overflow-x-auto rounded-full border border-border bg-muted p-1",
+        "no-scrollbar max-w-full flex-nowrap items-center gap-0.5 overflow-x-auto rounded-lg border border-border bg-muted p-0.5",
         stretch ? "flex w-full" : "inline-flex",
         size === "xs" ? "text-[0.72rem]" : "text-xs",
         className,
@@ -65,40 +76,53 @@ export function SlidingTabs<T extends string>({
             aria-label={opt.label}
             title={opt.label}
             className={cn(
-              "inline-flex min-h-[34px] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-full font-medium transition-all duration-150 active:scale-[0.96] sm:min-h-0",
+              "relative inline-flex min-h-[34px] shrink-0 items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors duration-150 active:scale-[0.97] sm:min-h-0",
               stretch && "flex-1",
               hideLabel
                 ? size === "xs"
                   ? "px-2.5 py-1.5"
-                  : "px-3 py-2"
+                  : "px-3 py-1.5"
                 : size === "xs"
                   ? "px-2.5 py-1"
                   : "px-3 py-1.5",
               active
                 ? tone === "invert"
-                  ? "bg-foreground text-background shadow-sm"
-                  : "bg-primary text-primary-foreground shadow-sm"
+                  ? "text-background"
+                  : "text-primary-foreground"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            {Icon && (
-              <Icon
+            {active && (
+              <motion.span
+                layoutId={`rv-tab-pill-${groupId}`}
+                transition={{ type: "spring", stiffness: 520, damping: 38 }}
+                aria-hidden="true"
                 className={cn(
-                  "shrink-0",
-                  hideLabel ? "h-4 w-4" : "h-3.5 w-3.5",
+                  "absolute inset-0 rounded-md",
+                  tone === "invert" ? "bg-foreground" : "bg-primary",
                 )}
               />
             )}
-            {hideLabel ? (
-              <span className="sr-only">{opt.label}</span>
-            ) : (
-              <span className="whitespace-nowrap">{opt.label}</span>
-            )}
-            {opt.badge !== undefined && (
-              <span className="font-num text-[0.68rem] opacity-80">
-                {opt.badge}
-              </span>
-            )}
+            <span className="relative z-10 inline-flex items-center gap-1.5">
+              {Icon && (
+                <Icon
+                  className={cn(
+                    "shrink-0",
+                    hideLabel ? "h-4 w-4" : "h-3.5 w-3.5",
+                  )}
+                />
+              )}
+              {hideLabel ? (
+                <span className="sr-only">{opt.label}</span>
+              ) : (
+                <span className="whitespace-nowrap">{opt.label}</span>
+              )}
+              {opt.badge !== undefined && (
+                <span className="font-num text-[0.68rem] opacity-80">
+                  {opt.badge}
+                </span>
+              )}
+            </span>
           </button>
         );
       })}
@@ -115,7 +139,12 @@ export function Glass({
   delay?: number;
 }) {
   return (
-    <section className={cn("glass rise p-4 sm:p-5", className)}>
+    <section
+      className={cn(
+        "rise rounded-xl border border-border bg-card p-4 sm:p-5",
+        className,
+      )}
+    >
       {children}
     </section>
   );
@@ -123,29 +152,21 @@ export function Glass({
 
 export function PageHeader({
   title,
-  owner,
   action,
 }: {
   title: string;
-  owner: string;
+  owner?: string;
   action?: ReactNode;
 }) {
-  const month = new Date().toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
   return (
-    <header className="rise mb-3 flex flex-col gap-2.5 sm:mb-5 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+    <header className="rise mb-3 flex flex-col gap-2.5 sm:mb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0">
-        <p className="hidden truncate text-xs text-muted-foreground sm:block sm:text-sm">
-          Welcome back, {owner}. · {month}
-        </p>
-        <h1 className="truncate font-display text-[1.45rem] font-bold tracking-tight sm:text-4xl">
+        <h1 className="truncate font-display text-2xl font-bold tracking-[-0.03em] text-foreground sm:text-3xl">
           {title}
         </h1>
       </div>
       {action && (
-        <div className="flex w-full shrink-0 flex-wrap items-center gap-2 sm:w-auto sm:justify-end">
+        <div className="flex w-full shrink-0 flex-wrap items-center justify-end gap-2 sm:w-auto">
           {action}
         </div>
       )}
@@ -164,11 +185,11 @@ export function Btn({
     <button
       {...p}
       className={cn(
-        "inline-flex min-h-[42px] items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition-all duration-150 active:scale-95 disabled:opacity-50 sm:min-h-[38px]",
+        "inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-150 active:scale-[0.98] disabled:opacity-50 sm:min-h-[38px]",
         variant === "gold" &&
-          "bg-primary text-primary-foreground shadow-[0_8px_24px_-8px_var(--primary)] hover:brightness-110",
+          "bg-primary text-primary-foreground hover:bg-[var(--primary-hover,var(--primary))]",
         variant === "ghost" &&
-          "border border-border bg-secondary hover:bg-accent",
+          "border border-border bg-secondary text-secondary-foreground hover:bg-accent",
         variant === "danger" &&
           "border border-destructive/40 text-destructive hover:bg-destructive/10",
         className,
@@ -199,21 +220,23 @@ export function Modal({
   if (!open) return null;
   return (
     <div
-      className="fixed inset-0 z-50 flex items-end justify-center bg-background/60 p-0 backdrop-blur-sm animate-in fade-in sm:items-center sm:p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-0 backdrop-blur-xs animate-in fade-in sm:items-center sm:p-4"
       onClick={onClose}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "glass-strong max-h-[92dvh] w-full overflow-y-auto rounded-t-3xl p-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] animate-in slide-in-from-bottom-8 sm:rounded-3xl sm:p-6",
+          "max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl border border-border bg-card p-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl animate-in slide-in-from-bottom-8 sm:rounded-xl sm:p-6",
           wide ? "sm:max-w-3xl" : "sm:max-w-lg",
         )}
       >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="font-display text-xl font-bold">{title}</h2>
+        <div className="mb-4 flex items-center justify-between gap-2 border-b border-border pb-3">
+          <h2 className="font-display text-lg font-bold tracking-tight sm:text-xl">
+            {title}
+          </h2>
           <button
             onClick={onClose}
-            className="grid h-10 w-10 place-items-center rounded-full hover:bg-accent"
+            className="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
             aria-label="Close"
           >
             <X className="h-4 w-4" />
@@ -265,11 +288,11 @@ export function SlideDrawer({
         type="button"
         aria-label={`Close ${title}`}
         onClick={onClose}
-        className="backdrop-in fixed inset-0 bg-black/45 backdrop-blur-[2px]"
+        className="backdrop-in fixed inset-0 bg-black/65 backdrop-blur-[2px]"
       />
       <aside
         className={cn(
-          "drawer-in glass-strong relative z-10 mt-[env(safe-area-inset-top)] flex max-h-[92dvh] w-full flex-col rounded-t-3xl border-t border-border shadow-2xl sm:mt-0 sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0 sm:pt-[env(safe-area-inset-top)]",
+          "drawer-in relative z-10 mt-[env(safe-area-inset-top)] flex max-h-[92dvh] w-full flex-col rounded-t-2xl border-t border-border bg-card shadow-2xl sm:mt-0 sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0 sm:pt-[env(safe-area-inset-top)]",
           widthClass,
           side === "left"
             ? "sm:border-r sm:border-border"
@@ -283,7 +306,7 @@ export function SlideDrawer({
               type="button"
               onClick={onClose}
               aria-label="Back"
-              className="grid h-9 w-9 shrink-0 place-items-center rounded-full border border-border bg-muted/60 text-foreground transition-transform active:scale-95 sm:hidden"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-foreground transition-transform active:scale-95 sm:hidden"
             >
               <ArrowLeft className="h-4 w-4" />
             </button>
@@ -291,7 +314,7 @@ export function SlideDrawer({
               {subtitle ? (
                 <span className="label-mono block truncate">{subtitle}</span>
               ) : null}
-              <h2 className="truncate font-display text-lg font-bold sm:text-xl">
+              <h2 className="truncate font-display text-lg font-bold tracking-tight sm:text-xl">
                 {title}
               </h2>
             </div>
@@ -302,7 +325,7 @@ export function SlideDrawer({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="hidden h-10 w-10 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:grid"
+              className="hidden h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground sm:grid"
             >
               <X className="h-4 w-4" />
             </button>
@@ -479,7 +502,7 @@ export function Sel({
                 left: rect.left,
                 width: Math.min(rect.width, window.innerWidth - 16),
               }}
-              className="z-[120] overflow-hidden rounded-2xl border border-border bg-popover text-popover-foreground shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95"
+              className="z-[120] overflow-hidden rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl animate-in fade-in zoom-in-95"
             >
               <div className="border-b border-border/70 p-2">
                 <div className="relative">
@@ -512,7 +535,7 @@ export function Sel({
                       setOpen(false);
                     }}
                     className={cn(
-                      "flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-xs transition-colors",
+                      "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors",
                       !value
                         ? "bg-primary/15 font-medium text-primary"
                         : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -539,9 +562,9 @@ export function Sel({
                           setOpen(false);
                         }}
                         className={cn(
-                          "flex w-full items-center justify-between gap-2 rounded-xl px-2.5 py-2 text-left text-xs transition-colors",
+                          "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-xs transition-colors",
                           active
-                            ? "bg-primary text-primary-foreground font-medium"
+                            ? "bg-primary font-medium text-primary-foreground"
                             : "text-popover-foreground hover:bg-accent",
                         )}
                       >
@@ -619,34 +642,43 @@ export function Sel({
 }
 
 const tone: Record<string, string> = {
-  Paid: "bg-positive/15 text-positive",
-  Partial: "bg-primary/15 text-primary",
-  Sent: "bg-secondary text-foreground",
-  Draft: "bg-muted text-muted-foreground",
-  Overdue: "bg-destructive/15 text-destructive",
-  Active: "bg-positive/15 text-positive",
-  Lead: "bg-primary/15 text-primary",
-  Quoted: "bg-primary/15 text-primary",
-  Delivered: "bg-positive/15 text-positive",
-  Closed: "bg-positive/20 text-positive",
-  "In production": "bg-primary/15 text-primary",
-  Accepted: "bg-positive/15 text-positive",
-  Signed: "bg-positive/15 text-positive",
-  Received: "bg-positive/15 text-positive",
-  Declined: "bg-destructive/15 text-destructive",
-  Expired: "bg-destructive/15 text-destructive",
-  Lost: "bg-destructive/15 text-destructive",
-  Current: "bg-primary/15 text-primary",
-  "In review": "bg-secondary text-foreground",
-  Completed: "bg-positive/15 text-positive",
-  Backlog: "bg-muted text-muted-foreground",
+  Paid: "border-positive/30 bg-positive/15 text-positive",
+  Partial: "border-primary/35 bg-primary/15 text-primary",
+  Sent: "border-border bg-secondary text-foreground",
+  Draft: "border-border bg-muted text-muted-foreground",
+  Overdue: "border-destructive/35 bg-destructive/15 text-destructive",
+  Active: "border-positive/30 bg-positive/15 text-positive",
+  Lead: "border-primary/35 bg-primary/15 text-primary",
+  Quoted: "border-primary/35 bg-primary/15 text-primary",
+  Delivered: "border-positive/30 bg-positive/15 text-positive",
+  Closed: "border-positive/30 bg-positive/18 text-positive",
+  "In production": "border-primary/35 bg-primary/15 text-primary",
+  "On hold": "border-warning/35 bg-warning/15 text-warning",
+  Accepted: "border-positive/30 bg-positive/15 text-positive",
+  Signed: "border-positive/30 bg-positive/15 text-positive",
+  Received: "border-positive/30 bg-positive/15 text-positive",
+  Declined: "border-destructive/35 bg-destructive/15 text-destructive",
+  Expired: "border-destructive/35 bg-destructive/15 text-destructive",
+  Lost: "border-destructive/35 bg-destructive/15 text-destructive",
+  Healthy: "border-positive/30 bg-positive/15 text-positive",
+  "At risk": "border-warning/35 bg-warning/15 text-warning",
+  Delayed: "border-destructive/35 bg-destructive/15 text-destructive",
+  Request: "border-border bg-muted text-muted-foreground",
+  Design: "border-primary/35 bg-primary/15 text-primary",
+  Review: "border-warning/35 bg-warning/15 text-warning",
+  Approved: "border-positive/30 bg-positive/15 text-positive",
+  Production: "border-primary/40 bg-primary/20 text-primary",
+  Current: "border-primary/35 bg-primary/15 text-primary",
+  "In review": "border-warning/35 bg-warning/15 text-warning",
+  Completed: "border-positive/30 bg-positive/15 text-positive",
+  Backlog: "border-border bg-muted text-muted-foreground",
 };
 export function Pill({ s }: { s: string }) {
   return (
     <span
       className={cn(
-        "font-num inline-flex shrink-0 rounded-full px-2.5 py-0.5 text-[0.68rem] font-semibold uppercase tracking-wider",
-        tone[s] ?? "bg-secondary text-muted-foreground",
+        "font-num inline-flex shrink-0 items-center whitespace-nowrap rounded-md border px-2 py-0.5 text-[0.68rem] font-semibold tracking-wide",
+        tone[s] ?? "border-border bg-secondary text-muted-foreground",
       )}
     >
       {s}

@@ -159,25 +159,64 @@ export const DESIGN_TYPES = [
   "Other",
 ] as const;
 
+export const WORK_PIPELINE_STAGES = [
+  "Request",
+  "Design",
+  "Review",
+  "Approved",
+  "Production",
+  "Completed",
+] as const;
+export type WorkPipelineStage = (typeof WORK_PIPELINE_STAGES)[number];
+
 export const WORK_STATUSES = [
+  ...WORK_PIPELINE_STAGES,
   "Current",
   "In review",
-  "Completed",
   "Backlog",
 ] as const;
 export type WorkStatus = (typeof WORK_STATUSES)[number];
+
+export function normalizeWorkStage(status: string): WorkPipelineStage {
+  if (status === "Backlog") return "Request";
+  if (status === "Current") return "Design";
+  if (status === "In review") return "Review";
+  if ((WORK_PIPELINE_STAGES as readonly string[]).includes(status)) {
+    return status as WorkPipelineStage;
+  }
+  return "Design";
+}
+
+export function nextWorkStage(
+  task: Pick<WorkTask, "status" | "conceptOnly">,
+): WorkPipelineStage {
+  const stage = normalizeWorkStage(task.status);
+  if (stage === "Request") return "Design";
+  if (stage === "Design") return "Review";
+  if (stage === "Review") return "Approved";
+  if (stage === "Approved") {
+    return task.conceptOnly ? "Completed" : "Production";
+  }
+  if (stage === "Production") return "Completed";
+  return "Design";
+}
 
 export interface DesignMedia {
   id: string;
   name: string;
   mimeType: string;
-  kind: "image" | "pdf";
+  kind: "image" | "pdf" | "design";
   size: number;
   dataUrl?: string;
   createdAt: string;
 }
 
-export const DEFAULT_WORK_PROJECTS = ["DBG", "Connexion", "OCIC"] as const;
+export const DEFAULT_WORK_PROJECTS = [
+  "DBG",
+  "Connexion",
+  "OCIC",
+  "SDBPP",
+] as const;
 
 export interface WorkTask {
   id: string;
@@ -191,9 +230,79 @@ export interface WorkTask {
   startDate?: string;
   dueDate: string;
   completedDate: string;
+  conceptOnly?: boolean;
   notes: string;
   media: DesignMedia[];
   featured?: boolean;
+}
+
+export type ProjectHealthStatus = "healthy" | "at-risk" | "delayed";
+
+export interface ProjectHealth {
+  status: ProjectHealthStatus;
+  label: "Healthy" | "At risk" | "Delayed";
+  reason: string;
+  daysUntilDue: number | null;
+}
+
+export function getProjectHealth(
+  project: Pick<Project, "status" | "due">,
+  refDate = today(),
+): ProjectHealth {
+  if (
+    project.status === "Delivered" ||
+    project.status === "Closed" ||
+    project.status === "Lost"
+  ) {
+    return {
+      status: "healthy",
+      label: "Healthy",
+      reason: project.status === "Lost" ? "Closed" : project.status,
+      daysUntilDue: null,
+    };
+  }
+  if (project.status === "On hold") {
+    return {
+      status: "at-risk",
+      label: "At risk",
+      reason: "On hold",
+      daysUntilDue: null,
+    };
+  }
+  if (!project.due || !/^\d{4}-\d{2}-\d{2}$/.test(project.due)) {
+    return {
+      status: "healthy",
+      label: "Healthy",
+      reason: "No deadline",
+      daysUntilDue: null,
+    };
+  }
+  const dueMs = Date.parse(project.due + "T00:00:00Z");
+  const refMs = Date.parse(refDate + "T00:00:00Z");
+  const diffDays = Math.round((dueMs - refMs) / 86_400_000);
+  if (diffDays < 0) {
+    const overdue = Math.abs(diffDays);
+    return {
+      status: "delayed",
+      label: "Delayed",
+      reason: `${overdue}d overdue`,
+      daysUntilDue: diffDays,
+    };
+  }
+  if (diffDays <= 3) {
+    return {
+      status: "at-risk",
+      label: "At risk",
+      reason: diffDays === 0 ? "Due today" : `${diffDays}d left`,
+      daysUntilDue: diffDays,
+    };
+  }
+  return {
+    status: "healthy",
+    label: "Healthy",
+    reason: `${diffDays}d left`,
+    daysUntilDue: diffDays,
+  };
 }
 
 export interface Project {
@@ -388,6 +497,17 @@ export interface CalendarReminder {
   dismissedForDate?: string;
 }
 
+export interface LearnedReceiptRule {
+  id: string;
+  pattern: string;
+  displayPattern: string;
+  txType: "expense" | "income";
+  category: string;
+  method: "Debit" | "Credit";
+  hits: number;
+  updatedAt: string;
+}
+
 export interface DB {
   clients: Client[];
   services: Service[];
@@ -398,6 +518,7 @@ export interface DB {
   personalIncome: PersonalIncome[];
   workTasks: WorkTask[];
   reminders?: CalendarReminder[];
+  learnedReceiptRules?: LearnedReceiptRule[];
   goals: Goal[];
   settings: Settings;
   categoryLimits?: Record<string, number>;
@@ -504,6 +625,7 @@ function seed(): DB {
     personalIncome: [],
     workTasks: [],
     reminders: [],
+    learnedReceiptRules: [],
     goals: rothvanGoals.map((g) => ({ ...g })),
     settings: { ...defaultSettings },
     categoryLimits: {},
@@ -540,6 +662,7 @@ function load() {
               ...t,
               projectName: t.projectName ?? t.company ?? "",
               startDate: t.startDate ?? "",
+              conceptOnly: Boolean(t.conceptOnly),
               featured: Boolean(t.featured),
               media: Array.isArray(t.media) ? t.media : [],
               artworkCount: Math.max(1, Number(t.artworkCount) || 1),
@@ -551,6 +674,9 @@ function load() {
               notifyDaysBefore: Math.max(0, Number(rm.notifyDaysBefore) || 0),
               media: Array.isArray(rm.media) ? rm.media : [],
             }))
+          : [],
+        learnedReceiptRules: Array.isArray(p.learnedReceiptRules)
+          ? (p.learnedReceiptRules as LearnedReceiptRule[])
           : [],
         services: rawServices.map((s) => ({
           ...s,

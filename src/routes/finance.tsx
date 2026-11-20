@@ -48,6 +48,7 @@ import {
 } from "@/components/rv/BentoGrid";
 import { MonthPicker } from "@/components/rv/MonthPicker";
 import { WorkspaceBalanceCard } from "@/components/rv/WorkspaceBalanceCard";
+import { CentralAiBrief } from "@/components/rv/CentralAiBrief";
 import {
   EXPENSE_CATEGORIES,
   cashFlowSeries,
@@ -1096,6 +1097,8 @@ function Page() {
               />
             </div>
           </Glass>
+
+          <CentralAiBrief db={db} defaultTab="forecast" className="mb-4" />
 
           {/* Combined Cash Flow Chart + Studio vs Personal Split */}
           <div className="grid gap-4 lg:grid-cols-12">

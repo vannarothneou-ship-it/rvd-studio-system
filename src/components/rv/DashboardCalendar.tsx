@@ -16,6 +16,7 @@ import {
   useIsDesktopMd,
 } from "@/components/rv/LazyFullCalendar";
 import {
+  ArrowRight,
   Bell,
   Briefcase,
   Cake,
@@ -27,6 +28,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Circle,
+  Columns3,
+  Eye,
+  EyeOff,
   Flag,
   Layers3,
   Moon,
@@ -42,6 +46,7 @@ import {
   Btn,
   F,
   Glass,
+  Pill,
   Sel,
   SlideDrawer,
   SlidingTabs,
@@ -53,6 +58,7 @@ import {
 } from "@/components/rv/DesignMediaTools";
 import {
   workProjectAccent,
+  workProjectMeta,
   workTaskProjectName,
 } from "@/components/rv/workProjectColors";
 import {
@@ -68,8 +74,10 @@ import {
   DEFAULT_WORK_PROJECTS,
   DESIGN_TYPES,
   PROJECT_STATUSES,
-  WORK_STATUSES,
+  WORK_PIPELINE_STAGES,
   addDays,
+  nextWorkStage,
+  normalizeWorkStage,
   setDB,
   shortDate,
   today,
@@ -81,12 +89,12 @@ import {
   type Project,
   type ReminderCategory,
   type ShowcaseWorkItem,
-  type WorkStatus,
   type WorkTask,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 type CalendarSourceScope = "all" | "work" | "studio" | "reminders";
+type ScheduleViewMode = "calendar" | "board";
 type CreateKind = "work" | "studio" | "reminder";
 
 export interface HolidayToggleState {
@@ -195,6 +203,8 @@ export function DashboardCalendarCard({
   const todayStr = today();
   const isDesktopMd = useIsDesktopMd();
   const [sourceScope, setSourceScope] = useState<CalendarSourceScope>("all");
+  const [viewMode, setViewMode] = useState<ScheduleViewMode>("calendar");
+  const [calendarCollapsed, setCalendarCollapsed] = useState(false);
   const [holidayToggles, setHolidayToggles] = useState<HolidayToggleState>({
     khHolidays: true,
     thngaiSel: true,
@@ -348,9 +358,11 @@ export function DashboardCalendarCard({
               ? t.completedDate
               : start;
         const proj = workTaskProjectName(t);
-        const accent = workProjectAccent(proj);
-        const prefix = proj ? `[${proj}] ` : "";
-        const doneMark = t.status === "Completed" ? "✓ " : "";
+        const meta = workProjectMeta(proj);
+        const accent = meta.accent;
+        const prefix = proj ? `[${meta.shortCode}] ` : "";
+        const done = normalizeWorkStage(t.status) === "Completed";
+        const doneMark = done ? "✓ " : "";
 
         out.push({
           id: `wt:${t.id}`,
@@ -361,7 +373,7 @@ export function DashboardCalendarCard({
           backgroundColor: accent.calBg,
           borderColor: accent.calBorder,
           textColor: accent.calText,
-          classNames: t.status === "Completed" ? ["opacity-75"] : [],
+          classNames: done ? ["opacity-75"] : [],
         });
       }
     }
@@ -486,7 +498,7 @@ export function DashboardCalendarCard({
       1,
     ),
     title: "",
-    status: "Current",
+    status: "Design",
     designType: DESIGN_TYPES[0],
     artworkCount: 1,
     projectName: projectNames[0] ?? "DBG",
@@ -494,6 +506,7 @@ export function DashboardCalendarCard({
     startDate,
     dueDate,
     completedDate: "",
+    conceptOnly: false,
     notes: "",
     media: [],
   });
@@ -723,12 +736,12 @@ export function DashboardCalendarCard({
     }
   };
 
-  // One-tap status toggles (fewer clicks!)
+  // One-tap status toggles & pipeline advance (fewer clicks!)
   const quickToggleWorkDone = (task: WorkTask) => {
-    const nextDone = task.status !== "Completed";
+    const nextDone = normalizeWorkStage(task.status) !== "Completed";
     const updated: WorkTask = {
       ...task,
-      status: nextDone ? "Completed" : "Current",
+      status: nextDone ? "Completed" : "Design",
       completedDate: nextDone ? todayStr : "",
     };
     setDB((d) => ({
@@ -740,6 +753,23 @@ export function DashboardCalendarCard({
         ? `Marked "${task.title || task.code}" Completed`
         : `Reopened "${task.title || task.code}"`,
     );
+  };
+
+  const quickAdvanceWorkStage = (task: WorkTask) => {
+    const nextStage = nextWorkStage(task);
+    const updated: WorkTask = {
+      ...task,
+      status: nextStage,
+      completedDate:
+        nextStage === "Completed"
+          ? task.completedDate || todayStr
+          : task.completedDate,
+    };
+    setDB((d) => ({
+      ...d,
+      workTasks: upsert(d.workTasks ?? [], updated),
+    }));
+    toast.success(`"${task.title || task.code}" → ${nextStage}`);
   };
 
   const quickToggleProjectDone = (proj: Project) => {
@@ -1053,24 +1083,24 @@ export function DashboardCalendarCard({
 
   return (
     <Glass className={cn("overflow-hidden", className)}>
-      {/* Top Toolbar: Title, Source Tabs, Holiday/Reminder Toggles, Quick Add */}
+      {/* Top Toolbar: Title, Source Tabs, View Switcher, Eye Toggle, Quick Add */}
       <div className="mb-3 flex flex-col gap-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-primary/35 bg-primary/15 text-primary">
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-primary">
               <CalendarDays className="h-4 w-4" />
             </span>
             <div className="min-w-0">
               <h2 className="truncate font-display text-base font-bold leading-tight sm:text-lg">
-                Schedule &amp; Reminders
+                Schedule
               </h2>
               <p className="truncate text-[0.7rem] text-muted-foreground">
-                Tasks · Projects · Car ODO &amp; Birthdays
+                Work · Projects · Reminders
               </p>
             </div>
           </div>
 
-          <div className="flex max-w-full items-center gap-2">
+          <div className="flex max-w-full flex-wrap items-center justify-end gap-1.5 sm:gap-2">
             <SlidingTabs
               size="xs"
               layoutGroup="dash-cal-scope"
@@ -1099,6 +1129,37 @@ export function DashboardCalendarCard({
                 },
               ]}
             />
+            <SlidingTabs
+              iconOnly
+              size="xs"
+              layoutGroup="dash-cal-view-mode"
+              value={viewMode}
+              onChange={(next) => {
+                setViewMode(next);
+                if (calendarCollapsed) setCalendarCollapsed(false);
+              }}
+              options={[
+                { id: "calendar", label: "Calendar", icon: CalendarDays },
+                { id: "board", label: "Board", icon: Columns3 },
+              ]}
+            />
+            <button
+              type="button"
+              onClick={() => setCalendarCollapsed((v) => !v)}
+              aria-label={
+                calendarCollapsed ? "Show schedule view" : "Hide schedule view"
+              }
+              title={
+                calendarCollapsed ? "Show schedule view" : "Hide schedule view"
+              }
+              className="inline-flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-muted-foreground transition-colors hover:border-primary/45 hover:text-foreground"
+            >
+              {calendarCollapsed ? (
+                <Eye className="h-4 w-4" />
+              ) : (
+                <EyeOff className="h-4 w-4" />
+              )}
+            </button>
             <Btn
               type="button"
               variant="gold"
@@ -1108,7 +1169,7 @@ export function DashboardCalendarCard({
                   selectedMobileDate || todayStr,
                 )
               }
-              className="min-h-[34px] shrink-0 px-3 py-1 text-xs"
+              className="min-h-[34px] shrink-0 px-3 py-1 text-xs sm:min-h-[34px]"
             >
               <CalendarPlus className="h-3.5 w-3.5 shrink-0" />
               <span className="hidden sm:inline">Add</span>
@@ -1116,7 +1177,7 @@ export function DashboardCalendarCard({
           </div>
         </div>
 
-        {/* Toggle Pills for KH Holidays, ថ្ងៃសីល, Popular, Reminders + Upcoming Strip */}
+        {/* Toggle Chips for KH Holidays, ថ្ងៃសីល, Popular, Reminders + Upcoming Strip */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/55 pt-2.5">
           <div className="flex flex-wrap items-center gap-1.5">
             <button
@@ -1125,10 +1186,10 @@ export function DashboardCalendarCard({
               aria-pressed={holidayToggles.khHolidays}
               title="Cambodia Public Holidays"
               className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
+                "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
                 holidayToggles.khHolidays
                   ? "border-rose-500/50 bg-rose-500/20 text-rose-200 light:text-rose-800"
-                  : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
               )}
             >
               <Flag className="h-3 w-3 shrink-0" />
@@ -1141,10 +1202,10 @@ export function DashboardCalendarCard({
               aria-pressed={holidayToggles.thngaiSel}
               title="Khmer Buddhist Offering Days (ថ្ងៃសីល)"
               className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
+                "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
                 holidayToggles.thngaiSel
-                  ? "border-primary/50 bg-primary/20 text-amber-200 light:text-amber-900"
-                  : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                  ? "border-primary/50 bg-primary/20 text-primary"
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
               )}
             >
               <Moon className="h-3 w-3 shrink-0" />
@@ -1157,10 +1218,10 @@ export function DashboardCalendarCard({
               aria-pressed={holidayToggles.popular}
               title="International & Seasonal Popular Days"
               className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
+                "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
                 holidayToggles.popular
                   ? "border-sky-500/50 bg-sky-500/20 text-sky-200 light:text-sky-800"
-                  : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
               )}
             >
               <Sparkles className="h-3 w-3 shrink-0" />
@@ -1173,10 +1234,10 @@ export function DashboardCalendarCard({
               aria-pressed={holidayToggles.reminders}
               title="Car ODO, Birthday & Special Day Reminders"
               className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
+                "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
                 holidayToggles.reminders
-                  ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-200 light:text-emerald-800"
-                  : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                  ? "border-positive/50 bg-positive/20 text-positive"
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
               )}
             >
               <Bell className="h-3 w-3 shrink-0" />
@@ -1191,7 +1252,7 @@ export function DashboardCalendarCard({
                   key={sp.id}
                   type="button"
                   onClick={() => setSelectedSpecial(sp)}
-                  className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-border/75 bg-muted/45 px-2.5 py-0.5 text-[0.68rem] text-muted-foreground transition-colors hover:border-primary/45 hover:text-foreground"
+                  className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border bg-secondary px-2.5 py-1 text-[0.68rem] text-muted-foreground transition-colors hover:border-primary/45 hover:text-foreground"
                 >
                   <span
                     className={cn(
@@ -1313,8 +1374,243 @@ export function DashboardCalendarCard({
         </div>
       )}
 
-      {/* Mobile Responsive Touch Calendar + Selected Day Agenda (< 768px) */}
-      {!isDesktopMd && (
+      {calendarCollapsed ? (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/35 px-3 py-2.5 text-xs text-muted-foreground">
+          <span>
+            Schedule view is hidden ({counts.work} work · {counts.studio} studio
+            · {counts.reminders} alerts)
+          </span>
+          <button
+            type="button"
+            onClick={() => setCalendarCollapsed(false)}
+            className="inline-flex items-center gap-1 font-semibold text-primary hover:underline"
+          >
+            <Eye className="h-3.5 w-3.5" />
+            Show
+          </button>
+        </div>
+      ) : viewMode === "board" ? (
+        <div className="space-y-4">
+          {(sourceScope === "all" || sourceScope === "work") && (
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-muted-foreground">
+                  Work pipeline ({(db.workTasks ?? []).length})
+                </p>
+                <button
+                  type="button"
+                  onClick={() => openCreateOnRange(todayStr, todayStr, "work")}
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                >
+                  <Plus className="h-3 w-3" /> Add task
+                </button>
+              </div>
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+                {WORK_PIPELINE_STAGES.map((stage) => {
+                  const stageTasks = (db.workTasks ?? []).filter(
+                    (t) => normalizeWorkStage(t.status) === stage,
+                  );
+                  return (
+                    <div
+                      key={stage}
+                      className="flex min-h-[150px] flex-col rounded-xl border border-border bg-muted/30 p-2.5"
+                    >
+                      <div className="mb-2 flex items-center justify-between gap-1.5 border-b border-border/60 pb-1.5">
+                        <span className="truncate text-xs font-semibold text-foreground">
+                          {stage}
+                        </span>
+                        <span className="font-num rounded-md bg-secondary px-1.5 py-0.5 text-[0.65rem] text-muted-foreground">
+                          {stageTasks.length}
+                        </span>
+                      </div>
+                      <div className="flex flex-1 flex-col gap-1.5">
+                        {stageTasks.length === 0 ? (
+                          <p className="py-4 text-center text-[0.68rem] text-muted-foreground/75">
+                            Empty
+                          </p>
+                        ) : (
+                          stageTasks.map((task) => {
+                            const proj = workTaskProjectName(task);
+                            const meta = workProjectMeta(proj);
+                            const ProjIcon = meta.icon;
+                            const isDone = stage === "Completed";
+                            const nextStage = nextWorkStage(task);
+                            return (
+                              <div
+                                key={task.id}
+                                className="rounded-lg border border-border bg-card p-2 transition-colors hover:border-primary/45"
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => openEditWorkTask(task)}
+                                  className="w-full text-left"
+                                >
+                                  <div className="flex items-center gap-1.5 text-[0.65rem] text-muted-foreground">
+                                    <ProjIcon
+                                      className="h-3 w-3 shrink-0"
+                                      style={{ color: meta.accent.dot }}
+                                    />
+                                    <span className="font-num font-semibold text-foreground/85">
+                                      {meta.shortCode}
+                                    </span>
+                                    {task.conceptOnly && (
+                                      <span className="rounded bg-primary/15 px-1 text-[0.6rem] text-primary">
+                                        Concept
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="mt-0.5 line-clamp-2 text-xs font-semibold text-foreground">
+                                    {task.title || task.code}
+                                  </p>
+                                </button>
+                                <div className="mt-1.5 flex items-center justify-between gap-1 border-t border-border/50 pt-1.5">
+                                  <span className="font-num text-[0.64rem] text-muted-foreground">
+                                    {task.dueDate
+                                      ? shortDate(task.dueDate)
+                                      : "No date"}
+                                  </span>
+                                  {!isDone ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        quickAdvanceWorkStage(task)
+                                      }
+                                      title={`Advance to ${nextStage}`}
+                                      className="inline-flex items-center gap-0.5 rounded-md border border-primary/35 bg-primary/12 px-1.5 py-0.5 text-[0.64rem] font-semibold text-primary hover:bg-primary hover:text-primary-foreground"
+                                    >
+                                      <span>{nextStage}</span>
+                                      <ArrowRight className="h-2.5 w-2.5" />
+                                    </button>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-0.5 text-[0.64rem] font-medium text-positive">
+                                      <CheckCircle2 className="h-3 w-3" />
+                                      Done
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {(sourceScope === "all" || sourceScope === "studio") && (
+            <div>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-muted-foreground">
+                  Studio projects ({db.projects.length})
+                </p>
+                <button
+                  type="button"
+                  onClick={() =>
+                    openCreateOnRange(todayStr, todayStr, "studio")
+                  }
+                  className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                >
+                  <Plus className="h-3 w-3" /> Add project
+                </button>
+              </div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {db.projects.slice(0, 8).map((proj) => {
+                  const done =
+                    proj.status === "Delivered" || proj.status === "Closed";
+                  const clientName =
+                    db.clients.find((c) => c.id === proj.clientId)?.name ??
+                    "Studio";
+                  return (
+                    <div
+                      key={proj.id}
+                      className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card p-2.5"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => openEditProject(proj)}
+                        className="min-w-0 flex-1 text-left"
+                      >
+                        <p className="truncate text-xs font-semibold text-foreground">
+                          {proj.name || proj.code}
+                        </p>
+                        <p className="truncate text-[0.68rem] text-muted-foreground">
+                          {clientName} ·{" "}
+                          {proj.due ? shortDate(proj.due) : "No due date"}
+                        </p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => quickToggleProjectDone(proj)}
+                        className="shrink-0"
+                        title={done ? "Reopen project" : "Mark Delivered"}
+                      >
+                        <Pill s={proj.status} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {(sourceScope === "all" || sourceScope === "reminders") &&
+            remindersList.length > 0 && (
+              <div>
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <p className="text-xs font-semibold text-muted-foreground">
+                    Reminders &amp; alerts ({remindersList.length})
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      openCreateOnRange(todayStr, todayStr, "reminder")
+                    }
+                    className="inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                  >
+                    <Plus className="h-3 w-3" /> Add reminder
+                  </button>
+                </div>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                  {remindersList.map((rm) => {
+                    const Icon = reminderCategoryIcon(rm.category);
+                    const odoText =
+                      rm.category === "car-odo" ? formatOdoKm(rm.odoKm) : "";
+                    return (
+                      <button
+                        key={rm.id}
+                        type="button"
+                        onClick={() => openEditReminder(rm)}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-border bg-card p-2.5 text-left transition-colors hover:border-primary/45"
+                      >
+                        <div className="flex min-w-0 items-center gap-2">
+                          <Icon className="h-4 w-4 shrink-0 text-positive" />
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-semibold text-foreground">
+                              {rm.title}
+                            </p>
+                            <p className="font-num truncate text-[0.68rem] text-muted-foreground">
+                              {shortDate(rm.date)}
+                              {odoText ? ` · ODO ${odoText}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                        <span className="font-num shrink-0 text-[0.66rem] text-muted-foreground">
+                          {rm.notifyDaysBefore === 0
+                            ? "Same day"
+                            : `${rm.notifyDaysBefore}d prior`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+        </div>
+      ) : !isDesktopMd ? (
+        /* Mobile Responsive Touch Calendar + Selected Day Agenda (< 768px) */
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5">
@@ -1326,7 +1622,7 @@ export function DashboardCalendarCard({
                   setMobileMonth(next);
                   setVisibleYear(Number(next.slice(0, 4)));
                 }}
-                className="grid h-9 w-9 place-items-center rounded-full border border-border bg-secondary text-foreground active:scale-95"
+                className="grid h-9 w-9 place-items-center rounded-lg border border-border bg-secondary text-foreground active:scale-95"
               >
                 <ChevronLeft className="h-4 w-4" />
               </button>
@@ -1338,7 +1634,7 @@ export function DashboardCalendarCard({
                   setMobileMonth(next);
                   setVisibleYear(Number(next.slice(0, 4)));
                 }}
-                className="grid h-9 w-9 place-items-center rounded-full border border-border bg-secondary text-foreground active:scale-95"
+                className="grid h-9 w-9 place-items-center rounded-lg border border-border bg-secondary text-foreground active:scale-95"
               >
                 <ChevronRight className="h-4 w-4" />
               </button>
@@ -1349,7 +1645,7 @@ export function DashboardCalendarCard({
                   setVisibleYear(Number(todayStr.slice(0, 4)));
                   setSelectedMobileDate(todayStr);
                 }}
-                className="min-h-[36px] rounded-full border border-border bg-secondary px-3 text-xs font-semibold text-foreground active:scale-95"
+                className="min-h-[36px] rounded-lg border border-border bg-secondary px-3 text-xs font-semibold text-foreground active:scale-95"
               >
                 Today
               </button>
@@ -1359,8 +1655,8 @@ export function DashboardCalendarCard({
             </p>
           </div>
 
-          <div className="overflow-hidden rounded-2xl border border-border/80 bg-muted/20">
-            <div className="grid grid-cols-7 border-b border-border/70 bg-muted/35 py-2 text-center text-[0.64rem] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="overflow-hidden rounded-xl border border-border bg-muted/20">
+            <div className="grid grid-cols-7 border-b border-border bg-muted/35 py-2 text-center text-[0.64rem] font-semibold uppercase tracking-wider text-muted-foreground">
               {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((wd) => (
                 <span key={wd}>{wd}</span>
               ))}
@@ -1423,7 +1719,7 @@ export function DashboardCalendarCard({
           </div>
 
           {/* Selected Day Mobile Agenda */}
-          <div className="rounded-2xl border border-border/75 bg-muted/25 p-3">
+          <div className="rounded-xl border border-border bg-muted/25 p-3">
             <div className="mb-2.5 flex items-center justify-between gap-2">
               <div>
                 <p className="font-num text-xs font-bold text-foreground">
@@ -1448,7 +1744,7 @@ export function DashboardCalendarCard({
                       "reminder",
                     )
                   }
-                  className="inline-flex min-h-[34px] items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/15 px-2.5 text-[0.7rem] font-semibold text-emerald-300 light:text-emerald-800"
+                  className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-positive/40 bg-positive/15 px-2.5 text-[0.7rem] font-semibold text-positive"
                 >
                   <Bell className="h-3 w-3" />
                   <span>+ Alert</span>
@@ -1458,7 +1754,7 @@ export function DashboardCalendarCard({
                   onClick={() =>
                     openCreateOnRange(selectedMobileDate, selectedMobileDate)
                   }
-                  className="inline-flex min-h-[34px] items-center gap-1 rounded-full bg-primary px-3 text-[0.7rem] font-semibold text-primary-foreground"
+                  className="inline-flex min-h-[34px] items-center gap-1 rounded-lg bg-primary px-3 text-[0.7rem] font-semibold text-primary-foreground"
                 >
                   <Plus className="h-3 w-3" />
                   <span>Add</span>
@@ -1479,11 +1775,11 @@ export function DashboardCalendarCard({
                   <div
                     key={sp.id}
                     className={cn(
-                      "flex items-center justify-between gap-2 rounded-xl border px-2.5 py-2 text-xs",
+                      "flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-xs",
                       sp.kind === "kh-public"
                         ? "border-rose-500/45 bg-rose-500/15 text-rose-100 light:text-rose-900"
                         : sp.kind === "sel"
-                          ? "border-primary/45 bg-primary/15 text-amber-100 light:text-amber-900"
+                          ? "border-primary/45 bg-primary/15 text-foreground"
                           : "border-sky-500/45 bg-sky-500/15 text-sky-100 light:text-sky-900",
                     )}
                   >
@@ -1509,10 +1805,10 @@ export function DashboardCalendarCard({
                       key={rm.id}
                       type="button"
                       onClick={() => openEditReminder(rm)}
-                      className="flex w-full items-center justify-between gap-2 rounded-xl border border-emerald-500/40 bg-emerald-500/14 px-2.5 py-2 text-left text-xs text-emerald-100 light:text-emerald-900"
+                      className="flex w-full items-center justify-between gap-2 rounded-lg border border-positive/40 bg-positive/12 px-2.5 py-2 text-left text-xs text-foreground"
                     >
                       <div className="flex min-w-0 items-center gap-2">
-                        <Icon className="h-3.5 w-3.5 shrink-0" />
+                        <Icon className="h-3.5 w-3.5 shrink-0 text-positive" />
                         <div className="min-w-0">
                           <p className="truncate font-semibold">{rm.title}</p>
                           {rm.notes && (
@@ -1523,7 +1819,7 @@ export function DashboardCalendarCard({
                         </div>
                       </div>
                       {odoText && (
-                        <span className="font-num shrink-0 rounded-full bg-emerald-500/25 px-2 py-0.5 text-[0.65rem] font-bold">
+                        <span className="font-num shrink-0 rounded-md bg-positive/20 px-2 py-0.5 text-[0.65rem] font-bold text-positive">
                           {odoText}
                         </span>
                       )}
@@ -1532,13 +1828,15 @@ export function DashboardCalendarCard({
                 })}
 
                 {selectedAgenda.work.map((task) => {
-                  const done = task.status === "Completed";
+                  const stage = normalizeWorkStage(task.status);
+                  const done = stage === "Completed";
                   const proj = workTaskProjectName(task);
-                  const accent = workProjectAccent(proj);
+                  const meta = workProjectMeta(proj);
+                  const ProjIcon = meta.icon;
                   return (
                     <div
                       key={task.id}
-                      className="flex items-center gap-2 rounded-xl border border-border/80 bg-card/70 px-2.5 py-2 text-xs"
+                      className="flex items-center gap-2 rounded-lg border border-border bg-card px-2.5 py-2 text-xs"
                     >
                       <button
                         type="button"
@@ -1548,7 +1846,7 @@ export function DashboardCalendarCard({
                             ? `Reopen ${task.title || task.code}`
                             : `Complete ${task.title || task.code}`
                         }
-                        className="grid h-8 w-8 shrink-0 place-items-center rounded-full hover:bg-accent"
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg hover:bg-accent"
                       >
                         {done ? (
                           <CheckCircle2 className="h-4 w-4 text-positive" />
@@ -1570,15 +1868,13 @@ export function DashboardCalendarCard({
                           {task.title || task.code}
                         </p>
                         <p className="flex items-center gap-1.5 truncate text-[0.68rem] text-muted-foreground">
-                          {proj && (
-                            <span
-                              className="h-2 w-2 shrink-0 rounded-full"
-                              style={{ backgroundColor: accent.dot }}
-                            />
-                          )}
+                          <ProjIcon
+                            className="h-3 w-3 shrink-0"
+                            style={{ color: meta.accent.dot }}
+                          />
                           <span>
-                            {proj ? `${proj} · ` : ""}
-                            {task.status}
+                            {proj ? `${meta.shortCode} · ` : ""}
+                            {stage}
                           </span>
                         </p>
                       </button>
@@ -1592,7 +1888,7 @@ export function DashboardCalendarCard({
                   return (
                     <div
                       key={proj.id}
-                      className="flex items-center gap-2 rounded-xl border border-primary/35 bg-primary/10 px-2.5 py-2 text-xs"
+                      className="flex items-center gap-2 rounded-lg border border-primary/35 bg-primary/10 px-2.5 py-2 text-xs"
                     >
                       <button
                         type="button"
@@ -1600,7 +1896,7 @@ export function DashboardCalendarCard({
                         aria-label={
                           done ? `Reopen ${proj.name}` : `Complete ${proj.name}`
                         }
-                        className="grid h-8 w-8 shrink-0 place-items-center rounded-full hover:bg-accent"
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg hover:bg-accent"
                       >
                         {done ? (
                           <CheckCircle2 className="h-4 w-4 text-positive" />
@@ -1632,10 +1928,8 @@ export function DashboardCalendarCard({
             )}
           </div>
         </div>
-      )}
-
-      {/* Desktop Interactive FullCalendar (>= 768px) */}
-      {isDesktopMd && (
+      ) : (
+        /* Desktop Interactive FullCalendar (>= 768px) */
         <div className="project-calendar">
           <LazyFullCalendar
             initialView="dayGridMonth"
@@ -1681,7 +1975,7 @@ export function DashboardCalendarCard({
               options={[
                 { id: "work", label: "Work Task", icon: Layers3 },
                 { id: "studio", label: "Project", icon: Briefcase },
-                { id: "reminder", label: "Reminder / ODO", icon: Bell },
+                { id: "reminder", label: "Reminder", icon: Bell },
               ]}
             />
           </div>
@@ -1701,8 +1995,10 @@ export function DashboardCalendarCard({
                 const proj =
                   (workDraft.projectName || workDraft.company).trim() ||
                   "General";
+                const stage = normalizeWorkStage(workDraft.status);
                 const cleaned: WorkTask = {
                   ...workDraft,
+                  status: stage,
                   projectName: proj,
                   company: proj,
                   artworkCount: Math.max(
@@ -1710,7 +2006,7 @@ export function DashboardCalendarCard({
                     Number(workDraft.artworkCount) || 1,
                   ),
                   completedDate:
-                    workDraft.status === "Completed"
+                    stage === "Completed"
                       ? workDraft.completedDate ||
                         workDraft.dueDate ||
                         workDraft.startDate ||
@@ -1725,20 +2021,48 @@ export function DashboardCalendarCard({
                 closeDrawer();
               }}
             >
-              {/* One-tap quick status pills (fewer clicks!) */}
-              <div className="col-span-2">
-                <p className="label-mono mb-1.5">Quick status (1-tap)</p>
+              {/* 1-tap pipeline stage + concept-only toggle */}
+              <div className="col-span-2 space-y-2 rounded-xl border border-border bg-muted/35 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="label-mono">Pipeline stage (1-tap)</span>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setWorkDraft({
+                        ...workDraft,
+                        conceptOnly: !workDraft.conceptOnly,
+                      })
+                    }
+                    className={cn(
+                      "inline-flex min-h-[30px] items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[0.7rem] font-semibold transition-colors",
+                      workDraft.conceptOnly
+                        ? "border-primary bg-primary/15 text-primary"
+                        : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <Check
+                      className={cn(
+                        "h-3 w-3",
+                        workDraft.conceptOnly ? "opacity-100" : "opacity-35",
+                      )}
+                    />
+                    <span>Concept only (skip production)</span>
+                  </button>
+                </div>
                 <div className="flex flex-wrap gap-1.5">
-                  {WORK_STATUSES.map((st) => {
-                    const active = workDraft.status === st;
+                  {WORK_PIPELINE_STAGES.map((st) => {
+                    const active = normalizeWorkStage(workDraft.status) === st;
+                    const skipped =
+                      Boolean(workDraft.conceptOnly) && st === "Production";
                     return (
                       <button
                         key={st}
                         type="button"
+                        disabled={skipped}
                         onClick={() =>
                           setWorkDraft({
                             ...workDraft,
-                            status: st as WorkStatus,
+                            status: st,
                             completedDate:
                               st === "Completed"
                                 ? workDraft.completedDate || todayStr
@@ -1746,12 +2070,14 @@ export function DashboardCalendarCard({
                           })
                         }
                         className={cn(
-                          "inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all active:scale-95",
+                          "inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 text-xs font-semibold transition-all active:scale-95",
                           active
                             ? st === "Completed"
                               ? "border-positive/60 bg-positive/20 text-positive"
                               : "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                            : skipped
+                              ? "cursor-not-allowed border-border/50 bg-muted/30 text-muted-foreground/45 line-through"
+                              : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                         )}
                       >
                         {st === "Completed" && (
@@ -1786,7 +2112,7 @@ export function DashboardCalendarCard({
                       setManagingGroups((v) => !v);
                       setRenamingGroup(null);
                     }}
-                    className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/45 px-2.5 py-0.5 text-[0.68rem] font-medium text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                    className="inline-flex items-center gap-1 rounded-md border border-border bg-secondary px-2.5 py-0.5 text-[0.68rem] font-medium text-muted-foreground hover:border-primary/50 hover:text-foreground"
                   >
                     {managingGroups ? (
                       <>
@@ -1808,6 +2134,8 @@ export function DashboardCalendarCard({
                       {projectNames.map((name) => {
                         const active =
                           (workDraft.projectName || workDraft.company) === name;
+                        const meta = workProjectMeta(name);
+                        const ProjIcon = meta.icon;
                         return (
                           <button
                             key={name}
@@ -1820,13 +2148,14 @@ export function DashboardCalendarCard({
                               })
                             }
                             className={cn(
-                              "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                              "inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
                               active
                                 ? "border-primary bg-primary text-primary-foreground"
-                                : "border-border bg-muted/50 text-muted-foreground hover:text-foreground",
+                                : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                             )}
                           >
-                            {name}
+                            <ProjIcon className="h-3.5 w-3.5 shrink-0" />
+                            <span>{name}</span>
                           </button>
                         );
                       })}
@@ -1994,7 +2323,7 @@ export function DashboardCalendarCard({
 
               <div className="col-span-2">
                 <p className="label-mono mb-1.5">
-                  Brief image / PDF attachments
+                  Brief files (Image / PDF / AI / CAD or Ctrl+V)
                 </p>
                 <DesignMediaUploader
                   compact
@@ -2101,12 +2430,12 @@ export function DashboardCalendarCard({
                             })
                           }
                           className={cn(
-                            "inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all active:scale-95",
+                            "inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-all active:scale-95",
                             active
                               ? st === "Delivered" || st === "Closed"
                                 ? "border-positive/60 bg-positive/20 text-positive"
                                 : "border-primary bg-primary text-primary-foreground"
-                              : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                              : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                           )}
                         >
                           {(st === "Delivered" || st === "Closed") && (
@@ -2336,10 +2665,10 @@ export function DashboardCalendarCard({
                           })
                         }
                         className={cn(
-                          "inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all active:scale-95",
+                          "inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-all active:scale-95",
                           active
-                            ? "border-emerald-500/60 bg-emerald-500/20 text-emerald-200 light:text-emerald-900"
-                            : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                            ? "border-positive/60 bg-positive/20 text-positive"
+                            : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                         )}
                       >
                         <Icon className="h-3.5 w-3.5 shrink-0" />
@@ -2415,7 +2744,7 @@ export function DashboardCalendarCard({
                           odoKm: (reminderDraft.odoKm ?? 0) + 5000,
                         })
                       }
-                      className="font-num shrink-0 rounded-xl border border-border bg-muted/60 px-2 py-2 text-[0.7rem] font-semibold text-primary hover:border-primary/50"
+                      className="font-num shrink-0 rounded-lg border border-border bg-secondary px-2 py-2 text-[0.7rem] font-semibold text-primary hover:border-primary/50"
                     >
                       +5k
                     </button>
@@ -2432,10 +2761,10 @@ export function DashboardCalendarCard({
                       })
                     }
                     className={cn(
-                      "inline-flex min-h-[38px] w-full items-center justify-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition-colors",
+                      "inline-flex min-h-[38px] w-full items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-semibold transition-colors",
                       reminderDraft.repeatYearly
                         ? "border-primary/60 bg-primary/15 text-primary"
-                        : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                        : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                     )}
                   >
                     <Repeat className="h-3.5 w-3.5" />
@@ -2464,10 +2793,10 @@ export function DashboardCalendarCard({
                           })
                         }
                         className={cn(
-                          "font-num min-h-[32px] rounded-full border px-3 text-xs font-semibold transition-colors",
+                          "font-num min-h-[32px] rounded-lg border px-3 text-xs font-semibold transition-colors",
                           active
                             ? "border-primary bg-primary text-primary-foreground"
-                            : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                            : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                         )}
                       >
                         {days === 0 ? "Same day" : `${days}d before`}

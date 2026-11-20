@@ -34,20 +34,18 @@ export function WorkspaceBalanceCard({
     return (
       <Glass className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Briefcase className="h-3.5 w-3.5 text-primary" />
             <span className="font-semibold text-foreground">
               Work &amp; Portfolio
             </span>
-            <span className="hidden sm:inline" aria-hidden="true">
-              ·
-            </span>
-            <span className="hidden sm:inline">Design Output</span>
+            <span aria-hidden="true">·</span>
+            <span>{workTaskCount} tasks</span>
           </div>
           <div className="mt-1.5 flex flex-wrap items-baseline gap-3">
-            <p className="font-num text-3xl font-extrabold tracking-tight text-foreground sm:text-4xl">
+            <p className="font-num text-3xl font-bold tracking-tight text-foreground sm:text-4xl">
               {output.completedTotal}{" "}
-              <span className="text-base font-semibold text-muted-foreground sm:text-lg">
+              <span className="text-base font-medium text-muted-foreground">
                 completed
               </span>
             </p>
@@ -55,25 +53,21 @@ export function WorkspaceBalanceCard({
               {output.totalArtworks} artworks · {completionPct}% done
             </span>
           </div>
-          <p className="mt-1 hidden text-xs text-muted-foreground sm:block">
-            {workTaskCount} tasks ({output.workCompleted} completed,{" "}
-            {output.workActive} current)
-          </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3 sm:grid-cols-4 lg:border-l lg:border-border/70 lg:bg-transparent lg:p-0 lg:pl-6">
+        <div className="grid grid-cols-2 gap-3 border-t border-border pt-3 sm:grid-cols-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
           <Stat
-            label="Full-time done"
+            label="Completed"
             value={String(output.workCompleted)}
             tone="pos"
           />
-          <Stat label="Current" value={String(output.workActive)} />
+          <Stat label="In progress" value={String(output.workActive)} />
           <Stat
             label="Artworks"
             value={String(output.totalArtworks)}
             tone="pos"
           />
-          <Stat label="Mockups & PDFs" value={String(output.mediaCount)} />
+          <Stat label="Attachments" value={String(output.mediaCount)} />
         </div>
       </Glass>
     );
@@ -88,16 +82,14 @@ export function WorkspaceBalanceCard({
           : "text-foreground";
     return (
       <Glass className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <Wallet className="h-3.5 w-3.5 text-positive" />
-            <span className="font-semibold text-foreground">
-              Personal Balance
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-2">
+              <Wallet className="h-3.5 w-3.5 text-positive" />
+              <span className="font-semibold text-foreground">
+                Personal Balance
+              </span>
             </span>
-            <span className="hidden sm:inline" aria-hidden="true">
-              ·
-            </span>
-            <span className="hidden sm:inline">Real-time Wallet Total</span>
             <button
               type="button"
               onClick={() => setShowAmounts((value) => !value)}
@@ -106,7 +98,7 @@ export function WorkspaceBalanceCard({
               }
               aria-pressed={!showAmounts}
               title={showAmounts ? "Hide amounts" : "Show amounts"}
-              className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             >
               {showAmounts ? (
                 <Eye className="h-3.5 w-3.5" />
@@ -117,7 +109,7 @@ export function WorkspaceBalanceCard({
           </div>
           <p
             className={cn(
-              "font-num mt-1.5 text-3xl font-extrabold tracking-tight sm:text-4xl",
+              "font-num mt-1.5 text-3xl font-bold tracking-tight sm:text-4xl",
               tone,
             )}
             title={displayMoney(bal.personalBalance)}
@@ -128,26 +120,23 @@ export function WorkspaceBalanceCard({
               "••••"
             )}
           </p>
-          <p className="mt-1 hidden text-xs text-muted-foreground sm:block">
-            Personal Income minus Personal Expenses across your personal ledger
-          </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 rounded-2xl bg-muted/35 p-3 sm:grid-cols-4 lg:border-l lg:border-border/70 lg:bg-transparent lg:p-0 lg:pl-6">
+        <div className="grid grid-cols-2 gap-3 border-t border-border pt-3 sm:grid-cols-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
           <Stat
-            label="Total income"
+            label="Income"
             value={displayMoney(bal.personalInAll, true)}
             fullValue={displayMoney(bal.personalInAll)}
             tone={bal.personalInAll > 0 ? "pos" : undefined}
           />
           <Stat
-            label="Total spending"
+            label="Spending"
             value={displayMoney(bal.personalOutAll, true)}
             fullValue={displayMoney(bal.personalOutAll)}
             tone="neg"
           />
           <Stat
-            label="This month net"
+            label="Month net"
             value={
               showAmounts
                 ? compactMoney(bal.personalMonthNet, "USD", true)
@@ -168,13 +157,15 @@ export function WorkspaceBalanceCard({
   }
 
   return (
-    <Glass className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Layers className="h-3.5 w-3.5 text-primary" />
-          <span className="font-medium text-foreground">Studio Workspace</span>
-          <span aria-hidden="true">·</span>
-          <span>Real-time Current Balance (All ledger entries)</span>
+    <Glass className="mb-4 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-2">
+            <Layers className="h-3.5 w-3.5 text-primary" />
+            <span className="font-semibold text-foreground">
+              Studio Balance
+            </span>
+          </span>
           <button
             type="button"
             onClick={() => setShowAmounts((value) => !value)}
@@ -183,7 +174,7 @@ export function WorkspaceBalanceCard({
             }
             aria-pressed={!showAmounts}
             title={showAmounts ? "Hide amounts" : "Show amounts"}
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             {showAmounts ? (
               <Eye className="h-3.5 w-3.5" />
@@ -194,20 +185,16 @@ export function WorkspaceBalanceCard({
         </div>
         <p
           className={cn(
-            "font-num mt-1.5 text-3xl font-extrabold tracking-tight sm:text-4xl",
+            "font-num mt-1.5 text-3xl font-bold tracking-tight sm:text-4xl",
             bal.studioBalance >= 0 ? "text-foreground" : "text-destructive",
           )}
           title={displayMoney(bal.studioBalance)}
         >
           {showAmounts ? <AnimatedNumber value={bal.studioBalance} /> : "••••"}
         </p>
-        <p className="mt-1 hidden text-xs text-muted-foreground sm:block">
-          Paid Studio Invoices minus Studio Operating Expenses across RothVan
-          Studio
-        </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 border-t border-border/70 pt-3 sm:grid-cols-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+      <div className="grid grid-cols-2 gap-4 border-t border-border pt-3 sm:grid-cols-4 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
         <Stat
           label="Cash in"
           value={displayMoney(bal.studioInAll, true)}
@@ -225,7 +212,7 @@ export function WorkspaceBalanceCard({
           fullValue={displayMoney(bal.openAR)}
         />
         <Stat
-          label="This month net"
+          label="Month net"
           value={
             showAmounts ? compactMoney(bal.studioMonthNet, "USD", true) : "••••"
           }

@@ -2,10 +2,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   FileText,
   FolderKanban,
-  Layers3,
-  LayoutDashboard,
   Moon,
-  PiggyBank,
   ScanLine,
   Settings,
   Sun,
@@ -28,7 +25,6 @@ import {
 import { cn } from "@/lib/utils";
 
 const studioNav = [
-  { to: "/studio", label: "Overview", icon: LayoutDashboard },
   { to: "/clients", label: "Clients", icon: Users },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/invoices", label: "Invoices", icon: FileText },
@@ -353,10 +349,10 @@ function ShellInner({ children }: { children: ReactNode }) {
       onTouchEnd={handleTouchEnd}
       className="min-h-screen pb-[calc(5.75rem+env(safe-area-inset-bottom))] sm:pb-12"
     >
-      {/* Floating Frosted Mobile Header (Auto-hides on scroll down) */}
+      {/* Mobile Header (Auto-hides on scroll down) */}
       <header
         className={cn(
-          "no-print fixed inset-x-3 top-[max(0.5rem,env(safe-area-inset-top))] z-40 rounded-2xl border border-white/14 bg-[#121319]/74 px-3 py-1.5 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl backdrop-saturate-150 transition-[transform,opacity] duration-300 ease-out will-change-transform [.light_&]:border-black/10 [.light_&]:bg-[#faf8f4]/86 [.light_&]:shadow-[0_10px_28px_-12px_rgba(0,0,0,0.14),inset_0_1px_0_rgba(255,255,255,0.75)] sm:hidden",
+          "no-print fixed inset-x-3 top-[max(0.5rem,env(safe-area-inset-top))] z-40 rounded-xl border border-border bg-card/95 px-3 py-1.5 backdrop-blur-md transition-[transform,opacity] duration-200 ease-out will-change-transform sm:hidden",
           barsHidden
             ? "pointer-events-none -translate-y-[calc(100%+1.5rem)] opacity-0"
             : "translate-y-0 opacity-100",
@@ -367,7 +363,7 @@ function ShellInner({ children }: { children: ReactNode }) {
             <img
               src="/apple-touch-icon.png"
               alt="RothVan"
-              className="h-7 w-7 shrink-0 rounded-lg border border-white/15 object-cover shadow-xs"
+              className="h-6 w-6 shrink-0 rounded-md border border-border object-cover"
             />
             <span className="truncate text-[0.84rem] font-semibold tracking-tight text-foreground">
               {pageLabel}
@@ -380,7 +376,7 @@ function ShellInner({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => setLight(!light)}
               aria-label="Toggle theme"
-              className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground transition-transform duration-150 hover:bg-accent hover:text-foreground active:scale-90"
+              className="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:scale-95"
             >
               {light ? (
                 <Moon className="h-4 w-4" />
@@ -392,9 +388,9 @@ function ShellInner({ children }: { children: ReactNode }) {
               to="/settings"
               aria-label="Settings"
               className={cn(
-                "grid h-9 w-9 place-items-center rounded-full transition-transform duration-150 active:scale-90",
+                "grid h-9 w-9 place-items-center rounded-lg transition-colors active:scale-95",
                 isSettings
-                  ? "bg-primary text-primary-foreground shadow-sm"
+                  ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
             >
@@ -406,7 +402,7 @@ function ShellInner({ children }: { children: ReactNode }) {
         {isStudio && (
           <nav
             aria-label="Studio sections"
-            className="no-scrollbar mt-1 flex items-center gap-1 overflow-x-auto border-t border-white/10 pt-1 [.light_&]:border-black/10"
+            className="no-scrollbar mt-1 flex items-center gap-1 overflow-x-auto border-t border-border pt-1"
           >
             {studioNav.map((it) => {
               const Icon = it.icon;
@@ -417,9 +413,9 @@ function ShellInner({ children }: { children: ReactNode }) {
                   to={it.to}
                   aria-current={on ? "page" : undefined}
                   className={cn(
-                    "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[0.68rem] font-medium transition-[background-color,color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-sm active:scale-[0.97]",
+                    "inline-flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-2.5 text-[0.7rem] font-medium transition-colors",
                     on
-                      ? "bg-primary/20 text-primary"
+                      ? "bg-primary/15 text-primary"
                       : "text-muted-foreground hover:bg-accent hover:text-foreground",
                   )}
                 >
@@ -432,11 +428,11 @@ function ShellInner({ children }: { children: ReactNode }) {
         )}
       </header>
 
-      {/* Floating Frosted Icon-Only Bottom Dock (5 items, Settings moved to top bar) */}
+      {/* Mobile Bottom Dock (5 items, Settings in top bar) */}
       <nav
         aria-label="Mobile navigation"
         className={cn(
-          "no-print fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 mx-auto max-w-md rounded-[28px] border border-white/15 bg-[#121319]/78 px-1.5 py-1.5 shadow-[0_18px_40px_-14px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-xl backdrop-saturate-150 transition-[transform,opacity] duration-300 ease-out will-change-transform [.light_&]:border-black/10 [.light_&]:bg-[#faf8f4]/88 [.light_&]:shadow-[0_16px_36px_-14px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.8)] sm:hidden",
+          "no-print fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 mx-auto max-w-md rounded-2xl border border-border bg-card/95 px-1.5 py-1.5 backdrop-blur-md transition-[transform,opacity] duration-200 ease-out will-change-transform sm:hidden",
           barsHidden
             ? "pointer-events-none translate-y-[calc(100%+2rem)] opacity-0"
             : "translate-y-0 opacity-100",
@@ -447,10 +443,10 @@ function ShellInner({ children }: { children: ReactNode }) {
             to="/"
             aria-label="Dashboard"
             className={cn(
-              "relative flex min-h-[44px] items-center justify-center rounded-2xl transition-all duration-150 active:scale-90",
+              "relative flex min-h-[44px] items-center justify-center rounded-xl transition-colors active:scale-95",
               isDashboard
                 ? "text-primary"
-                : "text-muted-foreground/75 hover:text-foreground",
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             <NavHomeIcon active={isDashboard} />
@@ -461,10 +457,10 @@ function ShellInner({ children }: { children: ReactNode }) {
             to="/studio"
             aria-label="Studio"
             className={cn(
-              "relative flex min-h-[44px] items-center justify-center rounded-2xl transition-all duration-150 active:scale-90",
+              "relative flex min-h-[44px] items-center justify-center rounded-xl transition-colors active:scale-95",
               isStudio
                 ? "text-primary"
-                : "text-muted-foreground/75 hover:text-foreground",
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             <NavStudioIcon active={isStudio} />
@@ -476,7 +472,7 @@ function ShellInner({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => openScanner(isStudio ? "Studio" : "Personal")}
               aria-label="Scan receipt"
-              className="grid h-10 w-11 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-[0_8px_22px_-6px_var(--primary)] transition-transform duration-150 active:scale-90"
+              className="grid h-10 w-11 place-items-center rounded-xl bg-primary text-primary-foreground transition-colors hover:bg-[var(--primary-hover,var(--primary))] active:scale-95"
             >
               <ScanLine className="h-[18px] w-[18px]" strokeWidth={2.2} />
             </button>
@@ -486,10 +482,10 @@ function ShellInner({ children }: { children: ReactNode }) {
             to="/personal"
             aria-label="Personal"
             className={cn(
-              "relative flex min-h-[44px] items-center justify-center rounded-2xl transition-all duration-150 active:scale-90",
+              "relative flex min-h-[44px] items-center justify-center rounded-xl transition-colors active:scale-95",
               isPersonal
                 ? "text-primary"
-                : "text-muted-foreground/75 hover:text-foreground",
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             <NavWalletIcon active={isPersonal} />
@@ -500,10 +496,10 @@ function ShellInner({ children }: { children: ReactNode }) {
             to="/work"
             aria-label="Work"
             className={cn(
-              "relative flex min-h-[44px] items-center justify-center rounded-2xl transition-all duration-150 active:scale-90",
+              "relative flex min-h-[44px] items-center justify-center rounded-xl transition-colors active:scale-95",
               isWork
                 ? "text-primary"
-                : "text-muted-foreground/75 hover:text-foreground",
+                : "text-muted-foreground hover:text-foreground",
             )}
           >
             <NavWorkIcon active={isWork} />
@@ -512,17 +508,17 @@ function ShellInner({ children }: { children: ReactNode }) {
         </div>
       </nav>
 
-      {/* Desktop Floating Top Navigation */}
+      {/* Desktop Top Navigation (Linear 3-zone bar) */}
       <nav
         className={cn(
-          "no-print fixed left-1/2 top-4 z-40 hidden w-[min(calc(100vw-2rem),84rem)] -translate-x-1/2 will-change-transform transition-[transform,opacity] duration-300 ease-out sm:block",
+          "no-print fixed left-1/2 top-3 z-40 hidden w-[min(calc(100vw-2rem),78rem)] -translate-x-1/2 will-change-transform transition-[transform,opacity] duration-200 ease-out sm:block",
           barsHidden
             ? "pointer-events-none -translate-y-24 opacity-0"
             : "translate-y-0 opacity-100",
         )}
       >
-        <div className="glass-strong flex items-center justify-between gap-2.5 rounded-full border border-white/12 bg-[#17181d]/78 p-2 shadow-[0_16px_44px_-20px_rgba(0,0,0,0.7)] backdrop-blur-2xl backdrop-saturate-150 transition-[background-color,border-color,box-shadow] duration-300 hover:border-primary/25 hover:shadow-[0_20px_52px_-20px_rgba(0,0,0,0.72)] [.light_&]:border-black/10 [.light_&]:bg-white/78">
-          {/* Top-Level Workspace Switcher: Dashboard · Studio · Personal · Work */}
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-border bg-card/95 px-2.5 py-2 backdrop-blur-md">
+          {/* Zone 1: Workspace Switcher */}
           <div className="shrink-0">
             <WorkspaceSwitcher
               activeWorkspace={activeWorkspace}
@@ -530,10 +526,10 @@ function ShellInner({ children }: { children: ReactNode }) {
             />
           </div>
 
-          {/* Context-Scoped Center Area */}
-          {isStudio ? (
-            <div className="no-scrollbar flex min-w-0 flex-1 items-center justify-center gap-1 overflow-x-auto px-2">
-              {studioNav.map((it) => {
+          {/* Zone 2: Studio Links (clean single-line links, no duplicate Overview) */}
+          <div className="no-scrollbar flex min-w-0 flex-1 items-center justify-center gap-1 overflow-x-auto px-2">
+            {isStudio ? (
+              studioNav.map((it) => {
                 const Icon = it.icon;
                 const on = active(it.to);
                 return (
@@ -542,9 +538,9 @@ function ShellInner({ children }: { children: ReactNode }) {
                     to={it.to}
                     aria-current={on ? "page" : undefined}
                     className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-[background-color,color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-sm active:scale-[0.97]",
+                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
                       on
-                        ? "bg-primary/18 text-primary"
+                        ? "bg-primary/15 text-primary"
                         : "text-muted-foreground hover:bg-accent hover:text-foreground",
                     )}
                   >
@@ -552,43 +548,25 @@ function ShellInner({ children }: { children: ReactNode }) {
                     <span>{it.label}</span>
                   </Link>
                 );
-              })}
-            </div>
-          ) : isPersonal ? (
-            <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2 text-xs">
-              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 font-medium text-primary whitespace-nowrap">
-                <PiggyBank className="h-3.5 w-3.5 shrink-0" />
-                Personal Money
+              })
+            ) : (
+              <span className="hidden truncate text-xs text-muted-foreground lg:inline">
+                {isPersonal
+                  ? "Income, daily spending, cards & saving goals"
+                  : isWork
+                    ? "DBG, Connexion, OCIC & SDBPP tasks & pipeline"
+                    : "RothVan Ledger · Unified workspace"}
               </span>
-              <span className="hidden truncate text-muted-foreground lg:inline">
-                Income, daily spending, bank cards &amp; saving goals
-              </span>
-            </div>
-          ) : isWork ? (
-            <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2 text-xs">
-              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-primary/15 px-3 py-1 font-medium text-primary whitespace-nowrap">
-                <Layers3 className="h-3.5 w-3.5 shrink-0" />
-                Work &amp; Portfolio
-              </span>
-              <span className="hidden truncate text-muted-foreground lg:inline">
-                DBG, Connexion &amp; OCIC tasks, mockups &amp; portfolio summary
-              </span>
-            </div>
-          ) : (
-            <div className="flex min-w-0 flex-1 items-center justify-center gap-2 px-2 text-xs">
-              <span className="hidden truncate text-muted-foreground lg:inline">
-                Studio, Personal &amp; Work overview · On-device AI scanner
-              </span>
-            </div>
-          )}
+            )}
+          </div>
 
-          {/* Quick Scan, Install, Theme & Settings (Desktop) */}
-          <div className="flex shrink-0 items-center gap-1">
+          {/* Zone 3: Primary Action + Theme & Settings */}
+          <div className="flex shrink-0 items-center gap-1.5">
             <PWAInstallButton />
             <button
               type="button"
               onClick={() => openScanner(isStudio ? "Studio" : "Personal")}
-              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-primary/40 bg-primary/15 px-3 py-2 text-xs font-semibold text-primary transition-all hover:bg-primary hover:text-primary-foreground active:scale-95"
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground transition-colors hover:bg-[var(--primary-hover,var(--primary))] active:scale-95"
             >
               <ScanLine className="h-3.5 w-3.5 shrink-0" />
               <span className="hidden md:inline">Scan Slip</span>
@@ -597,7 +575,7 @@ function ShellInner({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => setLight(!light)}
               aria-label="Toggle theme"
-              className="rounded-full p-2.5 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               {light ? (
                 <Moon className="h-4 w-4" />
@@ -609,10 +587,10 @@ function ShellInner({ children }: { children: ReactNode }) {
               to="/settings"
               aria-label="Settings"
               className={cn(
-                "rounded-full p-2.5 transition-colors hover:bg-accent",
+                "grid h-8 w-8 place-items-center rounded-lg transition-colors hover:bg-accent",
                 active("/settings")
                   ? "bg-primary text-primary-foreground"
-                  : "text-muted-foreground",
+                  : "text-muted-foreground hover:text-foreground",
               )}
             >
               <Settings className="h-4 w-4" />
@@ -624,7 +602,7 @@ function ShellInner({ children }: { children: ReactNode }) {
       <main
         key={path}
         className={cn(
-          "page-enter mx-auto max-w-6xl px-3 sm:px-4 sm:pt-24",
+          "page-enter mx-auto max-w-6xl px-3 sm:px-4 sm:pt-20",
           isStudio ? "pt-[6.1rem]" : "pt-[4.25rem]",
         )}
       >

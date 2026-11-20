@@ -2,8 +2,10 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
+  ArrowRight,
   Briefcase,
   CalendarDays,
+  Check,
   CheckCircle2,
   Circle,
   FileSpreadsheet,
@@ -45,7 +47,7 @@ import {
 } from "@/components/rv/PortfolioShowcase";
 import { WorkTasksCalendar } from "@/components/rv/WorkTasksCalendar";
 import {
-  workProjectAccent,
+  workProjectMeta,
   workTaskProjectName,
 } from "@/components/rv/workProjectColors";
 import { WorkspaceBalanceCard } from "@/components/rv/WorkspaceBalanceCard";
@@ -53,10 +55,12 @@ import { deleteMediaBlob, processDesignMediaFile } from "@/lib/media-store";
 import {
   DEFAULT_WORK_PROJECTS,
   DESIGN_TYPES,
-  WORK_STATUSES,
+  WORK_PIPELINE_STAGES,
   autoBuildCaseStudy,
   caseStudyKey,
   designOutputSummary,
+  nextWorkStage,
+  normalizeWorkStage,
   saveCaseStudy,
   setDB,
   shortDate,
@@ -65,7 +69,7 @@ import {
   useDB,
   type DesignMedia,
   type ShowcaseWorkItem,
-  type WorkStatus,
+  type WorkPipelineStage,
   type WorkTask,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -97,13 +101,15 @@ type TasksViewMode = "list" | "projects" | "calendar";
 type OutputSourceFilter = "all" | "work" | "studio";
 type OutputStatusFilter = "all" | "completed" | "active";
 
-function normalizeWorkStatus(raw: string): WorkStatus {
+function normalizeWorkStatus(raw: string): WorkPipelineStage {
   const s = raw.trim().toLowerCase();
   if (/done|complete|finished|closed|shipped|delivered/.test(s))
     return "Completed";
-  if (/review|qa|check|feedback|pending/.test(s)) return "In review";
-  if (/backlog|hold|later|planned|todo/.test(s)) return "Backlog";
-  return "Current";
+  if (/prod|print|fabricat|manufactur/.test(s)) return "Production";
+  if (/approv|sign|ok/.test(s)) return "Approved";
+  if (/review|qa|check|feedback|pending/.test(s)) return "Review";
+  if (/req|backlog|hold|later|planned|todo|brief/.test(s)) return "Request";
+  return "Design";
 }
 
 function normalizeDesignType(raw: string): string {
@@ -252,7 +258,9 @@ function WorkPage() {
   // Work tasks filters
   const [query, setQuery] = useState("");
   const [projectFilter, setProjectFilter] = useState<string>("All");
-  const [statusFilter, setStatusFilter] = useState<"All" | WorkStatus>("All");
+  const [statusFilter, setStatusFilter] = useState<"All" | WorkPipelineStage>(
+    "All",
+  );
   const [typeFilter, setTypeFilter] = useState<string>("All");
   const [onlyWithMedia, setOnlyWithMedia] = useState(false);
 
@@ -290,13 +298,14 @@ function WorkPage() {
     return [...workTasks]
       .filter((t) => {
         const proj = workTaskProjectName(t);
+        const stage = normalizeWorkStage(t.status);
         if (
           projectFilter !== "All" &&
           proj.toLowerCase() !== projectFilter.toLowerCase()
         ) {
           return false;
         }
-        if (statusFilter !== "All" && t.status !== statusFilter) return false;
+        if (statusFilter !== "All" && stage !== statusFilter) return false;
         if (typeFilter !== "All" && t.designType !== typeFilter) return false;
         if (onlyWithMedia && (t.media?.length ?? 0) === 0) return false;
         if (q) {
@@ -307,15 +316,9 @@ function WorkPage() {
         return true;
       })
       .sort((a, b) => {
-        const order: Record<WorkStatus, number> = {
-          Current: 0,
-          "In review": 1,
-          Backlog: 2,
-          Completed: 3,
-        };
-        if (order[a.status] !== order[b.status]) {
-          return order[a.status] - order[b.status];
-        }
+        const aIdx = WORK_PIPELINE_STAGES.indexOf(normalizeWorkStage(a.status));
+        const bIdx = WORK_PIPELINE_STAGES.indexOf(normalizeWorkStage(b.status));
+        if (aIdx !== bIdx) return aIdx - bIdx;
         const da = a.completedDate || a.dueDate || a.startDate || "";
         const dbDate = b.completedDate || b.dueDate || b.startDate || "";
         return dbDate.localeCompare(da);
@@ -403,7 +406,7 @@ function WorkPage() {
   };
 
   const blankTask = (overrides: Partial<WorkTask> = {}): WorkTask => {
-    const status = overrides.status ?? "Current";
+    const status = normalizeWorkStage(overrides.status ?? "Design");
     const defaultProj =
       overrides.projectName ??
       (projectFilter !== "All" ? projectFilter : (projectNames[0] ?? "DBG"));
@@ -428,6 +431,7 @@ function WorkPage() {
       dueDate: due,
       completedDate:
         overrides.completedDate ?? (status === "Completed" ? today() : ""),
+      conceptOnly: false,
       notes: "",
       media: [],
       featured: false,
@@ -437,13 +441,15 @@ function WorkPage() {
 
   const saveTask = (next: WorkTask) => {
     const proj = workTaskProjectName(next);
+    const stage = normalizeWorkStage(next.status);
     const clean: WorkTask = {
       ...next,
+      status: stage,
       projectName: proj,
       company: proj,
       artworkCount: Math.max(1, Number(next.artworkCount) || 1),
       completedDate:
-        next.status === "Completed"
+        stage === "Completed"
           ? next.completedDate || today()
           : next.completedDate,
     };
@@ -465,12 +471,24 @@ function WorkPage() {
   };
 
   const toggleTaskComplete = (task: WorkTask) => {
-    const nextStatus: WorkStatus =
-      task.status === "Completed" ? "Current" : "Completed";
+    const nextStatus: WorkPipelineStage =
+      normalizeWorkStage(task.status) === "Completed" ? "Design" : "Completed";
     saveTask({
       ...task,
       status: nextStatus,
       completedDate: nextStatus === "Completed" ? today() : "",
+    });
+  };
+
+  const advanceTaskStage = (task: WorkTask) => {
+    const nextStage = nextWorkStage(task);
+    saveTask({
+      ...task,
+      status: nextStage,
+      completedDate:
+        nextStage === "Completed"
+          ? task.completedDate || today()
+          : task.completedDate,
     });
   };
 
@@ -602,11 +620,16 @@ function WorkPage() {
 
   const renderTaskRow = (t: WorkTask) => {
     const thumb = t.media.find((m) => m.kind === "image" && m.dataUrl);
-    const hasPdf = t.media.some((m) => m.kind === "pdf");
-    const done = t.status === "Completed";
+    const hasPdfOrDesign = t.media.some(
+      (m) => m.kind === "pdf" || m.kind === "design",
+    );
+    const stage = normalizeWorkStage(t.status);
+    const done = stage === "Completed";
+    const nextStage = nextWorkStage(t);
     const dateShown = (done ? t.completedDate : t.dueDate || t.startDate) ?? "";
     const proj = workTaskProjectName(t);
-    const accent = workProjectAccent(proj);
+    const meta = workProjectMeta(proj);
+    const ProjIcon = meta.icon;
 
     return (
       <li
@@ -617,10 +640,10 @@ function WorkPage() {
           <button
             type="button"
             onClick={() => toggleTaskComplete(t)}
-            title={done ? "Mark as current" : "Mark as completed"}
-            aria-label={done ? "Mark as current" : "Mark as completed"}
+            title={done ? "Reopen task" : "Mark as completed"}
+            aria-label={done ? "Reopen task" : "Mark as completed"}
             className={cn(
-              "shrink-0 rounded-full p-1 transition-colors",
+              "shrink-0 rounded-lg p-1 transition-colors",
               done
                 ? "text-positive hover:text-positive/80"
                 : "text-muted-foreground hover:text-primary",
@@ -646,7 +669,7 @@ function WorkPage() {
                     subtitle: proj || "Full-time design",
                     projectGroup: proj || "General",
                     designType: t.designType,
-                    status: t.status,
+                    status: stage,
                     completed: done,
                     date: dateShown,
                     artworkCount: t.artworkCount,
@@ -659,7 +682,7 @@ function WorkPage() {
                 setEditingTask(t);
               }
             }}
-            className="grid h-11 w-13 shrink-0 place-items-center overflow-hidden rounded-xl border border-border bg-muted/60 hover:border-primary/60"
+            className="grid h-11 w-13 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-muted/60 hover:border-primary/60"
           >
             {thumb?.dataUrl ? (
               <img
@@ -667,7 +690,7 @@ function WorkPage() {
                 alt={t.title}
                 className="h-full w-full object-cover"
               />
-            ) : hasPdf ? (
+            ) : hasPdfOrDesign ? (
               <FileText className="h-4 w-4 text-primary" />
             ) : (
               <ImageIcon className="h-4 w-4 text-muted-foreground/60" />
@@ -684,12 +707,12 @@ function WorkPage() {
                 {t.code}
               </span>
               {proj && (
-                <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground/90">
-                  <span
-                    className="h-2 w-2 rounded-full"
-                    style={{ backgroundColor: accent.dot }}
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-foreground/90">
+                  <ProjIcon
+                    className="h-3.5 w-3.5 shrink-0"
+                    style={{ color: meta.accent.dot }}
                   />
-                  {proj}
+                  <span>{meta.shortCode}</span>
                 </span>
               )}
               <span
@@ -703,6 +726,7 @@ function WorkPage() {
             </div>
             <p className="font-num mt-0.5 truncate text-xs text-muted-foreground">
               {t.designType}
+              {t.conceptOnly ? " · Concept only" : ""}
               {t.startDate && t.dueDate && t.startDate !== t.dueDate
                 ? ` · ${shortDate(t.startDate)} → ${shortDate(t.dueDate)}`
                 : dateShown
@@ -712,16 +736,27 @@ function WorkPage() {
           </button>
         </div>
 
-        <div className="flex shrink-0 items-center gap-2.5 pl-9 sm:pl-0">
+        <div className="flex shrink-0 items-center gap-2 pl-9 sm:pl-0">
           <MediaCountBadge media={t.media} />
           <span className="font-num text-xs font-medium text-muted-foreground">
             {t.artworkCount} {t.artworkCount === 1 ? "pc" : "pcs"}
           </span>
-          <Pill s={t.status} />
+          <Pill s={stage} />
+          {!done && (
+            <button
+              type="button"
+              onClick={() => advanceTaskStage(t)}
+              title={`Advance to ${nextStage}`}
+              className="inline-flex min-h-[30px] items-center gap-1 rounded-md border border-primary/35 bg-primary/12 px-2 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+            >
+              <span className="hidden sm:inline">{nextStage}</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          )}
           <Btn
             type="button"
             onClick={() => setEditingTask(t)}
-            className="px-3 py-1 text-xs"
+            className="min-h-[32px] px-3 py-1 text-xs"
           >
             Edit
           </Btn>
@@ -756,7 +791,7 @@ function WorkPage() {
             <Btn
               type="button"
               variant="gold"
-              onClick={() => setEditingTask(blankTask({ status: "Current" }))}
+              onClick={() => setEditingTask(blankTask({ status: "Design" }))}
               className="col-span-2 w-full justify-center whitespace-nowrap sm:col-span-1 sm:w-auto sm:shrink-0"
             >
               <Plus className="h-4 w-4 shrink-0" />
@@ -810,17 +845,23 @@ function WorkPage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Glass className="p-4">
               <Stat
-                label="Current tasks"
+                label="In design"
                 value={String(
-                  filteredTasks.filter((t) => t.status === "Current").length,
+                  filteredTasks.filter(
+                    (t) => normalizeWorkStage(t.status) === "Design",
+                  ).length,
                 )}
               />
             </Glass>
             <Glass className="p-4">
               <Stat
-                label="In review"
+                label="Review & Prod"
                 value={String(
-                  filteredTasks.filter((t) => t.status === "In review").length,
+                  filteredTasks.filter((t) =>
+                    ["Review", "Approved", "Production"].includes(
+                      normalizeWorkStage(t.status),
+                    ),
+                  ).length,
                 )}
               />
             </Glass>
@@ -829,7 +870,9 @@ function WorkPage() {
                 label="Completed tasks"
                 tone="pos"
                 value={String(
-                  filteredTasks.filter((t) => t.status === "Completed").length,
+                  filteredTasks.filter(
+                    (t) => normalizeWorkStage(t.status) === "Completed",
+                  ).length,
                 )}
               />
             </Glass>
@@ -859,10 +902,10 @@ function WorkPage() {
                     type="button"
                     onClick={() => setProjectFilter("All")}
                     className={cn(
-                      "font-num inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                      "font-num inline-flex items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-medium transition-colors",
                       projectFilter === "All"
                         ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                        : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                     )}
                   >
                     <span>All ({workTasks.length})</span>
@@ -876,22 +919,23 @@ function WorkPage() {
                     ).length;
                     const active =
                       projectFilter.toLowerCase() === proj.toLowerCase();
-                    const accent = workProjectAccent(proj);
+                    const meta = workProjectMeta(proj);
+                    const ProjIcon = meta.icon;
                     return (
                       <button
                         key={proj}
                         type="button"
                         onClick={() => setProjectFilter(active ? "All" : proj)}
                         className={cn(
-                          "font-num inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                          "font-num inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors",
                           active
                             ? "border-primary bg-primary/15 text-foreground"
-                            : "border-border bg-muted/35 text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                            : "border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground",
                         )}
                       >
-                        <span
-                          className="h-2 w-2 rounded-full"
-                          style={{ backgroundColor: accent.dot }}
+                        <ProjIcon
+                          className="h-3.5 w-3.5 shrink-0"
+                          style={{ color: meta.accent.dot }}
                         />
                         <span>{proj}</span>
                         <span className="opacity-70">{count}</span>
@@ -936,7 +980,7 @@ function WorkPage() {
                     <button
                       type="button"
                       onClick={() => setNewProjectInputOpen(true)}
-                      className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary"
+                      className="inline-flex items-center gap-1 rounded-lg border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary"
                     >
                       <Plus className="h-3 w-3" />
                       <span>New project</span>
@@ -976,7 +1020,7 @@ function WorkPage() {
                     onChange={setStatusFilter}
                     options={[
                       { id: "All", label: "All" },
-                      ...WORK_STATUSES.map((s) => ({ id: s, label: s })),
+                      ...WORK_PIPELINE_STAGES.map((s) => ({ id: s, label: s })),
                     ]}
                   />
                   <div className="w-full sm:w-44">
@@ -991,7 +1035,7 @@ function WorkPage() {
                     type="button"
                     onClick={() => setOnlyWithMedia((v) => !v)}
                     className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
                       onlyWithMedia
                         ? "border-primary bg-primary/15 text-primary"
                         : "border-border text-muted-foreground hover:text-foreground",
@@ -1013,7 +1057,7 @@ function WorkPage() {
               onCreateOnRange={(startDate, dueDate) =>
                 setEditingTask(
                   blankTask({
-                    status: "Current",
+                    status: "Design",
                     startDate,
                     dueDate,
                     projectName:
@@ -1035,9 +1079,10 @@ function WorkPage() {
           ) : tasksView === "projects" ? (
             <div className="grid gap-4 lg:grid-cols-2">
               {tasksGroupedByProject.map(([projName, groupTasks]) => {
-                const accent = workProjectAccent(projName);
+                const meta = workProjectMeta(projName);
+                const ProjIcon = meta.icon;
                 const doneCount = groupTasks.filter(
-                  (t) => t.status === "Completed",
+                  (t) => normalizeWorkStage(t.status) === "Completed",
                 ).length;
                 const artworks = groupTasks.reduce(
                   (s, t) => s + Math.max(1, Number(t.artworkCount) || 1),
@@ -1052,9 +1097,9 @@ function WorkPage() {
                     <div className="mb-3 flex items-center justify-between gap-2 border-b border-border/60 pb-3">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span
-                            className="h-2.5 w-2.5 shrink-0 rounded-full"
-                            style={{ backgroundColor: accent.dot }}
+                          <ProjIcon
+                            className="h-4 w-4 shrink-0"
+                            style={{ color: meta.accent.dot }}
                           />
                           <h3 className="truncate font-display text-lg font-bold">
                             {projName}
@@ -1072,7 +1117,7 @@ function WorkPage() {
                             blankTask({
                               projectName:
                                 projName === "Unassigned" ? "" : projName,
-                              status: "Current",
+                              status: "Design",
                             }),
                           )
                         }
@@ -1131,7 +1176,7 @@ function WorkPage() {
                       type="button"
                       variant="gold"
                       onClick={() =>
-                        setEditingTask(blankTask({ status: "Current" }))
+                        setEditingTask(blankTask({ status: "Design" }))
                       }
                       className="text-xs"
                     >
@@ -1276,7 +1321,7 @@ function WorkPage() {
                   type="button"
                   onClick={() => setOutMediaOnly((v) => !v)}
                   className={cn(
-                    "inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 text-xs font-medium transition-colors",
+                    "inline-flex h-9 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-xs font-medium transition-colors",
                     outMediaOnly
                       ? "border-primary bg-primary/15 text-primary"
                       : "border-border text-muted-foreground hover:text-foreground",
@@ -1326,6 +1371,7 @@ function WorkPage() {
         }}
         onPreviewMedia={(draft, m) => {
           const proj = workTaskProjectName(draft);
+          const stg = normalizeWorkStage(draft.status);
           setLightboxState({
             item: {
               id: draft.id,
@@ -1335,8 +1381,8 @@ function WorkPage() {
               subtitle: proj || "Full-time design",
               projectGroup: proj || "General",
               designType: draft.designType,
-              status: draft.status,
-              completed: draft.status === "Completed",
+              status: stg,
+              completed: stg === "Completed",
               date:
                 draft.completedDate || draft.dueDate || draft.startDate || "",
               artworkCount: draft.artworkCount,
@@ -1359,7 +1405,7 @@ function WorkPage() {
       >
         {studioMediaDraft && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3 rounded-2xl border border-border bg-muted/40 px-3.5 py-2.5">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 px-3.5 py-2.5">
               <div>
                 <p className="text-xs font-semibold text-foreground">
                   Highlight in Portfolio Summary
@@ -1376,10 +1422,10 @@ function WorkPage() {
                   )
                 }
                 className={cn(
-                  "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                  "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
                   studioMediaDraft.featured
                     ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border bg-background/50 text-muted-foreground hover:text-foreground",
+                    : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                 )}
               >
                 <Star
@@ -1503,7 +1549,7 @@ function WorkPage() {
       <input
         ref={caseStudyFilesInputRef}
         type="file"
-        accept=".png,.jpg,.jpeg,.webp,.gif,.svg,.pdf,image/*,application/pdf"
+        accept=".png,.jpg,.jpeg,.webp,.gif,.svg,.pdf,.ai,.cad,.dwg,.dxf,.eps,image/*,application/pdf"
         multiple
         className="hidden"
         onChange={(e) => {
@@ -1635,7 +1681,8 @@ function WorkTaskDrawer({
               {projectNames.map((proj) => {
                 const selected =
                   activeProj.toLowerCase() === proj.toLowerCase();
-                const accent = workProjectAccent(proj);
+                const meta = workProjectMeta(proj);
+                const ProjIcon = meta.icon;
                 return (
                   <button
                     key={proj}
@@ -1648,16 +1695,16 @@ function WorkTaskDrawer({
                       )
                     }
                     className={cn(
-                      "inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors",
+                      "inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
                       selected
                         ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                        : "border-border bg-muted/45 text-muted-foreground hover:border-primary/45 hover:text-foreground",
+                        : "border-border bg-secondary text-muted-foreground hover:border-primary/45 hover:text-foreground",
                     )}
                   >
-                    <span
-                      className="h-2 w-2 rounded-full"
+                    <ProjIcon
+                      className="h-3.5 w-3.5 shrink-0"
                       style={{
-                        backgroundColor: selected ? "currentColor" : accent.dot,
+                        color: selected ? "currentColor" : meta.accent.dot,
                       }}
                     />
                     <span>{proj}</span>
@@ -1679,14 +1726,37 @@ function WorkTaskDrawer({
           </div>
         </F>
 
-        <F label="Status" className="col-span-2">
-          <div className="grid grid-cols-2 gap-1.5 sm:flex sm:flex-wrap">
-            {WORK_STATUSES.map((st) => {
-              const active = draft.status === st;
+        <div className="col-span-2 space-y-2 rounded-xl border border-border bg-muted/35 p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="label-mono">1-tap pipeline stage</span>
+            <button
+              type="button"
+              onClick={() => setField("conceptOnly", !draft.conceptOnly)}
+              className={cn(
+                "inline-flex min-h-[30px] items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[0.7rem] font-semibold transition-colors",
+                draft.conceptOnly
+                  ? "border-primary bg-primary/15 text-primary"
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Check
+                className={cn(
+                  "h-3 w-3",
+                  draft.conceptOnly ? "opacity-100" : "opacity-35",
+                )}
+              />
+              <span>Concept only (skip production)</span>
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {WORK_PIPELINE_STAGES.map((st) => {
+              const active = normalizeWorkStage(draft.status) === st;
+              const skipped = Boolean(draft.conceptOnly) && st === "Production";
               return (
                 <button
                   key={st}
                   type="button"
+                  disabled={skipped}
                   onClick={() =>
                     setDraft((prev) =>
                       prev
@@ -1702,18 +1772,25 @@ function WorkTaskDrawer({
                     )
                   }
                   className={cn(
-                    "rounded-xl border px-3 py-2 text-xs font-medium transition-colors",
+                    "inline-flex min-h-[34px] items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors",
                     active
-                      ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                      : "border-border bg-muted/45 text-muted-foreground hover:border-primary/45 hover:text-foreground",
+                      ? st === "Completed"
+                        ? "border-positive/60 bg-positive/20 text-positive"
+                        : "border-primary bg-primary text-primary-foreground shadow-sm"
+                      : skipped
+                        ? "cursor-not-allowed border-border/50 bg-muted/30 text-muted-foreground/45 line-through"
+                        : "border-border bg-secondary text-muted-foreground hover:border-primary/45 hover:text-foreground",
                   )}
                 >
-                  {st}
+                  {st === "Completed" && (
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                  )}
+                  <span>{st}</span>
                 </button>
               );
             })}
           </div>
-        </F>
+        </div>
 
         <F label="Design type" className="col-span-2">
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
@@ -1725,10 +1802,10 @@ function WorkTaskDrawer({
                   type="button"
                   onClick={() => setField("designType", dt)}
                   className={cn(
-                    "truncate rounded-xl border px-2.5 py-2 text-left text-xs font-medium transition-colors",
+                    "truncate rounded-lg border px-2.5 py-2 text-left text-xs font-medium transition-colors",
                     active
                       ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                      : "border-border bg-muted/45 text-muted-foreground hover:border-primary/45 hover:text-foreground",
+                      : "border-border bg-secondary text-muted-foreground hover:border-primary/45 hover:text-foreground",
                   )}
                 >
                   {dt}
@@ -1749,7 +1826,7 @@ function WorkTaskDrawer({
 
         <F
           label={
-            draft.status === "Completed"
+            normalizeWorkStage(draft.status) === "Completed"
               ? "Completed date"
               : "Due / end date (calendar)"
           }
@@ -1759,11 +1836,15 @@ function WorkTaskDrawer({
             type="date"
             className="field font-num"
             value={
-              draft.status === "Completed" ? draft.completedDate : draft.dueDate
+              normalizeWorkStage(draft.status) === "Completed"
+                ? draft.completedDate
+                : draft.dueDate
             }
             onChange={(e) =>
               setField(
-                draft.status === "Completed" ? "completedDate" : "dueDate",
+                normalizeWorkStage(draft.status) === "Completed"
+                  ? "completedDate"
+                  : "dueDate",
                 e.target.value,
               )
             }
@@ -1790,7 +1871,7 @@ function WorkTaskDrawer({
           />
         </F>
 
-        <div className="col-span-2 flex items-center justify-between gap-3 rounded-2xl border border-border bg-muted/35 px-3.5 py-2.5">
+        <div className="col-span-2 flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/35 px-3.5 py-2.5">
           <div>
             <p className="text-xs font-semibold text-foreground">
               Feature in Portfolio Summary
@@ -1803,10 +1884,10 @@ function WorkTaskDrawer({
             type="button"
             onClick={() => setField("featured", !draft.featured)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+              "inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
               draft.featured
                 ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-background/50 text-muted-foreground hover:text-foreground",
+                : "border-border bg-secondary text-muted-foreground hover:text-foreground",
             )}
           >
             <Star
@@ -1827,7 +1908,9 @@ function WorkTaskDrawer({
         </F>
 
         <div className="col-span-2 space-y-1.5">
-          <span className="label-mono">Design mockups &amp; PDFs</span>
+          <span className="label-mono">
+            Design mockups &amp; files (PNG / JPEG / PDF / AI / CAD or Ctrl+V)
+          </span>
           <DesignMediaUploader
             media={draft.media}
             onChange={(media) => setField("media", media)}
@@ -1917,7 +2000,7 @@ function BulkImportDrawer({
           . Only Title is required.
         </p>
 
-        <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-border bg-secondary px-4 py-2 text-xs font-medium hover:bg-accent">
+        <label className="inline-flex cursor-pointer items-center gap-2 rounded-lg border border-border bg-secondary px-4 py-2 text-xs font-medium hover:bg-accent">
           <Upload className="h-3.5 w-3.5" />
           <span>Choose .csv file</span>
           <input

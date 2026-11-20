@@ -71,6 +71,7 @@ import {
   addDays,
   compactMoney,
   documentKind,
+  getProjectHealth,
   projectDeleteBlocker,
   inferStudioDesignType,
   invoiceView,
@@ -85,6 +86,8 @@ import {
   updateProject,
   useDB,
   type Project,
+  type ProjectHealth,
+  type ProjectHealthStatus,
   type ShowcaseWorkItem,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -303,6 +306,9 @@ function Page() {
   const nav = useNavigate();
   const [view, setView] = useState<ViewMode>("board");
   const [f, setF] = useState("All");
+  const [healthFilter, setHealthFilter] = useState<"all" | ProjectHealthStatus>(
+    "all",
+  );
   const [boardConfigs, setBoardConfigs] =
     useState<Record<string, BoardConfig>>(loadBoardConfigs);
   const [boardsPanelOpen, setBoardsPanelOpen] = useState(false);
@@ -406,7 +412,39 @@ function Page() {
   ];
 
   const t = today();
-  const rows = db.projects.filter((p) => f === "All" || p.status === f);
+  const projectHealthMap = useMemo(() => {
+    const map = new Map<string, ProjectHealth>();
+    for (const p of db.projects) {
+      map.set(p.id, getProjectHealth(p, t));
+    }
+    return map;
+  }, [db.projects, t]);
+
+  const healthCounts = useMemo(() => {
+    let healthy = 0;
+    let atRisk = 0;
+    let delayed = 0;
+    for (const h of projectHealthMap.values()) {
+      if (h.status === "healthy") healthy += 1;
+      else if (h.status === "at-risk") atRisk += 1;
+      else delayed += 1;
+    }
+    return {
+      all: db.projects.length,
+      healthy,
+      "at-risk": atRisk,
+      delayed,
+    };
+  }, [projectHealthMap, db.projects.length]);
+
+  const rows = db.projects.filter((p) => {
+    if (f !== "All" && p.status !== f) return false;
+    if (healthFilter !== "all") {
+      const h = projectHealthMap.get(p.id);
+      if (h?.status !== healthFilter) return false;
+    }
+    return true;
+  });
   const visibleListRows = showAllList ? rows : rows.slice(0, LIST_LIMIT);
 
   const cost = (p: Project) =>
@@ -639,8 +677,8 @@ function Page() {
         defaultSpan: 12,
         render: () => (
           <div>
-            {/* View Switcher & Board Visibility/Customization */}
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            {/* View Switcher, Health Filter & Board Visibility/Customization */}
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2.5">
               <SlidingTabs
                 layoutGroup="projects-view-tabs"
                 value={view}
@@ -652,23 +690,104 @@ function Page() {
                   { id: "list", label: "List", icon: List },
                 ]}
               />
-              {view === "board" && (
-                <button
-                  type="button"
-                  onClick={() => setBoardsPanelOpen((s) => !s)}
-                  className={cn(
-                    "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors",
-                    boardsPanelOpen
-                      ? "border-primary bg-primary/15 text-primary"
-                      : "border-border text-muted-foreground hover:bg-accent hover:text-foreground",
-                  )}
-                >
-                  <SlidersHorizontal className="h-3.5 w-3.5" />
-                  <span>
-                    Boards ({boardColumns.length}/{PROJECT_STATUSES.length})
-                  </span>
-                </button>
-              )}
+
+              <div className="flex flex-wrap items-center justify-end gap-1.5">
+                {(view === "board" || view === "list") && (
+                  <div className="flex flex-wrap items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHealthFilter("all");
+                        setShowAllList(false);
+                      }}
+                      className={cn(
+                        "font-num inline-flex min-h-[32px] items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                        healthFilter === "all"
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <span>All</span>
+                      <span>{healthCounts.all}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHealthFilter(
+                          healthFilter === "healthy" ? "all" : "healthy",
+                        );
+                        setShowAllList(false);
+                      }}
+                      className={cn(
+                        "font-num inline-flex min-h-[32px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                        healthFilter === "healthy"
+                          ? "border-positive/55 bg-positive/20 text-positive"
+                          : "border-border bg-secondary text-muted-foreground hover:border-positive/40 hover:text-positive",
+                      )}
+                    >
+                      <span className="h-2 w-2 rounded-full bg-positive" />
+                      <span>Healthy</span>
+                      <span>{healthCounts.healthy}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHealthFilter(
+                          healthFilter === "at-risk" ? "all" : "at-risk",
+                        );
+                        setShowAllList(false);
+                      }}
+                      className={cn(
+                        "font-num inline-flex min-h-[32px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                        healthFilter === "at-risk"
+                          ? "border-warning/55 bg-warning/20 text-warning"
+                          : "border-border bg-secondary text-muted-foreground hover:border-warning/40 hover:text-warning",
+                      )}
+                    >
+                      <span className="h-2 w-2 rounded-full bg-warning" />
+                      <span>At risk</span>
+                      <span>{healthCounts["at-risk"]}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHealthFilter(
+                          healthFilter === "delayed" ? "all" : "delayed",
+                        );
+                        setShowAllList(false);
+                      }}
+                      className={cn(
+                        "font-num inline-flex min-h-[32px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                        healthFilter === "delayed"
+                          ? "border-destructive/55 bg-destructive/20 text-destructive"
+                          : "border-border bg-secondary text-muted-foreground hover:border-destructive/40 hover:text-destructive",
+                      )}
+                    >
+                      <span className="h-2 w-2 rounded-full bg-destructive" />
+                      <span>Delayed</span>
+                      <span>{healthCounts.delayed}</span>
+                    </button>
+                  </div>
+                )}
+
+                {view === "board" && (
+                  <button
+                    type="button"
+                    onClick={() => setBoardsPanelOpen((s) => !s)}
+                    className={cn(
+                      "inline-flex min-h-[32px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1 text-xs font-medium transition-colors",
+                      boardsPanelOpen
+                        ? "border-primary bg-primary/15 text-primary"
+                        : "border-border bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground",
+                    )}
+                  >
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    <span>
+                      Boards ({boardColumns.length}/{PROJECT_STATUSES.length})
+                    </span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {view === "board" && boardsPanelOpen && (
@@ -865,9 +984,15 @@ function Page() {
                     }
                   >
                     {boardColumns.map((status) => {
-                      const colProjects = db.projects.filter(
-                        (p) => p.status === status,
-                      );
+                      const colProjects = db.projects.filter((p) => {
+                        if (p.status !== status) return false;
+                        if (healthFilter !== "all") {
+                          return (
+                            projectHealthMap.get(p.id)?.status === healthFilter
+                          );
+                        }
+                        return true;
+                      });
                       const isColExpanded = Boolean(expandedCols[status]);
                       const visibleColProjects = isColExpanded
                         ? colProjects
@@ -909,16 +1034,16 @@ function Page() {
                           onAdd={() => setEdit(blank({ status }))}
                         >
                           {colProjects.length === 0 ? (
-                            <p className="rounded-xl border border-dashed border-border/70 py-6 text-center text-xs text-muted-foreground">
+                            <p className="rounded-lg border border-dashed border-border/70 py-6 text-center text-xs text-muted-foreground">
                               Drop project here
                             </p>
                           ) : (
                             <>
                               {visibleColProjects.map((p) => {
                                 const billing = projectBilling(p);
-                                const late =
-                                  p.status === "In production" &&
-                                  Boolean(p.due && p.due < t);
+                                const health =
+                                  projectHealthMap.get(p.id) ??
+                                  getProjectHealth(p, t);
                                 return (
                                   <BoardCard
                                     key={p.id}
@@ -930,7 +1055,7 @@ function Page() {
                                     }
                                     docsCount={billing.docs.length}
                                     paidUSD={billing.paid}
-                                    late={late}
+                                    health={health}
                                     onOpen={() => setEdit(p)}
                                   />
                                 );
@@ -1155,10 +1280,10 @@ function Page() {
                         setShowAllList(false);
                       }}
                       className={cn(
-                        "rounded-full border border-border px-3 py-1 text-xs",
+                        "rounded-lg border border-border px-3 py-1 text-xs font-medium transition-colors",
                         f === x
-                          ? "bg-primary text-primary-foreground"
-                          : "hover:bg-accent",
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "bg-secondary text-muted-foreground hover:bg-accent hover:text-foreground",
                       )}
                     >
                       {x}
@@ -1175,9 +1300,8 @@ function Page() {
                       {visibleListRows.map((p, k) => {
                         const c = cost(p);
                         const billing = projectBilling(p);
-                        const late =
-                          p.status === "In production" &&
-                          Boolean(p.due && p.due < t);
+                        const health =
+                          projectHealthMap.get(p.id) ?? getProjectHealth(p, t);
                         return (
                           <li
                             key={p.id}
@@ -1188,26 +1312,31 @@ function Page() {
                           >
                             <button
                               onClick={() => setEdit(p)}
-                              className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left hover:bg-muted"
+                              className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-2 py-3 text-left hover:bg-muted"
                             >
                               <div className="min-w-0">
-                                <p className="truncate font-medium">
-                                  {p.name || "Untitled"}{" "}
-                                  <span className="font-num text-xs text-muted-foreground">
-                                    {p.code}
-                                  </span>
-                                </p>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="truncate font-medium">
+                                    {p.name || "Untitled"}{" "}
+                                    <span className="font-num text-xs text-muted-foreground">
+                                      {p.code}
+                                    </span>
+                                  </p>
+                                  <Pill s={health.label} />
+                                </div>
                                 <p
                                   className={cn(
-                                    "truncate text-xs text-muted-foreground",
-                                    late && "text-destructive",
+                                    "mt-0.5 truncate text-xs text-muted-foreground",
+                                    health.status === "delayed" &&
+                                      "text-destructive",
+                                    health.status === "at-risk" &&
+                                      "text-warning",
                                   )}
                                 >
                                   {db.clients.find((x) => x.id === p.clientId)
                                     ?.name ?? "No client"}{" "}
                                   · {p.start ? `${shortDate(p.start)} → ` : ""}
-                                  due {shortDate(p.due)}
-                                  {late && " · late"}
+                                  due {shortDate(p.due)} · {health.reason}
                                   {billing.docs.length > 0 &&
                                     ` · ${billing.docs.length} docs`}
                                 </p>
@@ -1289,6 +1418,9 @@ function Page() {
       calendarEvents,
       unscheduledProjects,
       f,
+      healthFilter,
+      healthCounts,
+      projectHealthMap,
       rows,
       visibleListRows,
       showAllList,
@@ -1519,7 +1651,7 @@ function BoardColumn({
         borderColor: isOver ? color.dot : color.colBorder,
       }}
       className={cn(
-        "glass flex min-h-72 flex-col rounded-3xl p-3.5 transition-colors",
+        "glass flex min-h-72 flex-col rounded-xl p-3.5 transition-colors",
         fitGrid ? "w-full min-w-0" : "w-[275px] min-w-[275px] shrink-0",
         isOver && "bg-primary/10",
       )}
@@ -1527,7 +1659,7 @@ function BoardColumn({
       <div className="mb-3 flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <span
-            className="inline-flex max-w-[175px] items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wider"
+            className="inline-flex max-w-[175px] items-center gap-1.5 rounded-md border px-2.5 py-0.5 text-[0.7rem] font-semibold uppercase tracking-wider"
             style={{
               backgroundColor: color.headerBg,
               borderColor: color.headerBorder,
@@ -1549,7 +1681,7 @@ function BoardColumn({
             type="button"
             onClick={onToggleEditMeta}
             className={cn(
-              "rounded-full p-1.5 transition-colors",
+              "rounded-md p-1.5 transition-colors",
               isEditingMeta
                 ? "bg-primary/20 text-primary"
                 : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -1562,7 +1694,7 @@ function BoardColumn({
           <button
             type="button"
             onClick={onHide}
-            className="rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
             title="Hide this board"
             aria-label={`Hide ${title || status} board`}
           >
@@ -1571,7 +1703,7 @@ function BoardColumn({
           <button
             type="button"
             onClick={onAdd}
-            className="rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
             title={`Add project in ${title || status}`}
             aria-label={`Add project in ${title || status}`}
           >
@@ -1581,7 +1713,7 @@ function BoardColumn({
       </div>
 
       {isEditingMeta && (
-        <div className="mb-3 space-y-2 rounded-2xl border border-border bg-background/70 p-2.5 text-xs">
+        <div className="mb-3 space-y-2 rounded-xl border border-border bg-background/70 p-2.5 text-xs">
           <input
             className="field h-8 text-xs font-medium"
             value={title}
@@ -1617,7 +1749,7 @@ function BoardColumn({
             <button
               type="button"
               onClick={onToggleEditMeta}
-              className="rounded-full px-2 py-0.5 text-[0.68rem] font-medium text-primary hover:bg-primary/15"
+              className="rounded-md px-2 py-0.5 text-[0.68rem] font-medium text-primary hover:bg-primary/15"
             >
               Done
             </button>
@@ -1635,14 +1767,14 @@ function BoardCard({
   clientName,
   docsCount,
   paidUSD,
-  late,
+  health,
   onOpen,
 }: {
   project: Project;
   clientName: string;
   docsCount: number;
   paidUSD: number;
-  late: boolean;
+  health: ProjectHealth;
   onOpen: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
@@ -1666,16 +1798,19 @@ function BoardCard({
         }
       }}
       className={cn(
-        "group cursor-grab touch-none rounded-2xl border border-border bg-muted/60 p-3.5 text-left transition-all hover:border-primary/50 hover:bg-muted active:cursor-grabbing",
+        "group cursor-grab touch-none rounded-xl border border-border bg-muted/60 p-3 text-left transition-all hover:border-primary/50 hover:bg-muted active:cursor-grabbing",
         isDragging && "opacity-40",
       )}
     >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="font-num text-[0.68rem] text-muted-foreground">
-            {project.code}
-          </p>
-          <p className="mt-0.5 break-words text-sm font-semibold leading-snug">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-num text-[0.68rem] text-muted-foreground">
+              {project.code}
+            </span>
+            <Pill s={health.label} />
+          </div>
+          <p className="mt-1 break-words text-sm font-semibold leading-snug">
             {project.name || "Untitled"}
           </p>
           <p className="mt-0.5 break-words text-xs leading-relaxed text-muted-foreground">
@@ -1689,13 +1824,14 @@ function BoardCard({
       <div className="mt-2.5 flex w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 border-t border-border/60 pt-2 text-xs">
         <span
           className={cn(
-            "text-muted-foreground",
-            late && "font-medium text-destructive",
+            "font-num text-muted-foreground",
+            health.status === "delayed" && "font-medium text-destructive",
+            health.status === "at-risk" && "font-medium text-warning",
           )}
         >
           {project.due
-            ? `Due ${shortDate(project.due)}${late ? " · late" : ""}`
-            : "No dates"}
+            ? `Due ${shortDate(project.due)} · ${health.reason}`
+            : health.reason}
         </span>
         <span className="font-num font-medium">
           {compactMoney(project.quote)}

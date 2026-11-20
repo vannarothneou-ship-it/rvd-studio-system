@@ -48,6 +48,7 @@ import {
 } from "@/components/rv/BentoGrid";
 import { MonthPicker } from "@/components/rv/MonthPicker";
 import { MoneyFlowSankeyCard } from "@/components/rv/MoneyFlowSankey";
+import { CentralAiBrief } from "@/components/rv/CentralAiBrief";
 import {
   QuickExpenseDrawer,
   QuickIncomeDrawer,
@@ -1036,6 +1037,13 @@ function PersonalPage() {
           />
         </div>
       </div>
+
+      <CentralAiBrief
+        db={db}
+        defaultTab="pace"
+        onInspectCategory={(cat) => setInspectedCategory(cat)}
+        className="mb-4"
+      />
 
       <EditableBentoGrid
         pageKey="personal-money"

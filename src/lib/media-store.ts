@@ -192,12 +192,15 @@ export async function processDesignMediaFile(file: File): Promise<DesignMedia> {
   const name = file.name || "design-file";
   const lower = name.toLowerCase();
   const isPdf = file.type === "application/pdf" || lower.endsWith(".pdf");
+  const isDesignFile = /\.(ai|cad|dwg|dxf|eps)$/.test(lower);
   const isImage =
-    file.type.startsWith("image/") || /\.(png|jpe?g|webp|gif|svg)$/.test(lower);
+    !isDesignFile &&
+    (file.type.startsWith("image/") ||
+      /\.(png|jpe?g|webp|gif|svg)$/.test(lower));
 
-  if (!isPdf && !isImage) {
+  if (!isPdf && !isImage && !isDesignFile) {
     throw new Error(
-      `Unsupported file "${name}". Upload PNG, JPEG, WEBP, or PDF files.`,
+      `Unsupported file "${name}". Upload PNG, JPEG, WEBP, SVG, PDF, AI, CAD, DWG, DXF, or EPS files.`,
     );
   }
 
@@ -219,6 +222,21 @@ export async function processDesignMediaFile(file: File): Promise<DesignMedia> {
       size: file.size,
       // Keep small PDFs inline as fallback; large PDFs live in IndexedDB so localStorage never overflows.
       ...(file.size <= 160 * 1024 ? { dataUrl: pdfDataUrl } : {}),
+      createdAt,
+    };
+  }
+
+  if (isDesignFile) {
+    const ext = lower.split(".").pop() || "design";
+    const rawDataUrl = await readFileAsDataUrl(file);
+    await saveMediaBlob(id, rawDataUrl);
+    return {
+      id,
+      name,
+      mimeType: file.type || `application/x-${ext}`,
+      kind: "design",
+      size: file.size,
+      ...(file.size <= 160 * 1024 ? { dataUrl: rawDataUrl } : {}),
       createdAt,
     };
   }

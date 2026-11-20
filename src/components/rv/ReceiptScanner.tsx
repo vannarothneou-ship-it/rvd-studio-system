@@ -49,17 +49,18 @@ import {
   shortDate,
   today,
   uid,
+  useDB,
   type Account,
   type Currency,
   type Expense,
   type PersonalIncome,
 } from "@/lib/store";
 import {
+  learnReceiptRule,
   parseReceiptText,
   scanReceiptLocally,
   warmUpReceiptOcr,
   type ReceiptScanMode,
-  type ReceiptScanHints,
 } from "@/lib/local-receipt-ai";
 import { cn } from "@/lib/utils";
 
@@ -91,6 +92,8 @@ interface RecordedRecord {
   notes: string;
   receiptThumb: string;
   saved: boolean;
+  matchedRule?: string;
+  mathVerified?: boolean;
 }
 
 function buildDescription(rec: RecordedRecord): string {
@@ -200,6 +203,7 @@ export function ReceiptScannerDrawer({
   defaultAccount?: Account;
   onClose: () => void;
 }) {
+  const learnedRules = useDB((d) => d.learnedReceiptRules ?? []);
   const [autoRecord, setAutoRecord] = useState(true);
   const [scanMode, setScanMode] = useState<ReceiptScanMode>("auto");
   const [rotationDeg, setRotationDeg] = useState(0);
@@ -214,11 +218,13 @@ export function ReceiptScannerDrawer({
   const [editing, setEditing] = useState(false);
   const [lastFile, setLastFile] = useState<File | null>(null);
   const [rawText, setRawText] = useState("");
-  const [hints, setHints] = useState<ReceiptScanHints | null>(null);
   const [showRawText, setShowRawText] = useState(false);
+  const [showRules, setShowRules] = useState(false);
   const [scanMeta, setScanMeta] = useState<{
     angle: number;
     lang: "eng+khm" | "eng";
+    passes: 1 | 2;
+    confidencePct: number;
   } | null>(null);
   const [manualDraft, setManualDraft] = useState<Expense | null>(null);
 
@@ -294,7 +300,8 @@ export function ReceiptScannerDrawer({
       setPreviewUrl(quickUrl);
 
       try {
-        const s = getDB().settings;
+        const dbNow = getDB();
+        const s = dbNow.settings;
         const ownerNames = [s.ownerName, s.signatoryName, s.abaName].filter(
           (v) => Boolean(v && v.trim()),
         );
@@ -305,7 +312,8 @@ export function ReceiptScannerDrawer({
           rawText: detectedText,
           detectedAngleDeg,
           engineLang,
-          hints: scanHints,
+          ocrConfidence,
+          passes,
         } = await scanReceiptLocally(
           file,
           today(),
@@ -313,13 +321,25 @@ export function ReceiptScannerDrawer({
             setScanPct(pct);
             setScanStatus(status);
           },
-          { rotationDeg: nextRot, mode: nextMode, context: { ownerNames } },
+          {
+            rotationDeg: nextRot,
+            mode: nextMode,
+            context: {
+              ownerNames,
+              khrRate: s.khrRate,
+              learnedRules: dbNow.learnedReceiptRules ?? [],
+            },
+          },
         );
 
         setPreviewUrl(previewDataUrl);
         setRawText(detectedText);
-        setHints(scanHints);
-        setScanMeta({ angle: detectedAngleDeg, lang: engineLang });
+        setScanMeta({
+          angle: detectedAngleDeg,
+          lang: engineLang,
+          passes,
+          confidencePct: ocrConfidence,
+        });
 
         const nextRecord: RecordedRecord = {
           id: prevSavedId ?? uid(),
@@ -337,6 +357,8 @@ export function ReceiptScannerDrawer({
           notes: result.notes,
           receiptThumb: thumbDataUrl,
           saved: false,
+          matchedRule: result.matchedRule,
+          mathVerified: result.mathVerified,
         };
 
         if (autoRecord && nextRecord.amount > 0) {
@@ -433,38 +455,62 @@ export function ReceiptScannerDrawer({
   };
 
   const updateRecord = (patch: Partial<RecordedRecord>) => {
-    setRecord((prev) => {
-      if (!prev) return prev;
-      const next: RecordedRecord = { ...prev, ...patch, account: "Personal" };
-      if (next.txType === "income") {
-        if (
-          !PERSONAL_INCOME_SOURCES.includes(
-            next.category as (typeof PERSONAL_INCOME_SOURCES)[number],
-          )
-        ) {
-          next.category = "Other";
-        }
-      } else {
-        if (!PERSONAL_CATEGORIES.includes(next.category)) {
-          next.category = PERSONAL_CATEGORIES[0] ?? "Other";
-        }
+    if (!record) return;
+    const next: RecordedRecord = { ...record, ...patch, account: "Personal" };
+    if (next.txType === "income") {
+      if (
+        !PERSONAL_INCOME_SOURCES.includes(
+          next.category as (typeof PERSONAL_INCOME_SOURCES)[number],
+        )
+      ) {
+        next.category = "Other";
       }
-      if (next.saved) {
-        persistRecordToStore(next, prev.id);
+    } else {
+      if (!PERSONAL_CATEGORIES.includes(next.category)) {
+        next.category = PERSONAL_CATEGORIES[0] ?? "Other";
       }
-      return next;
-    });
+    }
+
+    const touchedLearning =
+      patch.txType !== undefined ||
+      patch.method !== undefined ||
+      patch.category !== undefined;
+    if (
+      touchedLearning &&
+      next.merchantOrPayer.trim().length >= 3 &&
+      next.merchantOrPayer !== "Scanned Slip"
+    ) {
+      next.matchedRule = next.merchantOrPayer.trim();
+    }
+
+    setRecord(next);
+    if (next.saved) {
+      persistRecordToStore(next, record.id);
+    }
+    if (touchedLearning) {
+      setDB((d) => ({
+        ...d,
+        learnedReceiptRules: learnReceiptRule(d.learnedReceiptRules ?? [], {
+          merchantOrPayer: next.merchantOrPayer,
+          txType: next.txType,
+          category: next.category,
+          method: next.method,
+        }),
+      }));
+    }
   };
 
   const handleReparseRaw = () => {
     if (!record) return;
-    const s = getDB().settings;
+    const dbNow = getDB();
+    const s = dbNow.settings;
     const ownerNames = [s.ownerName, s.signatoryName, s.abaName].filter((v) =>
       Boolean(v && v.trim()),
     );
     const parsed = parseReceiptText(rawText, record.date || today(), {
       ownerNames,
-      ...(hints ? { hints } : {}),
+      khrRate: s.khrRate,
+      learnedRules: dbNow.learnedReceiptRules ?? [],
     });
     const next: RecordedRecord = {
       ...record,
@@ -478,6 +524,8 @@ export function ReceiptScannerDrawer({
       category: parsed.category,
       reference: parsed.reference,
       confidence: parsed.confidence,
+      matchedRule: parsed.matchedRule,
+      mathVerified: parsed.mathVerified,
     };
     if (next.saved) {
       persistRecordToStore(next, record.id);
@@ -510,6 +558,15 @@ export function ReceiptScannerDrawer({
     }
     const savedRec: RecordedRecord = { ...record, saved: true };
     persistRecordToStore(savedRec, record.saved ? record.id : undefined);
+    setDB((d) => ({
+      ...d,
+      learnedReceiptRules: learnReceiptRule(d.learnedReceiptRules ?? [], {
+        merchantOrPayer: savedRec.merchantOrPayer,
+        txType: savedRec.txType,
+        category: savedRec.category,
+        method: savedRec.method,
+      }),
+    }));
     setRecord(savedRec);
     setEditing(false);
     toast.success("Transaction saved.");
@@ -665,14 +722,70 @@ export function ReceiptScannerDrawer({
                 </button>
               </div>
 
-              <button
-                type="button"
-                onClick={() => void handlePasteButton()}
-                className="mt-3 inline-flex min-h-[34px] items-center justify-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-              >
-                <ClipboardPaste className="h-3.5 w-3.5 text-primary" />
-                <span>Paste screenshot</span>
-              </button>
+              <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => void handlePasteButton()}
+                  className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                >
+                  <ClipboardPaste className="h-3.5 w-3.5 text-primary" />
+                  <span>Paste screenshot</span>
+                </button>
+                {learnedRules.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowRules((v) => !v)}
+                    className="font-num inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  >
+                    <Sparkles className="h-3.5 w-3.5 text-primary" />
+                    <span>Learned rules · {learnedRules.length}</span>
+                    <ChevronDown
+                      className={cn(
+                        "h-3 w-3 transition-transform",
+                        showRules && "rotate-180",
+                      )}
+                    />
+                  </button>
+                )}
+              </div>
+
+              {showRules && learnedRules.length > 0 && (
+                <div className="mt-3 max-h-44 overflow-y-auto border-t border-border/60 pt-2.5 text-left">
+                  <div className="divide-y divide-border/50">
+                    {learnedRules.map((rule) => (
+                      <div
+                        key={rule.id}
+                        className="flex items-center justify-between gap-2 py-1.5 text-xs"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-foreground">
+                            {rule.displayPattern}
+                          </p>
+                          <p className="font-num truncate text-[0.68rem] text-muted-foreground">
+                            {rule.txType === "income" ? "In" : "Out"} ·{" "}
+                            {rule.category} · {rule.method} · {rule.hits}×
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setDB((d) => ({
+                              ...d,
+                              learnedReceiptRules: (
+                                d.learnedReceiptRules ?? []
+                              ).filter((r) => r.id !== rule.id),
+                            }))
+                          }
+                          aria-label={`Delete rule ${rule.displayPattern}`}
+                          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -838,8 +951,12 @@ export function ReceiptScannerDrawer({
                     </div>
                   </div>
                   {scanMeta && (
-                    <span className="font-num rounded-full border border-border/70 bg-background/50 px-2 py-0.5 text-[0.65rem] text-muted-foreground">
-                      {scanMeta.lang === "eng+khm" ? "KH+EN" : "EN"}
+                    <span className="font-num shrink-0 text-[0.68rem] font-medium text-muted-foreground">
+                      {scanMeta.lang === "eng+khm" ? "KH+EN" : "EN"} ·{" "}
+                      {scanMeta.passes}×
+                      {scanMeta.confidencePct > 0
+                        ? ` · ${scanMeta.confidencePct}%`
+                        : ""}
                       {scanMeta.angle !== 0
                         ? ` · ${scanMeta.angle > 0 ? "+" : ""}${scanMeta.angle.toFixed(0)}°`
                         : ""}
@@ -847,7 +964,7 @@ export function ReceiptScannerDrawer({
                   )}
                 </div>
 
-                <div className="mt-2.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1 font-medium text-foreground">
                     <MethodIcon className="h-3.5 w-3.5 text-primary" />
                     {record.method}
@@ -859,6 +976,24 @@ export function ReceiptScannerDrawer({
                   </span>
                   <span aria-hidden="true">·</span>
                   <span className="font-num">{shortDate(record.date)}</span>
+                  {record.mathVerified && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="inline-flex items-center gap-1 font-medium text-positive">
+                        <Check className="h-3 w-3" />
+                        Math verified
+                      </span>
+                    </>
+                  )}
+                  {record.matchedRule && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <span className="inline-flex items-center gap-1 font-medium text-primary">
+                        <Sparkles className="h-3 w-3" />
+                        Rule: {record.matchedRule}
+                      </span>
+                    </>
+                  )}
                 </div>
 
                 <p className="mt-1.5 truncate text-sm font-semibold text-foreground">

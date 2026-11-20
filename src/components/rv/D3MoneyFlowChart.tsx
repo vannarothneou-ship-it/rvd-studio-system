@@ -163,9 +163,8 @@ export function D3MoneyFlowChart({
       const paths = sliceGroups
         .append("path")
         .attr("fill", (d) => d.data.color)
-        .attr("stroke", "var(--background)")
-        .attr("stroke-width", 2)
-        .style("filter", "drop-shadow(0 6px 14px rgba(0,0,0,0.22))");
+        .attr("stroke", "var(--card)")
+        .attr("stroke-width", 2);
 
       paths
         .transition()
@@ -636,18 +635,18 @@ export function D3MoneyFlowChart({
     <div className="space-y-3">
       <div
         ref={containerRef}
-        className="relative w-full overflow-hidden rounded-2xl border border-border/55 bg-muted/20 p-2 sm:p-3"
+        className="relative w-full overflow-hidden rounded-xl border border-border bg-muted/30 p-2 sm:p-3"
       >
         {/* Center Overlay inside D3 Donut for clean icon + figure readout */}
         {chartType === "pie" && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-            <span className="grid h-8 w-8 place-items-center rounded-full bg-card/85 text-primary shadow-xs">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-card text-primary border border-border">
               <ActiveCenterIcon
                 className="h-4 w-4"
                 style={activeSlice ? { color: activeSlice.color } : undefined}
               />
             </span>
-            <p className="font-num mt-1 text-base font-extrabold tracking-tight text-foreground sm:text-lg">
+            <p className="font-num mt-1 text-base font-bold tracking-tight text-foreground sm:text-lg">
               {activeSlice
                 ? formatCompact(activeSlice.value)
                 : formatCompact(totalSpend)}
@@ -670,7 +669,7 @@ export function D3MoneyFlowChart({
         {tooltip && (
           <div
             style={{ left: tooltip.x, top: tooltip.y }}
-            className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[112%] rounded-2xl border border-border bg-card/95 px-3 py-2 text-xs shadow-2xl backdrop-blur-xl transition-[left,top] duration-75"
+            className="pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-[112%] rounded-xl border border-border bg-popover px-3 py-2 text-xs shadow-xl transition-[left,top] duration-75"
           >
             <div className="flex items-center gap-1.5 font-semibold text-foreground">
               <TooltipCatIcon
@@ -730,10 +729,10 @@ export function D3MoneyFlowChart({
                   onSelectCategory?.(entry.account, entry.category)
                 }
                 className={cn(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-xs transition-all active:scale-95",
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors active:scale-95",
                   active
                     ? "border-primary bg-primary/15 text-foreground"
-                    : "border-border/80 bg-muted/40 text-foreground hover:border-primary/45",
+                    : "border-border bg-muted/40 text-foreground hover:border-primary/45",
                 )}
               >
                 <Icon
