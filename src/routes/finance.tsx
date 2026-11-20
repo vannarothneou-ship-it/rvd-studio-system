@@ -5,6 +5,8 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Briefcase,
+  Eye,
+  EyeOff,
   Layers,
   Plus,
   Search,
@@ -138,6 +140,7 @@ function Page() {
   const [combinedFilter, setCombinedFilter] = useState<CombinedFilter>("all");
   const [combinedQuery, setCombinedQuery] = useState("");
   const [combinedVisible, setCombinedVisible] = useState(8);
+  const [showAllPayments, setShowAllPayments] = useState(false);
   const [editingLayout, setEditingLayout] = useState(false);
   const [inspectedCategory, setInspectedCategory] = useState<string | null>(
     null,
@@ -322,7 +325,7 @@ function Page() {
       [...db.payments]
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, 8),
-    [db.payments],
+    [db.payments, showAllPayments],
   );
 
   const balances = useMemo(() => workspaceBalances(db, month), [db, month]);
@@ -724,10 +727,21 @@ function Page() {
         render: () => (
           <Glass delay={240}>
             <div className="mb-3 flex items-center justify-between">
-              <p className="label-mono">
-                Recent Studio Income ({db.payments.length} recorded invoice
-                payments)
-              </p>
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="label-mono">
+                  Recent Studio Income ({db.payments.length} recorded invoice
+                  payments)
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowAllPayments((value) => !value)}
+                  aria-label={showAllPayments ? "Show recent 8 payments" : "Show all payments"}
+                  title={showAllPayments ? "Show recent 8" : "Show all"}
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  {showAllPayments ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+              </div>
               <Link
                 to="/invoices"
                 className="text-xs text-primary hover:underline"
@@ -945,6 +959,7 @@ function Page() {
       inspectedCategory,
       studioGoals,
       recentPayments,
+      showAllPayments,
       r,
       catFilter,
       filteredExpenses,
