@@ -6,12 +6,14 @@ import {
   Download,
   Eye,
   EyeOff,
+  Info,
   Plus,
   RotateCcw,
   Upload,
 } from "lucide-react";
 import { Btn, F, Glass, PageHeader, Stat } from "@/components/rv/ui";
 import { EditModal, nextCode, upsert, type Field } from "@/components/rv/Crud";
+import { exportMediaBlobs, restoreMediaBlobs } from "@/lib/media-store";
 import {
   PILLARS,
   PRICING_UNITS,
@@ -117,57 +119,125 @@ function Page() {
       </div>
     </F>
   );
-  const exportData = () => {
-    const snapshot = getDB();
-    const blob = new Blob([JSON.stringify(snapshot, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `rothvan-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast.success("Database backup downloaded.");
+  const exportData = async () => {
+    try {
+      const snapshot = getDB();
+      const mediaIds = [
+        ...snapshot.projects.flatMap((project) => project.media ?? []),
+        ...(snapshot.workTasks ?? []).flatMap((task) => task.media ?? []),
+        ...(snapshot.reminders ?? []).flatMap(
+          (reminder) => reminder.media ?? [],
+        ),
+      ].map((media) => media.id);
+      const mediaBlobs = await exportMediaBlobs(mediaIds);
+      const backup = {
+        ...snapshot,
+        _backup: {
+          format: "rothvan-studio",
+          version: 2,
+          exportedAt: new Date().toISOString(),
+        },
+        mediaBlobs,
+      };
+      const blob = new Blob([JSON.stringify(backup)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `rothvan-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const attachmentCount = Object.keys(mediaBlobs).length;
+      const missingAttachments = new Set(mediaIds).size - attachmentCount;
+      toast.success(
+        `Backup downloaded with ${attachmentCount} original attachments.`,
+      );
+      if (missingAttachments > 0) {
+        toast.warning(
+          `${missingAttachments} original attachments were unavailable; thumbnails and records are still included.`,
+        );
+      }
+    } catch {
+      toast.error("Could not create the backup. Please try again.");
+    }
   };
 
   const importData = async (f: File) => {
     try {
-      const p = JSON.parse(await f.text());
-      if (!p || typeof p !== "object" || !p.settings) {
+      const parsed: unknown = JSON.parse(await f.text());
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error("Invalid backup file");
       }
-      const nextExpenses = Array.isArray(p.expenses) ? p.expenses : [];
-      const nextIncome = Array.isArray(p.personalIncome)
-        ? p.personalIncome
-        : [];
-      const nextWork = Array.isArray(p.workTasks) ? p.workTasks : [];
+      const p = parsed as Record<string, unknown>;
+      const isObject = (value: unknown): value is Record<string, unknown> =>
+        Boolean(value) && typeof value === "object" && !Array.isArray(value);
+      const requiredArrays = [
+        "clients",
+        "services",
+        "projects",
+        "invoices",
+        "payments",
+        "expenses",
+        "goals",
+      ];
+      if (
+        !isObject(p.settings) ||
+        requiredArrays.some((key) => !Array.isArray(p[key]))
+      ) {
+        throw new Error("Incomplete backup file");
+      }
+      if (p.mediaBlobs !== undefined && !isObject(p.mediaBlobs)) {
+        throw new Error("Invalid attachment data");
+      }
+
+      const backupMediaCount = isObject(p.mediaBlobs)
+        ? Object.keys(p.mediaBlobs).length
+        : 0;
+      const restoredMedia = isObject(p.mediaBlobs)
+        ? await restoreMediaBlobs(p.mediaBlobs)
+        : 0;
 
       setDB((prev) => ({
-        clients: Array.isArray(p.clients) ? p.clients : prev.clients,
-        services: Array.isArray(p.services) ? p.services : prev.services,
-        projects: Array.isArray(p.projects) ? p.projects : prev.projects,
-        invoices: Array.isArray(p.invoices) ? p.invoices : prev.invoices,
-        payments: Array.isArray(p.payments) ? p.payments : prev.payments,
-        expenses: nextExpenses,
-        personalIncome: nextIncome,
-        workTasks: nextWork,
-        goals: Array.isArray(p.goals) ? p.goals : prev.goals,
+        ...prev,
+        clients: p.clients as typeof prev.clients,
+        services: p.services as typeof prev.services,
+        projects: p.projects as typeof prev.projects,
+        invoices: p.invoices as typeof prev.invoices,
+        payments: p.payments as typeof prev.payments,
+        expenses: p.expenses as typeof prev.expenses,
+        personalIncome: Array.isArray(p.personalIncome)
+          ? (p.personalIncome as typeof prev.personalIncome)
+          : [],
+        workTasks: Array.isArray(p.workTasks)
+          ? (p.workTasks as typeof prev.workTasks)
+          : [],
+        reminders: Array.isArray(p.reminders)
+          ? (p.reminders as NonNullable<typeof prev.reminders>)
+          : [],
+        goals: p.goals as typeof prev.goals,
         settings: { ...prev.settings, ...p.settings },
-        categoryLimits:
-          p.categoryLimits && typeof p.categoryLimits === "object"
-            ? p.categoryLimits
-            : prev.categoryLimits,
-        caseStudies:
-          p.caseStudies && typeof p.caseStudies === "object"
-            ? p.caseStudies
-            : prev.caseStudies,
+        categoryLimits: isObject(p.categoryLimits)
+          ? (p.categoryLimits as typeof prev.categoryLimits)
+          : {},
+        caseStudies: isObject(p.caseStudies)
+          ? (p.caseStudies as typeof prev.caseStudies)
+          : {},
       }));
       toast.success(
-        `Backup restored (${nextExpenses.length} expenses, ${nextIncome.length} income, ${nextWork.length} work items).`,
+        `Backup restored. ${restoredMedia} original attachments recovered.`,
       );
-    } catch {
-      toast.error("That file isn't a valid RothVan backup.");
+      if (restoredMedia < backupMediaCount) {
+        toast.warning(
+          `${backupMediaCount - restoredMedia} attachments could not be restored in this browser.`,
+        );
+      }
+    } catch (error) {
+      toast.error(
+        error instanceof Error && error.message === "Incomplete backup file"
+          ? "This backup is missing required RothVan records."
+          : "That file isn't a valid RothVan backup.",
+      );
     }
   };
 
@@ -192,10 +262,23 @@ function Page() {
                 Database Backup &amp; Restore
               </h2>
               <p className="truncate text-xs text-muted-foreground">
-                Download a JSON copy or restore from a saved backup
+                Export and restore records, reminders and original project
+                attachments
               </p>
             </div>
           </div>
+        </div>
+
+        <div className="mb-3 flex items-start gap-2.5 rounded-xl border border-primary/20 bg-primary/5 p-3 text-xs leading-relaxed text-muted-foreground">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <p>
+            <strong className="font-semibold text-foreground">
+              Local browser storage.
+            </strong>{" "}
+            Your records are saved in this browser on this device. They do not
+            automatically sync to another device or another user. Download a
+            backup before clearing browser data or moving to a new device.
+          </p>
         </div>
 
         <div className="mb-3 grid grid-cols-2 gap-2.5 rounded-2xl bg-muted/35 p-3 sm:grid-cols-4">

@@ -71,6 +71,7 @@ import {
   addDays,
   compactMoney,
   documentKind,
+  projectDeleteBlocker,
   inferStudioDesignType,
   invoiceView,
   isInvoice,
@@ -1457,14 +1458,19 @@ function Page() {
         }}
         onDelete={
           db.projects.some((p) => p.id === edit?.id)
-            ? (v) =>
+            ? (v) => {
+                const blocker = projectDeleteBlocker(db, v.id);
+                if (blocker) {
+                  toast.error(blocker);
+                  return false;
+                }
                 setDB((d) => ({
                   ...d,
                   projects: d.projects.filter((p) => p.id !== v.id),
-                  invoices: d.invoices.map((i) =>
-                    i.projectId === v.id ? { ...i, projectId: "" } : i,
-                  ),
-                }))
+                }));
+                toast.success("Project deleted");
+                return true;
+              }
             : undefined
         }
       />

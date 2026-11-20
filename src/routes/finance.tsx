@@ -5,6 +5,8 @@ import {
   ArrowLeft,
   ArrowUpRight,
   Briefcase,
+  Eye,
+  EyeOff,
   Layers,
   Plus,
   Search,
@@ -134,10 +136,11 @@ function Page() {
   const [month, setMonth] = useState(() => today().slice(0, 7));
   const [catFilter, setCatFilter] = useState<string>("All");
   const [query, setQuery] = useState("");
-  const [visibleCount, setVisibleCount] = useState(40);
+  const [visibleCount, setVisibleCount] = useState(8);
   const [combinedFilter, setCombinedFilter] = useState<CombinedFilter>("all");
   const [combinedQuery, setCombinedQuery] = useState("");
-  const [combinedVisible, setCombinedVisible] = useState(50);
+  const [combinedVisible, setCombinedVisible] = useState(8);
+  const [showAllPayments, setShowAllPayments] = useState(false);
   const [editingLayout, setEditingLayout] = useState(false);
   const [inspectedCategory, setInspectedCategory] = useState<string | null>(
     null,
@@ -321,8 +324,8 @@ function Page() {
     () =>
       [...db.payments]
         .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, 10),
-    [db.payments],
+        .slice(0, showAllPayments ? db.payments.length : 8),
+    [db.payments, showAllPayments],
   );
 
   const balances = useMemo(() => workspaceBalances(db, month), [db, month]);
@@ -444,7 +447,7 @@ function Page() {
               </p>
               <p
                 className={cn(
-                  "font-num mt-2 text-4xl font-extrabold",
+                  "font-num mt-2 text-3xl font-extrabold sm:text-4xl",
                   studioNetRange < 0 && "text-destructive",
                 )}
               >
@@ -724,10 +727,29 @@ function Page() {
         render: () => (
           <Glass delay={240}>
             <div className="mb-3 flex items-center justify-between">
-              <p className="label-mono">
-                Recent Studio Income ({db.payments.length} recorded invoice
-                payments)
-              </p>
+              <div className="flex min-w-0 items-center gap-2">
+                <p className="label-mono">
+                  Recent Studio Income ({db.payments.length} recorded invoice
+                  payments)
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setShowAllPayments((value) => !value)}
+                  aria-label={
+                    showAllPayments
+                      ? "Show recent 8 payments"
+                      : "Show all payments"
+                  }
+                  title={showAllPayments ? "Show recent 8" : "Show all"}
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  {showAllPayments ? (
+                    <EyeOff className="h-3.5 w-3.5" />
+                  ) : (
+                    <Eye className="h-3.5 w-3.5" />
+                  )}
+                </button>
+              </div>
               <Link
                 to="/invoices"
                 className="text-xs text-primary hover:underline"
@@ -801,7 +823,7 @@ function Page() {
                     value={query}
                     onChange={(e) => {
                       setQuery(e.target.value);
-                      setVisibleCount(40);
+                      setVisibleCount(8);
                     }}
                     placeholder="Search vendor or item..."
                     className="field w-full py-1.5 pl-8 text-base sm:w-56 sm:text-xs"
@@ -893,10 +915,10 @@ function Page() {
                 {filteredExpenses.length > visibleExpenses.length && (
                   <div className="mt-3 flex justify-center gap-2">
                     <Btn
-                      onClick={() => setVisibleCount((n) => n + 60)}
+                      onClick={() => setVisibleCount((n) => n + 8)}
                       className="px-4 py-1.5 text-xs"
                     >
-                      Show more (
+                      Show 8 more (
                       {filteredExpenses.length - visibleExpenses.length}{" "}
                       remaining)
                     </Btn>
@@ -908,10 +930,10 @@ function Page() {
                     </Btn>
                   </div>
                 )}
-                {visibleCount > 40 && filteredExpenses.length > 40 && (
+                {visibleCount > 8 && filteredExpenses.length > 8 && (
                   <div className="mt-2 flex justify-center">
                     <Btn
-                      onClick={() => setVisibleCount(40)}
+                      onClick={() => setVisibleCount(8)}
                       className="px-4 py-1.5 text-xs"
                     >
                       Hide extra rows
@@ -945,6 +967,7 @@ function Page() {
       inspectedCategory,
       studioGoals,
       recentPayments,
+      showAllPayments,
       r,
       catFilter,
       filteredExpenses,
@@ -1004,7 +1027,7 @@ function Page() {
           value={month}
           onChange={(next) => {
             setMonth(next);
-            setVisibleCount(40);
+            setVisibleCount(8);
           }}
         />
       </div>
@@ -1271,7 +1294,7 @@ function Page() {
                   value={combinedFilter}
                   onChange={(v) => {
                     setCombinedFilter(v);
-                    setCombinedVisible(50);
+                    setCombinedVisible(8);
                   }}
                   options={[
                     { id: "all", label: "All" },
@@ -1288,7 +1311,7 @@ function Page() {
                     value={combinedQuery}
                     onChange={(e) => {
                       setCombinedQuery(e.target.value);
-                      setCombinedVisible(50);
+                      setCombinedVisible(8);
                     }}
                     placeholder="Search combined ledger…"
                     className="field w-full py-1.5 pl-8 text-xs sm:w-56"
@@ -1363,10 +1386,10 @@ function Page() {
                   <div className="mt-3 flex justify-center gap-2">
                     <Btn
                       type="button"
-                      onClick={() => setCombinedVisible((n) => n + 80)}
+                      onClick={() => setCombinedVisible((n) => n + 8)}
                       className="px-4 py-1.5 text-xs"
                     >
-                      Show more (
+                      Show 8 more (
                       {combinedLedgerRows.length - combinedVisibleRows.length}{" "}
                       remaining)
                     </Btn>
@@ -1378,6 +1401,17 @@ function Page() {
                       className="px-4 py-1.5 text-xs"
                     >
                       Show all ({combinedLedgerRows.length})
+                    </Btn>
+                  </div>
+                )}
+                {combinedVisible > 8 && combinedLedgerRows.length > 8 && (
+                  <div className="mt-2 flex justify-center">
+                    <Btn
+                      type="button"
+                      onClick={() => setCombinedVisible(8)}
+                      className="px-4 py-1.5 text-xs"
+                    >
+                      Show recent 8 only
                     </Btn>
                   </div>
                 )}

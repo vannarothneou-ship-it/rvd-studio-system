@@ -356,7 +356,7 @@ function ShellInner({ children }: { children: ReactNode }) {
       {/* Floating Frosted Mobile Header (Auto-hides on scroll down) */}
       <header
         className={cn(
-          "no-print fixed inset-x-3 top-[max(0.5rem,env(safe-area-inset-top))] z-40 rounded-2xl border border-white/14 bg-[#121319]/82 px-3 py-1.5 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-md backdrop-saturate-150 transition-[transform,opacity] duration-200 ease-out will-change-transform [.light_&]:border-black/10 [.light_&]:bg-[#faf8f4]/86 [.light_&]:shadow-[0_10px_28px_-12px_rgba(0,0,0,0.14),inset_0_1px_0_rgba(255,255,255,0.75)] sm:hidden",
+          "no-print fixed inset-x-3 top-[max(0.5rem,env(safe-area-inset-top))] z-40 rounded-2xl border border-white/14 bg-[#121319]/74 px-3 py-1.5 shadow-[0_12px_32px_-12px_rgba(0,0,0,0.6),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl backdrop-saturate-150 transition-[transform,opacity] duration-300 ease-out will-change-transform [.light_&]:border-black/10 [.light_&]:bg-[#faf8f4]/86 [.light_&]:shadow-[0_10px_28px_-12px_rgba(0,0,0,0.14),inset_0_1px_0_rgba(255,255,255,0.75)] sm:hidden",
           barsHidden
             ? "pointer-events-none -translate-y-[calc(100%+1.5rem)] opacity-0"
             : "translate-y-0 opacity-100",
@@ -375,24 +375,6 @@ function ShellInner({ children }: { children: ReactNode }) {
           </Link>
 
           <div className="flex shrink-0 items-center gap-1">
-            {isStudio && (
-              <div className="mr-1 flex items-center gap-1">
-                {studioNav.slice(1, 4).map((it) => (
-                  <Link
-                    key={it.to}
-                    to={it.to}
-                    className={cn(
-                      "rounded-full px-2 py-1 text-[0.68rem] font-medium transition-colors",
-                      active(it.to)
-                        ? "bg-primary/20 text-primary"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {it.label}
-                  </Link>
-                ))}
-              </div>
-            )}
             <PWAInstallButton compact />
             <button
               type="button"
@@ -420,13 +402,41 @@ function ShellInner({ children }: { children: ReactNode }) {
             </Link>
           </div>
         </div>
+
+        {isStudio && (
+          <nav
+            aria-label="Studio sections"
+            className="no-scrollbar mt-1 flex items-center gap-1 overflow-x-auto border-t border-white/10 pt-1 [.light_&]:border-black/10"
+          >
+            {studioNav.map((it) => {
+              const Icon = it.icon;
+              const on = active(it.to);
+              return (
+                <Link
+                  key={it.to}
+                  to={it.to}
+                  aria-current={on ? "page" : undefined}
+                  className={cn(
+                    "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[0.68rem] font-medium transition-[background-color,color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-sm active:scale-[0.97]",
+                    on
+                      ? "bg-primary/20 text-primary"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  <Icon className="h-3 w-3" />
+                  {it.label}
+                </Link>
+              );
+            })}
+          </nav>
+        )}
       </header>
 
       {/* Floating Frosted Icon-Only Bottom Dock (5 items, Settings moved to top bar) */}
       <nav
         aria-label="Mobile navigation"
         className={cn(
-          "no-print fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 mx-auto max-w-md rounded-[28px] border border-white/15 bg-[#121319]/84 px-1.5 py-1.5 shadow-[0_18px_40px_-14px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-md backdrop-saturate-150 transition-[transform,opacity] duration-200 ease-out will-change-transform [.light_&]:border-black/10 [.light_&]:bg-[#faf8f4]/88 [.light_&]:shadow-[0_16px_36px_-14px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.8)] sm:hidden",
+          "no-print fixed inset-x-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] z-40 mx-auto max-w-md rounded-[28px] border border-white/15 bg-[#121319]/78 px-1.5 py-1.5 shadow-[0_18px_40px_-14px_rgba(0,0,0,0.72),inset_0_1px_0_rgba(255,255,255,0.09)] backdrop-blur-xl backdrop-saturate-150 transition-[transform,opacity] duration-300 ease-out will-change-transform [.light_&]:border-black/10 [.light_&]:bg-[#faf8f4]/88 [.light_&]:shadow-[0_16px_36px_-14px_rgba(0,0,0,0.18),inset_0_1px_0_rgba(255,255,255,0.8)] sm:hidden",
           barsHidden
             ? "pointer-events-none translate-y-[calc(100%+2rem)] opacity-0"
             : "translate-y-0 opacity-100",
@@ -503,8 +513,15 @@ function ShellInner({ children }: { children: ReactNode }) {
       </nav>
 
       {/* Desktop Floating Top Navigation */}
-      <nav className="no-print fixed left-1/2 top-4 z-40 hidden w-[min(calc(100vw-2rem),84rem)] -translate-x-1/2 sm:block">
-        <div className="glass-strong flex items-center justify-between gap-2.5 rounded-full p-2">
+      <nav
+        className={cn(
+          "no-print fixed left-1/2 top-4 z-40 hidden w-[min(calc(100vw-2rem),84rem)] -translate-x-1/2 will-change-transform transition-[transform,opacity] duration-300 ease-out sm:block",
+          barsHidden
+            ? "pointer-events-none -translate-y-24 opacity-0"
+            : "translate-y-0 opacity-100",
+        )}
+      >
+        <div className="glass-strong flex items-center justify-between gap-2.5 rounded-full border border-white/12 bg-[#17181d]/78 p-2 shadow-[0_16px_44px_-20px_rgba(0,0,0,0.7)] backdrop-blur-2xl backdrop-saturate-150 transition-[background-color,border-color,box-shadow] duration-300 hover:border-primary/25 hover:shadow-[0_20px_52px_-20px_rgba(0,0,0,0.72)] [.light_&]:border-black/10 [.light_&]:bg-white/78">
           {/* Top-Level Workspace Switcher: Dashboard · Studio · Personal · Work */}
           <div className="shrink-0">
             <WorkspaceSwitcher
@@ -523,8 +540,9 @@ function ShellInner({ children }: { children: ReactNode }) {
                   <Link
                     key={it.to}
                     to={it.to}
+                    aria-current={on ? "page" : undefined}
                     className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
+                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-medium transition-[background-color,color,transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-sm active:scale-[0.97]",
                       on
                         ? "bg-primary/18 text-primary"
                         : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -603,7 +621,13 @@ function ShellInner({ children }: { children: ReactNode }) {
         </div>
       </nav>
 
-      <main className="mx-auto max-w-6xl px-3 pt-[4.25rem] sm:px-4 sm:pt-24">
+      <main
+        key={path}
+        className={cn(
+          "page-enter mx-auto max-w-6xl px-3 sm:px-4 sm:pt-24",
+          isStudio ? "pt-[6.1rem]" : "pt-[4.25rem]",
+        )}
+      >
         {children}
       </main>
       <OfflineIndicator />
