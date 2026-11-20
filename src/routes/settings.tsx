@@ -146,9 +146,16 @@ function Page() {
       a.download = `rothvan-backup-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      const attachmentCount = Object.keys(mediaBlobs).length;
+      const missingAttachments = new Set(mediaIds).size - attachmentCount;
       toast.success(
-        `Backup downloaded with ${mediaIds.length} referenced attachments checked.`,
+        `Backup downloaded with ${attachmentCount} original attachments.`,
       );
+      if (missingAttachments > 0) {
+        toast.warning(
+          `${missingAttachments} original attachments were unavailable; thumbnails and records are still included.`,
+        );
+      }
     } catch {
       toast.error("Could not create the backup. Please try again.");
     }
