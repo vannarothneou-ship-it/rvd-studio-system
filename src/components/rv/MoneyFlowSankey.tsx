@@ -164,7 +164,10 @@ function buildSankeyGeometry(
     showSources ? flow.sources.length : 0,
   );
   const rowStep = compact ? 27 : 38;
-  const height = Math.max(compact ? 250 : 380, rowCount * rowStep + (compact ? 20 : 34));
+  const height = Math.max(
+    compact ? 250 : 380,
+    rowCount * rowStep + (compact ? 20 : 34),
+  );
   const usableH = height - topY * 2;
   const barW = compact ? 10 : 12;
 
