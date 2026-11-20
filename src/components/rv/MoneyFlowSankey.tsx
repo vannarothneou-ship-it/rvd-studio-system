@@ -486,12 +486,20 @@ export function MoneyFlowSankeyCard({
             <button
               type="button"
               onClick={() => setShowBalances((value) => !value)}
-              aria-label={balancesHidden ? "Show financial amounts" : "Hide financial amounts"}
+              aria-label={
+                balancesHidden
+                  ? "Show financial amounts"
+                  : "Hide financial amounts"
+              }
               aria-pressed={balancesHidden}
               title={balancesHidden ? "Show amounts" : "Hide amounts"}
               className="ml-1 grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border/70 text-muted-foreground transition-[background-color,color,transform] duration-200 hover:bg-muted hover:text-foreground active:scale-90"
             >
-              {balancesHidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              {balancesHidden ? (
+                <EyeOff className="h-3.5 w-3.5" />
+              ) : (
+                <Eye className="h-3.5 w-3.5" />
+              )}
             </button>
           </div>
           <p className="mt-0.5 truncate text-xs text-muted-foreground">
