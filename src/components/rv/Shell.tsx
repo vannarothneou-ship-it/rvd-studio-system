@@ -375,24 +375,6 @@ function ShellInner({ children }: { children: ReactNode }) {
           </Link>
 
           <div className="flex shrink-0 items-center gap-1">
-            {isStudio && (
-              <div className="mr-1 flex items-center gap-1">
-                {studioNav.slice(1, 4).map((it) => (
-                  <Link
-                    key={it.to}
-                    to={it.to}
-                    className={cn(
-                      "rounded-full px-2 py-1 text-[0.68rem] font-medium transition-colors",
-                      active(it.to)
-                        ? "bg-primary/20 text-primary"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {it.label}
-                  </Link>
-                ))}
-              </div>
-            )}
             <PWAInstallButton compact />
             <button
               type="button"
@@ -420,6 +402,34 @@ function ShellInner({ children }: { children: ReactNode }) {
             </Link>
           </div>
         </div>
+
+        {isStudio && (
+          <nav
+            aria-label="Studio sections"
+            className="no-scrollbar mt-1 flex items-center gap-1 overflow-x-auto border-t border-white/10 pt-1 [.light_&]:border-black/10"
+          >
+            {studioNav.map((it) => {
+              const Icon = it.icon;
+              const on = active(it.to);
+              return (
+                <Link
+                  key={it.to}
+                  to={it.to}
+                  aria-current={on ? "page" : undefined}
+                  className={cn(
+                    "inline-flex min-h-8 shrink-0 items-center gap-1.5 rounded-full px-2.5 text-[0.68rem] font-medium transition-[background-color,color,transform] duration-200 active:scale-[0.97]",
+                    on
+                      ? "bg-primary/20 text-primary"
+                      : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                  )}
+                >
+                  <Icon className="h-3 w-3" />
+                  {it.label}
+                </Link>
+              );
+            })}
+          </nav>
+        )}
       </header>
 
       {/* Floating Frosted Icon-Only Bottom Dock (5 items, Settings moved to top bar) */}
