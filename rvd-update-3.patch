@@ -1,0 +1,1054 @@
+From 32a6a0b21db6b192c74b852bbe8feee291bd0e42 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 21 Nov 2026 04:09:33 +0000
+Subject: [PATCH 1/2] Portal all side panels/modals to body (full-height,
+ scroll lock); swipe-delete on combined ledger
+
+---
+ src/components/rv/CaseStudyBuilder.tsx |   5 +-
+ src/components/rv/DesignMediaTools.tsx |   4 +-
+ src/components/rv/FinanceVisuals.tsx   |  12 ++-
+ src/components/rv/PWAInstallButton.tsx | 135 ++++++++++++------------
+ src/components/rv/ui.tsx               |  30 +++++-
+ src/routes/finance.tsx                 | 139 +++++++++++++++++--------
+ 6 files changed, 206 insertions(+), 119 deletions(-)
+
+diff --git a/src/components/rv/CaseStudyBuilder.tsx b/src/components/rv/CaseStudyBuilder.tsx
+index 6228811..ea64848 100644
+--- a/src/components/rv/CaseStudyBuilder.tsx
++++ b/src/components/rv/CaseStudyBuilder.tsx
+@@ -36,7 +36,7 @@ import {
+   Type,
+   X,
+ } from "lucide-react";
+-import { Btn, F, SlidingTabs } from "@/components/rv/ui";
++import { Btn, F, SlidingTabs, Portal } from "@/components/rv/ui";
+ import { DesignMediaUploader } from "@/components/rv/DesignMediaTools";
+ import { downloadCaseStudy } from "@/lib/case-study-export";
+ import { loadMediaBlob } from "@/lib/media-store";
+@@ -758,7 +758,7 @@ export function CaseStudyBuilder({
+         ? "bg-[#1b2638] border-white/10"
+         : "bg-[#232328] border-white/10";
+ 
+-  return (
++  const overlay = (
+     <div
+       className="fixed inset-0 z-[115] flex items-center justify-center bg-black/75 p-2 backdrop-blur-md sm:p-5"
+       role="dialog"
+@@ -1489,4 +1489,5 @@ export function CaseStudyBuilder({
+       </div>
+     </div>
+   );
++  return <Portal>{overlay}</Portal>;
+ }
+diff --git a/src/components/rv/DesignMediaTools.tsx b/src/components/rv/DesignMediaTools.tsx
+index f3f3dc6..0859812 100644
+--- a/src/components/rv/DesignMediaTools.tsx
++++ b/src/components/rv/DesignMediaTools.tsx
+@@ -1,3 +1,4 @@
++import { Portal } from "@/components/rv/ui";
+ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+ import { toast } from "sonner";
+ import {
+@@ -320,7 +321,7 @@ export function MediaLightboxViewer({
+ 
+   if (!item) return null;
+ 
+-  return (
++  const overlay = (
+     <div
+       className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm sm:p-6"
+       role="dialog"
+@@ -527,6 +528,7 @@ export function MediaLightboxViewer({
+       </div>
+     </div>
+   );
++  return <Portal>{overlay}</Portal>;
+ }
+ 
+ export function MediaCountBadge({
+diff --git a/src/components/rv/FinanceVisuals.tsx b/src/components/rv/FinanceVisuals.tsx
+index afb8c37..c487ad1 100644
+--- a/src/components/rv/FinanceVisuals.tsx
++++ b/src/components/rv/FinanceVisuals.tsx
+@@ -84,7 +84,14 @@ import {
+   type GoalContribution,
+ } from "@/lib/store";
+ import { cn } from "@/lib/utils";
+-import { Btn, F, Sel, SlideDrawer, SlidingTabs } from "@/components/rv/ui";
++import {
++  Btn,
++  F,
++  Sel,
++  SlideDrawer,
++  SlidingTabs,
++  Portal,
++} from "@/components/rv/ui";
+ 
+ /* ---------- Category & Item Icon Mapping ---------- */
+ 
+@@ -795,7 +802,7 @@ export function CategoryInspectorDrawer({
+     window.setTimeout(() => setSavedFlash(false), 1400);
+   };
+ 
+-  return (
++  const overlay = (
+     <div
+       className="fixed inset-0 z-50 flex justify-end"
+       role="dialog"
+@@ -1256,6 +1263,7 @@ export function CategoryInspectorDrawer({
+       </aside>
+     </div>
+   );
++  return <Portal>{overlay}</Portal>;
+ }
+ 
+ /* ---------- Circular SVG Ring Goal Card & Daily/Monthly/Yearly Goal Planner ---------- */
+diff --git a/src/components/rv/PWAInstallButton.tsx b/src/components/rv/PWAInstallButton.tsx
+index ad46c3f..259809a 100644
+--- a/src/components/rv/PWAInstallButton.tsx
++++ b/src/components/rv/PWAInstallButton.tsx
+@@ -1,6 +1,6 @@
+ import { useState } from "react";
+ import { Download, PlusSquare, Share, Smartphone, X } from "lucide-react";
+-import { Btn } from "@/components/rv/ui";
++import { Btn, Portal } from "@/components/rv/ui";
+ import { useOnlineStatus, usePWAInstall } from "@/lib/usePWAInstall";
+ import { cn } from "@/lib/utils";
+ 
+@@ -56,80 +56,83 @@ export function PWAInstallButton({
+         </button>
+ 
+         {showIOSGuide && (
+-          <div
+-            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
+-            role="dialog"
+-            aria-modal="true"
+-            aria-label="Install on iPhone or iPad"
+-            onClick={() => setShowIOSGuide(false)}
+-          >
++          <Portal>
+             <div
+-              onClick={(e) => e.stopPropagation()}
+-              className="glass-strong w-full max-w-sm rounded-3xl border border-border p-5 shadow-2xl"
++              className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
++              role="dialog"
++              aria-modal="true"
++              aria-label="Install on iPhone or iPad"
++              onClick={() => setShowIOSGuide(false)}
+             >
+-              <div className="mb-3 flex items-start justify-between gap-2">
+-                <div className="flex items-center gap-2.5">
+-                  <img
+-                    src="/apple-touch-icon.png"
+-                    alt="RothVan Ledger"
+-                    className="h-11 w-11 rounded-2xl border border-primary/30 shadow-md"
+-                  />
+-                  <div>
+-                    <h3 className="font-display text-base font-bold">
+-                      Install RothVan Ledger
+-                    </h3>
+-                    <p className="text-xs text-muted-foreground">
+-                      Launch full-screen on iPhone &amp; iPad
+-                    </p>
++              <div
++                onClick={(e) => e.stopPropagation()}
++                className="glass-strong w-full max-w-sm rounded-3xl border border-border p-5 shadow-2xl"
++              >
++                <div className="mb-3 flex items-start justify-between gap-2">
++                  <div className="flex items-center gap-2.5">
++                    <img
++                      src="/apple-touch-icon.png"
++                      alt="RothVan Ledger"
++                      className="h-11 w-11 rounded-2xl border border-primary/30 shadow-md"
++                    />
++                    <div>
++                      <h3 className="font-display text-base font-bold">
++                        Install RothVan Ledger
++                      </h3>
++                      <p className="text-xs text-muted-foreground">
++                        Launch full-screen on iPhone &amp; iPad
++                      </p>
++                    </div>
+                   </div>
++                  <button
++                    type="button"
++                    onClick={() => setShowIOSGuide(false)}
++                    aria-label="Close install instructions"
++                    className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
++                  >
++                    <X className="h-4 w-4" />
++                  </button>
+                 </div>
+-                <button
+-                  type="button"
+-                  onClick={() => setShowIOSGuide(false)}
+-                  aria-label="Close install instructions"
+-                  className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+-                >
+-                  <X className="h-4 w-4" />
+-                </button>
+-              </div>
+ 
+-              <ol className="space-y-2.5 rounded-2xl border border-border/70 bg-muted/40 p-3.5 text-xs text-foreground">
+-                <li className="flex items-center gap-2.5">
+-                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
+-                    <Share className="h-3.5 w-3.5" />
+-                  </span>
+-                  <span>
+-                    Tap the <strong>Share</strong> icon in Safari&apos;s
+-                    toolbar.
+-                  </span>
+-                </li>
+-                <li className="flex items-center gap-2.5">
+-                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
+-                    <PlusSquare className="h-3.5 w-3.5" />
+-                  </span>
+-                  <span>
+-                    Scroll down and choose <strong>Add to Home Screen</strong>.
+-                  </span>
+-                </li>
+-              </ol>
++                <ol className="space-y-2.5 rounded-2xl border border-border/70 bg-muted/40 p-3.5 text-xs text-foreground">
++                  <li className="flex items-center gap-2.5">
++                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
++                      <Share className="h-3.5 w-3.5" />
++                    </span>
++                    <span>
++                      Tap the <strong>Share</strong> icon in Safari&apos;s
++                      toolbar.
++                    </span>
++                  </li>
++                  <li className="flex items-center gap-2.5">
++                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
++                      <PlusSquare className="h-3.5 w-3.5" />
++                    </span>
++                    <span>
++                      Scroll down and choose <strong>Add to Home Screen</strong>
++                      .
++                    </span>
++                  </li>
++                </ol>
+ 
+-              <p className="mt-3 text-[0.72rem] leading-relaxed text-muted-foreground">
+-                Running from the Home Screen removes Safari&apos;s URL bar and
+-                opens RothVan Ledger as an isolated standalone app window.
+-              </p>
++                <p className="mt-3 text-[0.72rem] leading-relaxed text-muted-foreground">
++                  Running from the Home Screen removes Safari&apos;s URL bar and
++                  opens RothVan Ledger as an isolated standalone app window.
++                </p>
+ 
+-              <div className="mt-4 flex justify-end">
+-                <Btn
+-                  type="button"
+-                  variant="gold"
+-                  onClick={() => setShowIOSGuide(false)}
+-                  className="w-full py-2 text-xs"
+-                >
+-                  Got it
+-                </Btn>
++                <div className="mt-4 flex justify-end">
++                  <Btn
++                    type="button"
++                    variant="gold"
++                    onClick={() => setShowIOSGuide(false)}
++                    className="w-full py-2 text-xs"
++                  >
++                    Got it
++                  </Btn>
++                </div>
+               </div>
+             </div>
+-          </div>
++          </Portal>
+         )}
+       </>
+     );
+diff --git a/src/components/rv/ui.tsx b/src/components/rv/ui.tsx
+index 537aebf..04980e1 100644
+--- a/src/components/rv/ui.tsx
++++ b/src/components/rv/ui.tsx
+@@ -203,6 +203,28 @@ export function Btn({
+   );
+ }
+ 
++/**
++ * Renders children into <body> so `position: fixed` overlays always cover the
++ * whole viewport (an ancestor with backdrop-filter/transform otherwise traps
++ * them inside its own box), and locks page scroll while mounted.
++ */
++export function Portal({ children }: { children: ReactNode }) {
++  const [mounted, setMounted] = useState(false);
++  useEffect(() => {
++    setMounted(true);
++  }, []);
++  useEffect(() => {
++    if (!mounted) return;
++    const body = document.body;
++    const prev = body.style.overflow;
++    body.style.overflow = "hidden";
++    return () => {
++      body.style.overflow = prev;
++    };
++  }, [mounted]);
++  return mounted ? createPortal(children, document.body) : null;
++}
++
+ export function Modal({
+   open,
+   onClose,
+@@ -223,7 +245,7 @@ export function Modal({
+     return () => window.removeEventListener("keydown", k);
+   }, [open, onClose]);
+   if (!open) return null;
+-  return (
++  const overlay = (
+     <div
+       className="fixed inset-0 z-50 flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm animate-in fade-in sm:items-center sm:p-4"
+       onClick={onClose}
+@@ -251,6 +273,7 @@ export function Modal({
+       </div>
+     </div>
+   );
++  return <Portal>{overlay}</Portal>;
+ }
+ 
+ export function SlideDrawer({
+@@ -279,7 +302,7 @@ export function SlideDrawer({
+     return () => window.removeEventListener("keydown", k);
+   }, [open, onClose]);
+   if (!open) return null;
+-  return (
++  const overlay = (
+     <div
+       className={cn(
+         "fixed inset-0 z-50 flex items-end sm:items-stretch",
+@@ -297,7 +320,7 @@ export function SlideDrawer({
+       />
+       <aside
+         className={cn(
+-          "drawer-in relative z-10 mt-[env(safe-area-inset-top)] flex max-h-[92dvh] w-full flex-col rounded-t-2xl border-t border-[var(--glass-border)] bg-popover shadow-2xl backdrop-blur-2xl backdrop-saturate-150 sm:mt-0 sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0 sm:pt-[env(safe-area-inset-top)]",
++          "drawer-in relative z-10 mt-[env(safe-area-inset-top)] flex h-[calc(100dvh-env(safe-area-inset-top)-0.75rem)] w-full flex-col rounded-t-2xl border-t border-[var(--glass-border)] bg-popover shadow-2xl backdrop-blur-2xl backdrop-saturate-150 sm:mt-0 sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0 sm:pt-[env(safe-area-inset-top)]",
+           widthClass,
+           side === "left"
+             ? "sm:border-r sm:border-[var(--glass-border)]"
+@@ -342,6 +365,7 @@ export function SlideDrawer({
+       </aside>
+     </div>
+   );
++  return <Portal>{overlay}</Portal>;
+ }
+ 
+ export function F({
+diff --git a/src/routes/finance.tsx b/src/routes/finance.tsx
+index c3f96cf..fa5bae8 100644
+--- a/src/routes/finance.tsx
++++ b/src/routes/finance.tsx
+@@ -1,3 +1,5 @@
++import { toast } from "sonner";
++import { SwipeRow } from "@/components/rv/SwipeRow";
+ import { createFileRoute, Link } from "@tanstack/react-router";
+ import { useEffect, useMemo, useState } from "react";
+ import {
+@@ -434,6 +436,46 @@ function Page() {
+   ]);
+   const combinedVisibleRows = combinedLedgerRows.slice(0, combinedVisible);
+ 
++  /** Swipe-delete for expenses & personal income (invoice payments stay protected). */
++  const deleteCombinedRow = (rowId: string) => {
++    if (rowId.startsWith("exp-")) {
++      const item = db.expenses.find((x) => `exp-${x.id}` === rowId);
++      if (!item) return;
++      setDB((d) => ({
++        ...d,
++        expenses: d.expenses.filter((x) => x.id !== item.id),
++      }));
++      toast("Expense deleted", {
++        action: {
++          label: "Undo",
++          onClick: () =>
++            setDB((d) => ({ ...d, expenses: [item, ...d.expenses] })),
++        },
++      });
++    } else if (rowId.startsWith("pinc-")) {
++      const item = (db.personalIncome ?? []).find(
++        (x) => `pinc-${x.id}` === rowId,
++      );
++      if (!item) return;
++      setDB((d) => ({
++        ...d,
++        personalIncome: (d.personalIncome ?? []).filter(
++          (x) => x.id !== item.id,
++        ),
++      }));
++      toast("Income deleted", {
++        action: {
++          label: "Undo",
++          onClick: () =>
++            setDB((d) => ({
++              ...d,
++              personalIncome: [item, ...(d.personalIncome ?? [])],
++            })),
++        },
++      });
++    }
++  };
++
+   const widgets = useMemo<BentoWidgetDef[]>(
+     () => [
+       {
+@@ -1329,58 +1371,65 @@ function Page() {
+               <>
+                 <ul className="divide-y divide-border">
+                   {combinedVisibleRows.map((row) => (
+-                    <li
+-                      key={row.id}
+-                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-2.5"
+-                    >
+-                      <div className="flex min-w-0 items-center gap-3">
+-                        <span
+-                          className={cn(
+-                            "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
+-                            row.direction === "income"
+-                              ? "text-positive"
+-                              : "text-destructive",
+-                          )}
+-                        >
+-                          {row.direction === "income" ? (
+-                            <ArrowDownLeft className="h-4 w-4" />
+-                          ) : (
+-                            <ArrowUpRight className="h-4 w-4" />
+-                          )}
+-                        </span>
+-                        <div className="min-w-0">
+-                          <div className="flex flex-wrap items-center gap-2">
+-                            <p className="truncate text-sm font-medium text-foreground">
+-                              {row.title}
+-                            </p>
++                    <li key={row.id}>
++                      <SwipeRow
++                        onDelete={
++                          row.id.startsWith("pay-")
++                            ? undefined
++                            : () => deleteCombinedRow(row.id)
++                        }
++                      >
++                        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-2.5">
++                          <div className="flex min-w-0 items-center gap-3">
+                             <span
+                               className={cn(
+-                                "rounded-full border px-2 py-0.5 text-[0.62rem] font-medium",
+-                                row.workspace === "Studio"
+-                                  ? "border-primary/40 bg-primary/12 text-primary"
+-                                  : "border-border bg-muted text-muted-foreground",
++                                "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
++                                row.direction === "income"
++                                  ? "text-positive"
++                                  : "text-destructive",
+                               )}
+                             >
+-                              {row.workspace}
++                              {row.direction === "income" ? (
++                                <ArrowDownLeft className="h-4 w-4" />
++                              ) : (
++                                <ArrowUpRight className="h-4 w-4" />
++                              )}
+                             </span>
++                            <div className="min-w-0">
++                              <div className="flex flex-wrap items-center gap-2">
++                                <p className="truncate text-sm font-medium text-foreground">
++                                  {row.title}
++                                </p>
++                                <span
++                                  className={cn(
++                                    "rounded-full border px-2 py-0.5 text-[0.62rem] font-medium",
++                                    row.workspace === "Studio"
++                                      ? "border-primary/40 bg-primary/12 text-primary"
++                                      : "border-border bg-muted text-muted-foreground",
++                                  )}
++                                >
++                                  {row.workspace}
++                                </span>
++                              </div>
++                              <p className="truncate text-xs text-muted-foreground">
++                                {shortDate(row.date)} · {row.sub}
++                              </p>
++                            </div>
+                           </div>
+-                          <p className="truncate text-xs text-muted-foreground">
+-                            {shortDate(row.date)} · {row.sub}
+-                          </p>
++                          <span
++                            className={cn(
++                              "font-num shrink-0 text-sm font-semibold",
++                              row.direction === "income"
++                                ? "text-positive"
++                                : "text-destructive",
++                            )}
++                          >
++                            {row.direction === "income"
++                              ? `+${money(row.usd)}`
++                              : money(-row.usd)}
++                          </span>
+                         </div>
+-                      </div>
+-                      <span
+-                        className={cn(
+-                          "font-num shrink-0 text-sm font-semibold",
+-                          row.direction === "income"
+-                            ? "text-positive"
+-                            : "text-destructive",
+-                        )}
+-                      >
+-                        {row.direction === "income"
+-                          ? `+${money(row.usd)}`
+-                          : money(-row.usd)}
+-                      </span>
++                      </SwipeRow>
+                     </li>
+                   ))}
+                 </ul>
+-- 
+2.43.0
+
+
+From f2b2e29ade7bbbce707bd633167338df5e5d87e1 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 21 Nov 2026 04:14:56 +0000
+Subject: [PATCH 2/2] Smart bento layout (learns from resizes), tablet 2-col,
+ long-press row menu, hold/hover tips on icon tabs
+
+---
+ src/components/rv/BentoGrid.tsx |  66 ++++++++++++++-
+ src/components/rv/RowMenu.tsx   |  44 ++++++++++
+ src/components/rv/SwipeRow.tsx  |   5 +-
+ src/components/rv/ui.tsx        |  79 ++++++++++++++++-
+ src/lib/bento-ai.test.ts        |  41 +++++++++
+ src/lib/bento-ai.ts             | 146 ++++++++++++++++++++++++++++++++
+ 6 files changed, 376 insertions(+), 5 deletions(-)
+ create mode 100644 src/components/rv/RowMenu.tsx
+ create mode 100644 src/lib/bento-ai.test.ts
+ create mode 100644 src/lib/bento-ai.ts
+
+diff --git a/src/components/rv/BentoGrid.tsx b/src/components/rv/BentoGrid.tsx
+index 8094242..61113dc 100644
+--- a/src/components/rv/BentoGrid.tsx
++++ b/src/components/rv/BentoGrid.tsx
+@@ -24,6 +24,7 @@ import {
+   Plus,
+   RotateCcw,
+   Sparkles,
++  Wand2,
+ } from "lucide-react";
+ import {
+   useCallback,
+@@ -34,6 +35,8 @@ import {
+   type ReactNode,
+ } from "react";
+ import { cn } from "@/lib/utils";
++import { autoArrange, recordChoice, type LearnedSpans } from "@/lib/bento-ai";
++import { toast } from "sonner";
+ 
+ export type BentoSpan = 4 | 5 | 6 | 7 | 8 | 12;
+ 
+@@ -64,6 +67,22 @@ export interface PackedBentoEntry {
+ const LAYOUT_STORAGE_KEY = "rv-bento-layouts-v1";
+ const TABS_STORAGE_KEY = "rv-custom-tabs-v1";
+ const AUTOFILL_STORAGE_KEY = "rv-bento-autofill-v1";
++const LEARNED_STORAGE_KEY = "rv-bento-learned-v1";
++
++function readLearned(): LearnedSpans {
++  try {
++    return JSON.parse(localStorage.getItem(LEARNED_STORAGE_KEY) ?? "{}");
++  } catch {
++    return {};
++  }
++}
++function writeLearned(v: LearnedSpans) {
++  try {
++    localStorage.setItem(LEARNED_STORAGE_KEY, JSON.stringify(v));
++  } catch {
++    /* storage full / private mode */
++  }
++}
+ 
+ const SPAN_CLASS: Record<number, string> = {
+   4: "lg:col-span-4",
+@@ -225,11 +244,37 @@ export function usePageLayout(pageKey: string, defaults: LayoutItemConfig[]) {
+ 
+   const setSpan = useCallback(
+     (id: string, span: BentoSpan) => {
++      writeLearned(recordChoice(readLearned(), id, span));
+       commit((prev) => prev.map((x) => (x.id === id ? { ...x, span } : x)));
+     },
+     [commit],
+   );
+ 
++  /** Smart layout: re-split visible cards into gap-free rows. Returns fit %. */
++  const smartLayout = useCallback(
++    (titles: Map<string, string>) => {
++      let fit = 100;
++      commit((prev) => {
++        const visible = prev.filter((x) => !x.hidden);
++        const result = autoArrange(
++          visible.map((x) => ({
++            id: x.id,
++            title: titles.get(x.id) ?? x.id,
++            span: x.span,
++          })),
++          readLearned(),
++        );
++        fit = result.fit;
++        const map = new Map(result.spans.map((r) => [r.id, r.span]));
++        return prev.map((x) =>
++          map.has(x.id) ? { ...x, span: map.get(x.id)! } : x,
++        );
++      });
++      return fit;
++    },
++    [commit],
++  );
++
+   const toggleHide = useCallback(
+     (id: string) => {
+       commit((prev) =>
+@@ -325,6 +370,7 @@ export function usePageLayout(pageKey: string, defaults: LayoutItemConfig[]) {
+     autoFill,
+     setAutoFill,
+     setSpan,
++    smartLayout,
+     pairWithNext,
+     toggleHide,
+     showWidget,
+@@ -440,6 +486,7 @@ export function EditableBentoGrid({
+     autoFill,
+     setAutoFill,
+     setSpan,
++    smartLayout,
+     pairWithNext,
+     toggleHide,
+     showWidget,
+@@ -576,6 +623,22 @@ export function EditableBentoGrid({
+                 </button>
+               );
+             })}
++            <button
++              type="button"
++              onClick={() => {
++                const fit = smartLayout(
++                  new Map(widgets.map((w) => [w.id, w.title])),
++                );
++                toast.success(`Smart layout applied · ${fit}% fit`, {
++                  description: "No empty gaps. Resize a card to teach it.",
++                });
++              }}
++              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground"
++              title="Arrange every card into gap-free rows, using your past resizes"
++            >
++              <Wand2 className="h-3 w-3" />
++              Smart layout
++            </button>
+             <button
+               type="button"
+               onClick={() => setAutoFill(!autoFill)}
+@@ -627,7 +690,7 @@ export function EditableBentoGrid({
+       >
+         <div
+           ref={gridRef}
+-          className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-12"
++          className="grid grid-cols-1 items-stretch gap-4 [grid-auto-flow:dense] md:grid-cols-2 lg:grid-cols-12"
+         >
+           {packedEntries.map((entry) => {
+             const def = widgetMap.get(entry.config.id);
+@@ -795,6 +858,7 @@ function BentoSlot({
+       {...(editing ? attributes : {})}
+       className={cn(
+         "group/bento col-span-1 flex h-full min-w-0 flex-col",
++        effectiveSpan >= 8 && "md:col-span-2",
+         SPAN_CLASS[effectiveSpan] ?? SPAN_CLASS[config.span],
+         editing && "transition-all duration-200",
+         editing &&
+diff --git a/src/components/rv/RowMenu.tsx b/src/components/rv/RowMenu.tsx
+new file mode 100644
+index 0000000..f47ff3a
+--- /dev/null
++++ b/src/components/rv/RowMenu.tsx
+@@ -0,0 +1,44 @@
++import type { ReactNode } from "react";
++import * as CM from "@radix-ui/react-context-menu";
++import { Pencil, Trash2 } from "lucide-react";
++
++/**
++ * Press-and-hold (touch) or right-click (desktop) menu for list rows.
++ * Radix portals it to <body>, so it is never clipped by cards or scroll areas.
++ */
++export function RowMenu({
++  children,
++  onEdit,
++  onDelete,
++}: {
++  children: ReactNode;
++  onEdit?: (() => void) | undefined;
++  onDelete?: (() => void) | undefined;
++}) {
++  if (!onEdit && !onDelete) return <>{children}</>;
++  const item =
++    "flex min-h-[44px] cursor-pointer select-none items-center gap-2.5 rounded-xl px-3 text-sm outline-none data-[highlighted]:bg-accent sm:min-h-[36px]";
++  return (
++    <CM.Root>
++      <CM.Trigger asChild>
++        <div className="[-webkit-touch-callout:none]">{children}</div>
++      </CM.Trigger>
++      <CM.Portal>
++        <CM.Content className="z-[200] min-w-44 rounded-2xl border border-[var(--glass-border)] bg-popover p-1.5 text-popover-foreground shadow-2xl backdrop-blur-2xl animate-in fade-in zoom-in-95 duration-150">
++          {onEdit ? (
++            <CM.Item className={item} onSelect={onEdit}>
++              <Pencil className="h-4 w-4 text-primary" />
++              Edit
++            </CM.Item>
++          ) : null}
++          {onDelete ? (
++            <CM.Item className={`${item} text-destructive`} onSelect={onDelete}>
++              <Trash2 className="h-4 w-4" />
++              Delete
++            </CM.Item>
++          ) : null}
++        </CM.Content>
++      </CM.Portal>
++    </CM.Root>
++  );
++}
+diff --git a/src/components/rv/SwipeRow.tsx b/src/components/rv/SwipeRow.tsx
+index ebd04ab..7e9e7dd 100644
+--- a/src/components/rv/SwipeRow.tsx
++++ b/src/components/rv/SwipeRow.tsx
+@@ -8,6 +8,7 @@ import {
+ } from "motion/react";
+ import { Pencil, Trash2 } from "lucide-react";
+ import { cn } from "@/lib/utils";
++import { RowMenu } from "@/components/rv/RowMenu";
+ 
+ const ACTION_W = 88;
+ const COMMIT_AT = 168;
+@@ -149,7 +150,9 @@ export function SwipeRow({
+         onClick={onTap}
+         className="relative bg-card"
+       >
+-        {children}
++        <RowMenu onEdit={onEdit} onDelete={onDelete ? remove : undefined}>
++          {children}
++        </RowMenu>
+       </motion.div>
+     </motion.div>
+   );
+diff --git a/src/components/rv/ui.tsx b/src/components/rv/ui.tsx
+index 04980e1..27a6787 100644
+--- a/src/components/rv/ui.tsx
++++ b/src/components/rv/ui.tsx
+@@ -32,6 +32,78 @@ export interface SlidingTabOption<T extends string> {
+   badge?: number | string;
+ }
+ 
++/**
++ * Mini popup label for icon-only controls.
++ * Mouse: shows on hover. Touch: shows while you press and hold (≈350 ms),
++ * then fades after a moment. Rendered in <body> so scroll containers can't clip it.
++ */
++export function useHoldTip(label: string) {
++  const [rect, setRect] = useState<DOMRect | null>(null);
++  const timer = useRef<number | undefined>(undefined);
++  const hide = () => {
++    window.clearTimeout(timer.current);
++    setRect(null);
++  };
++  const handlers = {
++    onPointerEnter: (e: React.PointerEvent<HTMLElement>) => {
++      if (e.pointerType === "mouse")
++        setRect(e.currentTarget.getBoundingClientRect());
++    },
++    onPointerLeave: hide,
++    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
++      if (e.pointerType === "mouse") return;
++      const el = e.currentTarget;
++      window.clearTimeout(timer.current);
++      timer.current = window.setTimeout(() => {
++        setRect(el.getBoundingClientRect());
++        timer.current = window.setTimeout(() => setRect(null), 1600);
++      }, 350);
++    },
++    onPointerUp: () => window.clearTimeout(timer.current),
++    onPointerCancel: hide,
++  };
++  const bubble =
++    rect && typeof document !== "undefined"
++      ? createPortal(
++          <span
++            role="tooltip"
++            style={{
++              position: "fixed",
++              left: Math.min(
++                window.innerWidth - 8,
++                Math.max(8, rect.left + rect.width / 2),
++              ),
++              top: Math.max(8, rect.top - 8),
++              transform: "translate(-50%, -100%)",
++            }}
++            className="pointer-events-none z-[200] animate-in fade-in zoom-in-95 whitespace-nowrap rounded-full border border-[var(--glass-border)] bg-popover px-2.5 py-1 text-[0.7rem] font-medium text-popover-foreground shadow-lg backdrop-blur-xl duration-150"
++          >
++            {label}
++          </span>,
++          document.body,
++        )
++      : null;
++  return { handlers, bubble };
++}
++
++function SlidingTabButton({
++  label,
++  showTip,
++  children,
++  ...rest
++}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
++  label: string;
++  showTip: boolean;
++}) {
++  const { handlers, bubble } = useHoldTip(label);
++  return (
++    <button {...rest} {...(showTip ? handlers : {})}>
++      {children}
++      {showTip ? bubble : null}
++    </button>
++  );
++}
++
+ export function SlidingTabs<T extends string>({
+   options,
+   value,
+@@ -69,12 +141,13 @@ export function SlidingTabs<T extends string>({
+         const Icon = opt.icon;
+         const hideLabel = iconOnly && Boolean(Icon);
+         return (
+-          <button
++          <SlidingTabButton
+             key={opt.id}
+             type="button"
++            label={opt.label}
++            showTip={hideLabel}
+             onClick={() => onChange(opt.id)}
+             aria-label={opt.label}
+-            title={opt.label}
+             className={cn(
+               "relative inline-flex min-h-[34px] shrink-0 items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors duration-150 active:scale-[0.97] sm:min-h-0",
+               stretch && "flex-1",
+@@ -123,7 +196,7 @@ export function SlidingTabs<T extends string>({
+                 </span>
+               )}
+             </span>
+-          </button>
++          </SlidingTabButton>
+         );
+       })}
+     </div>
+diff --git a/src/lib/bento-ai.test.ts b/src/lib/bento-ai.test.ts
+new file mode 100644
+index 0000000..f688703
+--- /dev/null
++++ b/src/lib/bento-ai.test.ts
+@@ -0,0 +1,41 @@
++import { describe, expect, it } from "vitest";
++import { autoArrange, recordChoice } from "./bento-ai";
++
++const mk = (id: string, span = 6) => ({ id, title: id, span });
++
++describe("autoArrange", () => {
++  it("never leaves a gap: every row sums to 12", () => {
++    for (let n = 1; n <= 9; n++) {
++      const items = Array.from({ length: n }, (_, i) =>
++        mk(`w${i}`, [4, 6, 8, 12][i % 4]),
++      );
++      const { spans } = autoArrange(items);
++      // re-pack greedily like the grid does and make sure rows are exact
++      let used = 0;
++      for (const s of spans) {
++        used += s.span;
++        if (used === 12) used = 0;
++        expect(used).toBeLessThan(12);
++      }
++      expect(used).toBe(0);
++    }
++  });
++
++  it("gives calendars the full row and stats a third", () => {
++    const { spans } = autoArrange([
++      mk("stat-a"),
++      mk("stat-b"),
++      mk("stat-c"),
++      mk("calendar"),
++    ]);
++    expect(spans.map((s) => s.span)).toEqual([4, 4, 4, 12]);
++  });
++
++  it("learns from manual choices", () => {
++    let learned = {};
++    learned = recordChoice(learned, "notes", 12);
++    learned = recordChoice(learned, "notes", 12);
++    const { spans } = autoArrange([mk("notes", 4)], learned);
++    expect(spans[0]!.span).toBe(12);
++  });
++});
+diff --git a/src/lib/bento-ai.ts b/src/lib/bento-ai.ts
+new file mode 100644
+index 0000000..c8228d7
+--- /dev/null
++++ b/src/lib/bento-ai.ts
+@@ -0,0 +1,146 @@
++/**
++ * Smart bento auto-layout ("Smart layout").
++ *
++ * This is a local, deterministic optimiser (no network, no LLM) that:
++ *  1. Guesses how wide each card wants to be (keywords in its id/title,
++ *     then the card's default, then what the user actually chose before).
++ *  2. Splits the ordered cards into 12-column rows with dynamic programming,
++ *     picking widths so every row sums to exactly 12 (zero empty gaps) while
++ *     staying as close as possible to each card's preferred width.
++ *
++ * "Refine" = learning: every time the user resizes a card by hand we record
++ * the choice, and later runs weight those choices above the keyword guess.
++ */
++
++export type AutoSpan = 4 | 6 | 8 | 12;
++
++export interface AutoItem {
++  id: string;
++  title: string;
++  span: number;
++}
++
++export type LearnedSpans = Record<string, Partial<Record<AutoSpan, number>>>;
++
++const ALLOWED: AutoSpan[] = [4, 6, 8, 12];
++
++/** Row templates that sum to 12, from the allowed widths. */
++const ROW_TEMPLATES: AutoSpan[][] = [[12], [6, 6], [4, 8], [8, 4], [4, 4, 4]];
++
++const WIDE =
++  /(calendar|timeline|ledger|table|schedule|board|flow|sankey|portfolio|gantt|pipeline|invoice list|transactions)/i;
++const MEDIUM =
++  /(chart|trend|breakdown|budget|goal|projects?|tasks?|clients?|services?|expenses?|income|summary|activity)/i;
++const NARROW =
++  /(stat|kpi|total|balance|metric|count|quick|reminder|upcoming|alert|health|score|rate)/i;
++
++/** Preferred span from the card's name alone. */
++export function guessSpan(item: AutoItem): AutoSpan {
++  const text = `${item.id} ${item.title}`;
++  if (WIDE.test(text)) return 12;
++  if (NARROW.test(text)) return 4;
++  if (MEDIUM.test(text)) return 6;
++  return snap(item.span);
++}
++
++export function snap(span: number): AutoSpan {
++  let best: AutoSpan = 6;
++  let d = Infinity;
++  for (const a of ALLOWED) {
++    const diff = Math.abs(a - span);
++    if (diff < d) {
++      d = diff;
++      best = a;
++    }
++  }
++  return best;
++}
++
++/** Most frequently chosen span for this card, if the user ever chose one. */
++export function learnedSpan(
++  id: string,
++  learned: LearnedSpans,
++): AutoSpan | null {
++  const counts = learned[id];
++  if (!counts) return null;
++  let best: AutoSpan | null = null;
++  let n = 0;
++  for (const a of ALLOWED) {
++    const c = counts[a] ?? 0;
++    if (c > n) {
++      n = c;
++      best = a;
++    }
++  }
++  return best;
++}
++
++export function recordChoice(
++  learned: LearnedSpans,
++  id: string,
++  span: number,
++): LearnedSpans {
++  const s = snap(span);
++  const cur = learned[id] ?? {};
++  return { ...learned, [id]: { ...cur, [s]: (cur[s] ?? 0) + 1 } };
++}
++
++export interface AutoResult {
++  /** New span for each card id (same order as input). */
++  spans: { id: string; span: AutoSpan }[];
++  rows: number;
++  /** 0–100: how closely widths match each card's preference. */
++  fit: number;
++}
++
++export function autoArrange(
++  items: AutoItem[],
++  learned: LearnedSpans = {},
++): AutoResult {
++  const n = items.length;
++  if (n === 0) return { spans: [], rows: 0, fit: 100 };
++
++  const pref = items.map((it) => learnedSpan(it.id, learned) ?? guessSpan(it));
++
++  // best[i] = cheapest layout of the first i cards.
++  const best: number[] = Array(n + 1).fill(Infinity);
++  const choice: { from: number; tpl: AutoSpan[] }[] = Array(n + 1);
++  best[0] = 0;
++
++  for (let i = 1; i <= n; i++) {
++    for (const tpl of ROW_TEMPLATES) {
++      const from = i - tpl.length;
++      if (from < 0 || best[from] === Infinity) continue;
++      let cost = 0;
++      for (let k = 0; k < tpl.length; k++) {
++        cost += Math.abs(tpl[k]! - pref[from + k]!);
++      }
++      // tiny bias against rows of 1 narrow widget stretched to full width
++      const total = best[from]! + cost + 0.01;
++      if (total < best[i]!) {
++        best[i] = total;
++        choice[i] = { from, tpl };
++      }
++    }
++  }
++
++  const spans: { id: string; span: AutoSpan }[] = [];
++  let rows = 0;
++  let i = n;
++  const out: AutoSpan[] = Array(n);
++  while (i > 0) {
++    const c = choice[i]!;
++    c.tpl.forEach((s, k) => {
++      out[c.from + k] = s;
++    });
++    rows++;
++    i = c.from;
++  }
++  let off = 0;
++  for (let k = 0; k < n; k++) {
++    spans.push({ id: items[k]!.id, span: out[k]! });
++    off += Math.abs(out[k]! - pref[k]!);
++  }
++  const fit = Math.max(0, Math.round(100 - (off / (n * 8)) * 100));
++  return { spans, rows, fit };
++}
+-- 
+2.43.0
+
