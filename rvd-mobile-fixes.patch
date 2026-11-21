@@ -1,7 +1,7 @@
 From 4e3f784da673a1fb0d204bf9bb52f48709a54c31 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Sat, 21 Nov 2026 03:26:43 +0000
-Subject: [PATCH 1/2] Mobile: responsive touch D3 charts, SwipeRow
+Subject: [PATCH 1/3] Mobile: responsive touch D3 charts, SwipeRow
  swipe-to-delete with undo, iOS CSS polish, fix all TS errors
 
 ---
@@ -857,7 +857,7 @@ index 66ea497..f76ae7f 100644
 From 5e43971eef8a8d8bb1514b24c4de2bb0cca9b752 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Sat, 21 Nov 2026 03:32:41 +0000
-Subject: [PATCH 2/2] Apple-style theme: system blue accent, SF type stack,
+Subject: [PATCH 2/3] Apple-style theme: system blue accent, SF type stack,
  solid cards, pill buttons, press scale
 
 ---
@@ -1236,6 +1236,521 @@ index f76ae7f..8c26656 100644
 +:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
 +/* frosted bars */
 +.no-print.sticky, .no-print.fixed { backdrop-filter: saturate(180%) blur(20px); }
+-- 
+2.43.0
+
+
+From 32a6a0b21db6b192c74b852bbe8feee291bd0e42 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 21 Nov 2026 04:09:33 +0000
+Subject: [PATCH 3/3] Portal all side panels/modals to body (full-height,
+ scroll lock); swipe-delete on combined ledger
+
+---
+ src/components/rv/CaseStudyBuilder.tsx |   5 +-
+ src/components/rv/DesignMediaTools.tsx |   4 +-
+ src/components/rv/FinanceVisuals.tsx   |  12 ++-
+ src/components/rv/PWAInstallButton.tsx | 135 ++++++++++++------------
+ src/components/rv/ui.tsx               |  30 +++++-
+ src/routes/finance.tsx                 | 139 +++++++++++++++++--------
+ 6 files changed, 206 insertions(+), 119 deletions(-)
+
+diff --git a/src/components/rv/CaseStudyBuilder.tsx b/src/components/rv/CaseStudyBuilder.tsx
+index 6228811..ea64848 100644
+--- a/src/components/rv/CaseStudyBuilder.tsx
++++ b/src/components/rv/CaseStudyBuilder.tsx
+@@ -36,7 +36,7 @@ import {
+   Type,
+   X,
+ } from "lucide-react";
+-import { Btn, F, SlidingTabs } from "@/components/rv/ui";
++import { Btn, F, SlidingTabs, Portal } from "@/components/rv/ui";
+ import { DesignMediaUploader } from "@/components/rv/DesignMediaTools";
+ import { downloadCaseStudy } from "@/lib/case-study-export";
+ import { loadMediaBlob } from "@/lib/media-store";
+@@ -758,7 +758,7 @@ export function CaseStudyBuilder({
+         ? "bg-[#1b2638] border-white/10"
+         : "bg-[#232328] border-white/10";
+ 
+-  return (
++  const overlay = (
+     <div
+       className="fixed inset-0 z-[115] flex items-center justify-center bg-black/75 p-2 backdrop-blur-md sm:p-5"
+       role="dialog"
+@@ -1489,4 +1489,5 @@ export function CaseStudyBuilder({
+       </div>
+     </div>
+   );
++  return <Portal>{overlay}</Portal>;
+ }
+diff --git a/src/components/rv/DesignMediaTools.tsx b/src/components/rv/DesignMediaTools.tsx
+index f3f3dc6..0859812 100644
+--- a/src/components/rv/DesignMediaTools.tsx
++++ b/src/components/rv/DesignMediaTools.tsx
+@@ -1,3 +1,4 @@
++import { Portal } from "@/components/rv/ui";
+ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+ import { toast } from "sonner";
+ import {
+@@ -320,7 +321,7 @@ export function MediaLightboxViewer({
+ 
+   if (!item) return null;
+ 
+-  return (
++  const overlay = (
+     <div
+       className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm sm:p-6"
+       role="dialog"
+@@ -527,6 +528,7 @@ export function MediaLightboxViewer({
+       </div>
+     </div>
+   );
++  return <Portal>{overlay}</Portal>;
+ }
+ 
+ export function MediaCountBadge({
+diff --git a/src/components/rv/FinanceVisuals.tsx b/src/components/rv/FinanceVisuals.tsx
+index afb8c37..c487ad1 100644
+--- a/src/components/rv/FinanceVisuals.tsx
++++ b/src/components/rv/FinanceVisuals.tsx
+@@ -84,7 +84,14 @@ import {
+   type GoalContribution,
+ } from "@/lib/store";
+ import { cn } from "@/lib/utils";
+-import { Btn, F, Sel, SlideDrawer, SlidingTabs } from "@/components/rv/ui";
++import {
++  Btn,
++  F,
++  Sel,
++  SlideDrawer,
++  SlidingTabs,
++  Portal,
++} from "@/components/rv/ui";
+ 
+ /* ---------- Category & Item Icon Mapping ---------- */
+ 
+@@ -795,7 +802,7 @@ export function CategoryInspectorDrawer({
+     window.setTimeout(() => setSavedFlash(false), 1400);
+   };
+ 
+-  return (
++  const overlay = (
+     <div
+       className="fixed inset-0 z-50 flex justify-end"
+       role="dialog"
+@@ -1256,6 +1263,7 @@ export function CategoryInspectorDrawer({
+       </aside>
+     </div>
+   );
++  return <Portal>{overlay}</Portal>;
+ }
+ 
+ /* ---------- Circular SVG Ring Goal Card & Daily/Monthly/Yearly Goal Planner ---------- */
+diff --git a/src/components/rv/PWAInstallButton.tsx b/src/components/rv/PWAInstallButton.tsx
+index ad46c3f..259809a 100644
+--- a/src/components/rv/PWAInstallButton.tsx
++++ b/src/components/rv/PWAInstallButton.tsx
+@@ -1,6 +1,6 @@
+ import { useState } from "react";
+ import { Download, PlusSquare, Share, Smartphone, X } from "lucide-react";
+-import { Btn } from "@/components/rv/ui";
++import { Btn, Portal } from "@/components/rv/ui";
+ import { useOnlineStatus, usePWAInstall } from "@/lib/usePWAInstall";
+ import { cn } from "@/lib/utils";
+ 
+@@ -56,80 +56,83 @@ export function PWAInstallButton({
+         </button>
+ 
+         {showIOSGuide && (
+-          <div
+-            className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
+-            role="dialog"
+-            aria-modal="true"
+-            aria-label="Install on iPhone or iPad"
+-            onClick={() => setShowIOSGuide(false)}
+-          >
++          <Portal>
+             <div
+-              onClick={(e) => e.stopPropagation()}
+-              className="glass-strong w-full max-w-sm rounded-3xl border border-border p-5 shadow-2xl"
++              className="fixed inset-0 z-[120] flex items-center justify-center bg-black/70 p-4 backdrop-blur-md"
++              role="dialog"
++              aria-modal="true"
++              aria-label="Install on iPhone or iPad"
++              onClick={() => setShowIOSGuide(false)}
+             >
+-              <div className="mb-3 flex items-start justify-between gap-2">
+-                <div className="flex items-center gap-2.5">
+-                  <img
+-                    src="/apple-touch-icon.png"
+-                    alt="RothVan Ledger"
+-                    className="h-11 w-11 rounded-2xl border border-primary/30 shadow-md"
+-                  />
+-                  <div>
+-                    <h3 className="font-display text-base font-bold">
+-                      Install RothVan Ledger
+-                    </h3>
+-                    <p className="text-xs text-muted-foreground">
+-                      Launch full-screen on iPhone &amp; iPad
+-                    </p>
++              <div
++                onClick={(e) => e.stopPropagation()}
++                className="glass-strong w-full max-w-sm rounded-3xl border border-border p-5 shadow-2xl"
++              >
++                <div className="mb-3 flex items-start justify-between gap-2">
++                  <div className="flex items-center gap-2.5">
++                    <img
++                      src="/apple-touch-icon.png"
++                      alt="RothVan Ledger"
++                      className="h-11 w-11 rounded-2xl border border-primary/30 shadow-md"
++                    />
++                    <div>
++                      <h3 className="font-display text-base font-bold">
++                        Install RothVan Ledger
++                      </h3>
++                      <p className="text-xs text-muted-foreground">
++                        Launch full-screen on iPhone &amp; iPad
++                      </p>
++                    </div>
+                   </div>
++                  <button
++                    type="button"
++                    onClick={() => setShowIOSGuide(false)}
++                    aria-label="Close install instructions"
++                    className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
++                  >
++                    <X className="h-4 w-4" />
++                  </button>
+                 </div>
+-                <button
+-                  type="button"
+-                  onClick={() => setShowIOSGuide(false)}
+-                  aria-label="Close install instructions"
+-                  className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+-                >
+-                  <X className="h-4 w-4" />
+-                </button>
+-              </div>
+ 
+-              <ol className="space-y-2.5 rounded-2xl border border-border/70 bg-muted/40 p-3.5 text-xs text-foreground">
+-                <li className="flex items-center gap-2.5">
+-                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
+-                    <Share className="h-3.5 w-3.5" />
+-                  </span>
+-                  <span>
+-                    Tap the <strong>Share</strong> icon in Safari&apos;s
+-                    toolbar.
+-                  </span>
+-                </li>
+-                <li className="flex items-center gap-2.5">
+-                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
+-                    <PlusSquare className="h-3.5 w-3.5" />
+-                  </span>
+-                  <span>
+-                    Scroll down and choose <strong>Add to Home Screen</strong>.
+-                  </span>
+-                </li>
+-              </ol>
++                <ol className="space-y-2.5 rounded-2xl border border-border/70 bg-muted/40 p-3.5 text-xs text-foreground">
++                  <li className="flex items-center gap-2.5">
++                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
++                      <Share className="h-3.5 w-3.5" />
++                    </span>
++                    <span>
++                      Tap the <strong>Share</strong> icon in Safari&apos;s
++                      toolbar.
++                    </span>
++                  </li>
++                  <li className="flex items-center gap-2.5">
++                    <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-primary/15 text-primary">
++                      <PlusSquare className="h-3.5 w-3.5" />
++                    </span>
++                    <span>
++                      Scroll down and choose <strong>Add to Home Screen</strong>
++                      .
++                    </span>
++                  </li>
++                </ol>
+ 
+-              <p className="mt-3 text-[0.72rem] leading-relaxed text-muted-foreground">
+-                Running from the Home Screen removes Safari&apos;s URL bar and
+-                opens RothVan Ledger as an isolated standalone app window.
+-              </p>
++                <p className="mt-3 text-[0.72rem] leading-relaxed text-muted-foreground">
++                  Running from the Home Screen removes Safari&apos;s URL bar and
++                  opens RothVan Ledger as an isolated standalone app window.
++                </p>
+ 
+-              <div className="mt-4 flex justify-end">
+-                <Btn
+-                  type="button"
+-                  variant="gold"
+-                  onClick={() => setShowIOSGuide(false)}
+-                  className="w-full py-2 text-xs"
+-                >
+-                  Got it
+-                </Btn>
++                <div className="mt-4 flex justify-end">
++                  <Btn
++                    type="button"
++                    variant="gold"
++                    onClick={() => setShowIOSGuide(false)}
++                    className="w-full py-2 text-xs"
++                  >
++                    Got it
++                  </Btn>
++                </div>
+               </div>
+             </div>
+-          </div>
++          </Portal>
+         )}
+       </>
+     );
+diff --git a/src/components/rv/ui.tsx b/src/components/rv/ui.tsx
+index 537aebf..04980e1 100644
+--- a/src/components/rv/ui.tsx
++++ b/src/components/rv/ui.tsx
+@@ -203,6 +203,28 @@ export function Btn({
+   );
+ }
+ 
++/**
++ * Renders children into <body> so `position: fixed` overlays always cover the
++ * whole viewport (an ancestor with backdrop-filter/transform otherwise traps
++ * them inside its own box), and locks page scroll while mounted.
++ */
++export function Portal({ children }: { children: ReactNode }) {
++  const [mounted, setMounted] = useState(false);
++  useEffect(() => {
++    setMounted(true);
++  }, []);
++  useEffect(() => {
++    if (!mounted) return;
++    const body = document.body;
++    const prev = body.style.overflow;
++    body.style.overflow = "hidden";
++    return () => {
++      body.style.overflow = prev;
++    };
++  }, [mounted]);
++  return mounted ? createPortal(children, document.body) : null;
++}
++
+ export function Modal({
+   open,
+   onClose,
+@@ -223,7 +245,7 @@ export function Modal({
+     return () => window.removeEventListener("keydown", k);
+   }, [open, onClose]);
+   if (!open) return null;
+-  return (
++  const overlay = (
+     <div
+       className="fixed inset-0 z-50 flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm animate-in fade-in sm:items-center sm:p-4"
+       onClick={onClose}
+@@ -251,6 +273,7 @@ export function Modal({
+       </div>
+     </div>
+   );
++  return <Portal>{overlay}</Portal>;
+ }
+ 
+ export function SlideDrawer({
+@@ -279,7 +302,7 @@ export function SlideDrawer({
+     return () => window.removeEventListener("keydown", k);
+   }, [open, onClose]);
+   if (!open) return null;
+-  return (
++  const overlay = (
+     <div
+       className={cn(
+         "fixed inset-0 z-50 flex items-end sm:items-stretch",
+@@ -297,7 +320,7 @@ export function SlideDrawer({
+       />
+       <aside
+         className={cn(
+-          "drawer-in relative z-10 mt-[env(safe-area-inset-top)] flex max-h-[92dvh] w-full flex-col rounded-t-2xl border-t border-[var(--glass-border)] bg-popover shadow-2xl backdrop-blur-2xl backdrop-saturate-150 sm:mt-0 sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0 sm:pt-[env(safe-area-inset-top)]",
++          "drawer-in relative z-10 mt-[env(safe-area-inset-top)] flex h-[calc(100dvh-env(safe-area-inset-top)-0.75rem)] w-full flex-col rounded-t-2xl border-t border-[var(--glass-border)] bg-popover shadow-2xl backdrop-blur-2xl backdrop-saturate-150 sm:mt-0 sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0 sm:pt-[env(safe-area-inset-top)]",
+           widthClass,
+           side === "left"
+             ? "sm:border-r sm:border-[var(--glass-border)]"
+@@ -342,6 +365,7 @@ export function SlideDrawer({
+       </aside>
+     </div>
+   );
++  return <Portal>{overlay}</Portal>;
+ }
+ 
+ export function F({
+diff --git a/src/routes/finance.tsx b/src/routes/finance.tsx
+index c3f96cf..fa5bae8 100644
+--- a/src/routes/finance.tsx
++++ b/src/routes/finance.tsx
+@@ -1,3 +1,5 @@
++import { toast } from "sonner";
++import { SwipeRow } from "@/components/rv/SwipeRow";
+ import { createFileRoute, Link } from "@tanstack/react-router";
+ import { useEffect, useMemo, useState } from "react";
+ import {
+@@ -434,6 +436,46 @@ function Page() {
+   ]);
+   const combinedVisibleRows = combinedLedgerRows.slice(0, combinedVisible);
+ 
++  /** Swipe-delete for expenses & personal income (invoice payments stay protected). */
++  const deleteCombinedRow = (rowId: string) => {
++    if (rowId.startsWith("exp-")) {
++      const item = db.expenses.find((x) => `exp-${x.id}` === rowId);
++      if (!item) return;
++      setDB((d) => ({
++        ...d,
++        expenses: d.expenses.filter((x) => x.id !== item.id),
++      }));
++      toast("Expense deleted", {
++        action: {
++          label: "Undo",
++          onClick: () =>
++            setDB((d) => ({ ...d, expenses: [item, ...d.expenses] })),
++        },
++      });
++    } else if (rowId.startsWith("pinc-")) {
++      const item = (db.personalIncome ?? []).find(
++        (x) => `pinc-${x.id}` === rowId,
++      );
++      if (!item) return;
++      setDB((d) => ({
++        ...d,
++        personalIncome: (d.personalIncome ?? []).filter(
++          (x) => x.id !== item.id,
++        ),
++      }));
++      toast("Income deleted", {
++        action: {
++          label: "Undo",
++          onClick: () =>
++            setDB((d) => ({
++              ...d,
++              personalIncome: [item, ...(d.personalIncome ?? [])],
++            })),
++        },
++      });
++    }
++  };
++
+   const widgets = useMemo<BentoWidgetDef[]>(
+     () => [
+       {
+@@ -1329,58 +1371,65 @@ function Page() {
+               <>
+                 <ul className="divide-y divide-border">
+                   {combinedVisibleRows.map((row) => (
+-                    <li
+-                      key={row.id}
+-                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-2.5"
+-                    >
+-                      <div className="flex min-w-0 items-center gap-3">
+-                        <span
+-                          className={cn(
+-                            "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
+-                            row.direction === "income"
+-                              ? "text-positive"
+-                              : "text-destructive",
+-                          )}
+-                        >
+-                          {row.direction === "income" ? (
+-                            <ArrowDownLeft className="h-4 w-4" />
+-                          ) : (
+-                            <ArrowUpRight className="h-4 w-4" />
+-                          )}
+-                        </span>
+-                        <div className="min-w-0">
+-                          <div className="flex flex-wrap items-center gap-2">
+-                            <p className="truncate text-sm font-medium text-foreground">
+-                              {row.title}
+-                            </p>
++                    <li key={row.id}>
++                      <SwipeRow
++                        onDelete={
++                          row.id.startsWith("pay-")
++                            ? undefined
++                            : () => deleteCombinedRow(row.id)
++                        }
++                      >
++                        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-2.5">
++                          <div className="flex min-w-0 items-center gap-3">
+                             <span
+                               className={cn(
+-                                "rounded-full border px-2 py-0.5 text-[0.62rem] font-medium",
+-                                row.workspace === "Studio"
+-                                  ? "border-primary/40 bg-primary/12 text-primary"
+-                                  : "border-border bg-muted text-muted-foreground",
++                                "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
++                                row.direction === "income"
++                                  ? "text-positive"
++                                  : "text-destructive",
+                               )}
+                             >
+-                              {row.workspace}
++                              {row.direction === "income" ? (
++                                <ArrowDownLeft className="h-4 w-4" />
++                              ) : (
++                                <ArrowUpRight className="h-4 w-4" />
++                              )}
+                             </span>
++                            <div className="min-w-0">
++                              <div className="flex flex-wrap items-center gap-2">
++                                <p className="truncate text-sm font-medium text-foreground">
++                                  {row.title}
++                                </p>
++                                <span
++                                  className={cn(
++                                    "rounded-full border px-2 py-0.5 text-[0.62rem] font-medium",
++                                    row.workspace === "Studio"
++                                      ? "border-primary/40 bg-primary/12 text-primary"
++                                      : "border-border bg-muted text-muted-foreground",
++                                  )}
++                                >
++                                  {row.workspace}
++                                </span>
++                              </div>
++                              <p className="truncate text-xs text-muted-foreground">
++                                {shortDate(row.date)} · {row.sub}
++                              </p>
++                            </div>
+                           </div>
+-                          <p className="truncate text-xs text-muted-foreground">
+-                            {shortDate(row.date)} · {row.sub}
+-                          </p>
++                          <span
++                            className={cn(
++                              "font-num shrink-0 text-sm font-semibold",
++                              row.direction === "income"
++                                ? "text-positive"
++                                : "text-destructive",
++                            )}
++                          >
++                            {row.direction === "income"
++                              ? `+${money(row.usd)}`
++                              : money(-row.usd)}
++                          </span>
+                         </div>
+-                      </div>
+-                      <span
+-                        className={cn(
+-                          "font-num shrink-0 text-sm font-semibold",
+-                          row.direction === "income"
+-                            ? "text-positive"
+-                            : "text-destructive",
+-                        )}
+-                      >
+-                        {row.direction === "income"
+-                          ? `+${money(row.usd)}`
+-                          : money(-row.usd)}
+-                      </span>
++                      </SwipeRow>
+                     </li>
+                   ))}
+                 </ul>
 -- 
 2.43.0
 
