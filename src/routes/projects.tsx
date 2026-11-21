@@ -1,5 +1,11 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { toast } from "sonner";
 import {
   DndContext,
@@ -14,11 +20,9 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
-import FullCalendar from "@fullcalendar/react";
-import dayGridPlugin from "@fullcalendar/daygrid";
-import interactionPlugin, {
-  type DateClickArg,
-  type EventResizeDoneArg,
+import type {
+  DateClickArg,
+  EventResizeDoneArg,
 } from "@fullcalendar/interaction";
 import type {
   DateSelectArg,
@@ -26,6 +30,12 @@ import type {
   EventDropArg,
 } from "@fullcalendar/core";
 import {
+  LazyFullCalendar,
+  useIsDesktopMd,
+} from "@/components/rv/LazyFullCalendar";
+import { SwipeRow } from "@/components/rv/SwipeRow";
+import {
+  ArrowRight,
   CalendarDays,
   CalendarRange,
   CheckCircle2,
@@ -43,6 +53,7 @@ import {
   Palette,
   Plus,
   RotateCcw,
+  Search,
   SlidersHorizontal,
 } from "lucide-react";
 import {
@@ -113,8 +124,6 @@ export const Route = createFileRoute("/projects")({
   }),
   component: Page,
 });
-
-import { useRef, type CSSProperties } from "react";
 
 type ViewMode = "board" | "timeline" | "calendar" | "list";
 const BOARD_COL_LIMIT = 5;
@@ -301,11 +310,28 @@ function toIsoDate(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+function nextProjectStage(status: string): string | null {
+  switch (status) {
+    case "Inquiry":
+      return "Quoted";
+    case "Quoted":
+      return "In production";
+    case "In production":
+      return "Delivered";
+    case "Delivered":
+      return "Closed";
+    default:
+      return null;
+  }
+}
+
 function Page() {
   const db = useDB((d) => d);
   const nav = useNavigate();
+  const isDesktopMd = useIsDesktopMd();
   const [view, setView] = useState<ViewMode>("board");
   const [f, setF] = useState("All");
+  const [query, setQuery] = useState("");
   const [healthFilter, setHealthFilter] = useState<"all" | ProjectHealthStatus>(
     "all",
   );
@@ -437,54 +463,132 @@ function Page() {
     };
   }, [projectHealthMap, db.projects.length]);
 
-  const rows = db.projects.filter((p) => {
-    if (f !== "All" && p.status !== f) return false;
-    if (healthFilter !== "all") {
-      const h = projectHealthMap.get(p.id);
-      if (h?.status !== healthFilter) return false;
-    }
-    return true;
-  });
+  const qLower = query.trim().toLowerCase();
+
+  const matchesSearch = useCallback(
+    (p: Project) => {
+      if (!qLower) return true;
+      const clientName =
+        db.clients.find((c) => c.id === p.clientId)?.name ?? "";
+      return `${p.code} ${p.name} ${p.status} ${clientName}`
+        .toLowerCase()
+        .includes(qLower);
+    },
+    [qLower, db.clients],
+  );
+
+  const rows = useMemo(
+    () =>
+      db.projects.filter((p) => {
+        if (f !== "All" && p.status !== f) return false;
+        if (healthFilter !== "all") {
+          const h = projectHealthMap.get(p.id);
+          if (h?.status !== healthFilter) return false;
+        }
+        if (!matchesSearch(p)) return false;
+        return true;
+      }),
+    [db.projects, f, healthFilter, projectHealthMap, matchesSearch],
+  );
   const visibleListRows = showAllList ? rows : rows.slice(0, LIST_LIMIT);
 
-  const cost = (p: Project) =>
-    db.expenses
-      .filter((e) => e.projectId === p.id)
-      .reduce(
-        (a, e) => a + toUSD(e.amount, e.currency, db.settings.khrRate),
+  const cost = useCallback(
+    (p: Project) =>
+      db.expenses
+        .filter((e) => e.projectId === p.id)
+        .reduce(
+          (a, e) => a + toUSD(e.amount, e.currency, db.settings.khrRate),
+          0,
+        ),
+    [db.expenses, db.settings.khrRate],
+  );
+
+  const projectBilling = useCallback(
+    (p: Project) => {
+      const docs = db.invoices.filter((i) => i.projectId === p.id);
+      const bills = docs.filter(isInvoice).map((i) => invoiceView(i, db));
+      const billed = bills.reduce((a, x) => a + x.totalUSD, 0);
+      const paid = bills.reduce(
+        (a, x) => a + toUSD(x.paid, "USD", db.settings.khrRate),
         0,
       );
-  const projectBilling = (p: Project) => {
-    const docs = db.invoices.filter((i) => i.projectId === p.id);
-    const bills = docs.filter(isInvoice).map((i) => invoiceView(i, db));
-    const billed = bills.reduce((a, x) => a + x.totalUSD, 0);
-    const paid = bills.reduce(
-      (a, x) => a + toUSD(x.paid, "USD", db.settings.khrRate),
-      0,
-    );
-    return { docs, billed, paid };
-  };
+      return { docs, billed, paid };
+    },
+    [db],
+  );
 
-  const blank = (overrides: Partial<Project> = {}): Project => ({
-    id: uid(),
-    code: nextCode(
-      "RVD-",
-      db.projects.map((p) => p.code),
-      101,
-      3,
-    ),
-    clientId: "",
-    serviceId: "",
-    name: "",
-    status: "Inquiry",
-    start: "",
-    due: "",
-    delivered: "",
-    quote: 0,
-    artworkCount: 1,
-    media: [],
-    ...overrides,
-  });
+  const blank = useCallback(
+    (overrides: Partial<Project> = {}): Project => ({
+      id: uid(),
+      code: nextCode(
+        "RVD-",
+        db.projects.map((p) => p.code),
+        101,
+        3,
+      ),
+      clientId: "",
+      serviceId: "",
+      name: "",
+      status: "Inquiry",
+      start: "",
+      due: "",
+      delivered: "",
+      quote: 0,
+      artworkCount: 1,
+      media: [],
+      ...overrides,
+    }),
+    [db.projects],
+  );
+
+  const advanceProjectStage = useCallback(
+    (p: Project) => {
+      const nextStatus = nextProjectStage(p.status);
+      if (!nextStatus) return;
+      const updated: Project = {
+        ...p,
+        status: nextStatus,
+        ...(nextStatus === "In production" && !p.start ? { start: t } : {}),
+        ...(nextStatus === "Delivered" && !p.delivered ? { delivered: t } : {}),
+      };
+      try {
+        setDB((d) => updateProject(d, updated));
+        const label = boardConfigs[nextStatus]?.title || nextStatus;
+        toast.success(`${p.name || p.code} → ${label}`, {
+          action: {
+            label: "Undo",
+            onClick: () => setDB((d) => updateProject(d, p)),
+          },
+        });
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Unable to update project",
+        );
+      }
+    },
+    [t, boardConfigs],
+  );
+
+  const deleteProjectFromList = useCallback(
+    (p: Project) => {
+      const blocker = projectDeleteBlocker(db, p.id);
+      if (blocker) {
+        toast.error(blocker);
+        return;
+      }
+      setDB((d) => ({
+        ...d,
+        projects: d.projects.filter((x) => x.id !== p.id),
+      }));
+      toast(`Deleted ${p.name || p.code}`, {
+        action: {
+          label: "Undo",
+          onClick: () => setDB((d) => ({ ...d, projects: [p, ...d.projects] })),
+        },
+      });
+    },
+    [db],
+  );
 
   const save = (v: Project) => {
     const s = db.services.find((x) => x.id === v.serviceId);
@@ -506,28 +610,31 @@ function Page() {
     }
   };
 
-  const handleBoardDragStart = (event: DragStartEvent) => {
+  const handleBoardDragStart = useCallback((event: DragStartEvent) => {
     setActiveDragId(String(event.active.id));
-  };
+  }, []);
 
-  const handleBoardDragEnd = (event: DragEndEvent) => {
-    setActiveDragId(null);
-    const { active, over } = event;
-    if (!over) return;
-    const projectId = String(active.id);
-    const nextStatus = String(over.id);
-    const proj = db.projects.find((p) => p.id === projectId);
-    if (!proj || proj.status === nextStatus) return;
-    try {
-      setDB((d) => updateProject(d, { ...proj, status: nextStatus }));
-      const nextLabel = boardConfigs[nextStatus]?.title || nextStatus;
-      toast.success(`${proj.name || proj.code} → ${nextLabel}`);
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Unable to move project",
-      );
-    }
-  };
+  const handleBoardDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      setActiveDragId(null);
+      const { active, over } = event;
+      if (!over) return;
+      const projectId = String(active.id);
+      const nextStatus = String(over.id);
+      const proj = db.projects.find((p) => p.id === projectId);
+      if (!proj || proj.status === nextStatus) return;
+      try {
+        setDB((d) => updateProject(d, { ...proj, status: nextStatus }));
+        const nextLabel = boardConfigs[nextStatus]?.title || nextStatus;
+        toast.success(`${proj.name || proj.code} → ${nextLabel}`);
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Unable to move project",
+        );
+      }
+    },
+    [db.projects, boardConfigs],
+  );
 
   const boardColumns = PROJECT_STATUSES.filter(
     (status) => boardConfigs[status]?.visible ?? true,
@@ -559,72 +666,101 @@ function Page() {
       });
   }, [db.projects, db.clients, boardConfigs]);
 
-  const unscheduledProjects = db.projects.filter(
-    (p) => !p.start && !p.due && !["Closed", "Lost"].includes(p.status),
+  const unscheduledProjects = useMemo(
+    () =>
+      db.projects.filter(
+        (p) => !p.start && !p.due && !["Closed", "Lost"].includes(p.status),
+      ),
+    [db.projects],
   );
 
-  const onCalendarDateClick = (arg: DateClickArg) => {
-    setEdit(
-      blank({
-        start: arg.dateStr,
-        due: addDays(arg.dateStr, 6),
-        status: "In production",
-      }),
-    );
-  };
+  const scheduledMobileProjects = useMemo(
+    () =>
+      db.projects
+        .filter((p) => Boolean(p.start || p.due))
+        .sort((a, b) => (a.due || a.start).localeCompare(b.due || b.start)),
+    [db.projects],
+  );
 
-  const onCalendarSelect = (arg: DateSelectArg) => {
-    const start = toIsoDate(arg.start);
-    const inclusiveEnd = addDays(toIsoDate(arg.end), -1);
-    setEdit(
-      blank({
-        start,
-        due: inclusiveEnd >= start ? inclusiveEnd : start,
-        status: "In production",
-      }),
-    );
-  };
+  const onCalendarDateClick = useCallback(
+    (arg: DateClickArg) => {
+      setEdit(
+        blank({
+          start: arg.dateStr,
+          due: addDays(arg.dateStr, 6),
+          status: "In production",
+        }),
+      );
+    },
+    [blank],
+  );
 
-  const onCalendarEventClick = (arg: EventClickArg) => {
-    const p = db.projects.find((x) => x.id === arg.event.id);
-    if (p) setEdit(p);
-  };
+  const onCalendarSelect = useCallback(
+    (arg: DateSelectArg) => {
+      const start = toIsoDate(arg.start);
+      const inclusiveEnd = addDays(toIsoDate(arg.end), -1);
+      setEdit(
+        blank({
+          start,
+          due: inclusiveEnd >= start ? inclusiveEnd : start,
+          status: "In production",
+        }),
+      );
+    },
+    [blank],
+  );
 
-  const onCalendarEventDrop = (arg: EventDropArg) => {
-    const p = db.projects.find((x) => x.id === arg.event.id);
-    if (!p || !arg.event.start) return;
-    const start = toIsoDate(arg.event.start);
-    const due = arg.event.end ? addDays(toIsoDate(arg.event.end), -1) : start;
-    try {
-      setDB((d) =>
-        updateProject(d, { ...p, start, due: due >= start ? due : start }),
-      );
-      toast.success(`Rescheduled ${p.name || p.code}`);
-    } catch (err) {
-      arg.revert();
-      toast.error(err instanceof Error ? err.message : "Unable to reschedule");
-    }
-  };
+  const onCalendarEventClick = useCallback(
+    (arg: EventClickArg) => {
+      const p = db.projects.find((x) => x.id === arg.event.id);
+      if (p) setEdit(p);
+    },
+    [db.projects],
+  );
 
-  const onCalendarEventResize = (arg: EventResizeDoneArg) => {
-    const p = db.projects.find((x) => x.id === arg.event.id);
-    if (!p || !arg.event.start) return;
-    const start = toIsoDate(arg.event.start);
-    const due = arg.event.end ? addDays(toIsoDate(arg.event.end), -1) : start;
-    try {
-      setDB((d) =>
-        updateProject(d, { ...p, start, due: due >= start ? due : start }),
-      );
-      toast.success(
-        `Timeline updated (${shortDate(start)} – ${shortDate(due)})`,
-      );
-    } catch (err) {
-      arg.revert();
-      toast.error(
-        err instanceof Error ? err.message : "Unable to resize timeline",
-      );
-    }
-  };
+  const onCalendarEventDrop = useCallback(
+    (arg: EventDropArg) => {
+      const p = db.projects.find((x) => x.id === arg.event.id);
+      if (!p || !arg.event.start) return;
+      const start = toIsoDate(arg.event.start);
+      const due = arg.event.end ? addDays(toIsoDate(arg.event.end), -1) : start;
+      try {
+        setDB((d) =>
+          updateProject(d, { ...p, start, due: due >= start ? due : start }),
+        );
+        toast.success(`Rescheduled ${p.name || p.code}`);
+      } catch (err) {
+        arg.revert();
+        toast.error(
+          err instanceof Error ? err.message : "Unable to reschedule",
+        );
+      }
+    },
+    [db.projects],
+  );
+
+  const onCalendarEventResize = useCallback(
+    (arg: EventResizeDoneArg) => {
+      const p = db.projects.find((x) => x.id === arg.event.id);
+      if (!p || !arg.event.start) return;
+      const start = toIsoDate(arg.event.start);
+      const due = arg.event.end ? addDays(toIsoDate(arg.event.end), -1) : start;
+      try {
+        setDB((d) =>
+          updateProject(d, { ...p, start, due: due >= start ? due : start }),
+        );
+        toast.success(
+          `Timeline updated (${shortDate(start)} – ${shortDate(due)})`,
+        );
+      } catch (err) {
+        arg.revert();
+        toast.error(
+          err instanceof Error ? err.message : "Unable to resize timeline",
+        );
+      }
+    },
+    [db.projects],
+  );
 
   const live = db.projects.filter((p) => p.status === "In production");
   const pipelineTotal = db.projects
@@ -677,19 +813,37 @@ function Page() {
         defaultSpan: 12,
         render: () => (
           <div>
-            {/* View Switcher, Health Filter & Board Visibility/Customization */}
+            {/* View Switcher, Search, Health Filter & Board Visibility/Customization */}
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2.5">
-              <SlidingTabs
-                layoutGroup="projects-view-tabs"
-                value={view}
-                onChange={setView}
-                options={[
-                  { id: "board", label: "Board", icon: Columns3 },
-                  { id: "timeline", label: "Timeline", icon: CalendarRange },
-                  { id: "calendar", label: "Calendar", icon: CalendarDays },
-                  { id: "list", label: "List", icon: List },
-                ]}
-              />
+              <div className="flex flex-wrap items-center gap-2">
+                <SlidingTabs
+                  layoutGroup="projects-view-tabs"
+                  value={view}
+                  onChange={setView}
+                  options={[
+                    { id: "board", label: "Board", icon: Columns3 },
+                    { id: "timeline", label: "Timeline", icon: CalendarRange },
+                    { id: "calendar", label: "Calendar", icon: CalendarDays },
+                    { id: "list", label: "List", icon: List },
+                  ]}
+                />
+                {(view === "board" || view === "list") && (
+                  <div className="relative min-w-[180px] flex-1 sm:flex-none">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type="search"
+                      value={query}
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        setShowAllList(false);
+                      }}
+                      placeholder="Filter project or client…"
+                      aria-label="Filter projects or clients"
+                      className="field h-8 w-full py-1 pl-8 text-xs sm:w-48"
+                    />
+                  </div>
+                )}
+              </div>
 
               <div className="flex flex-wrap items-center justify-end gap-1.5">
                 {(view === "board" || view === "list") && (
@@ -987,10 +1141,13 @@ function Page() {
                       const colProjects = db.projects.filter((p) => {
                         if (p.status !== status) return false;
                         if (healthFilter !== "all") {
-                          return (
-                            projectHealthMap.get(p.id)?.status === healthFilter
-                          );
+                          if (
+                            projectHealthMap.get(p.id)?.status !== healthFilter
+                          ) {
+                            return false;
+                          }
                         }
+                        if (!matchesSearch(p)) return false;
                         return true;
                       });
                       const isColExpanded = Boolean(expandedCols[status]);
@@ -1057,6 +1214,9 @@ function Page() {
                                     paidUSD={billing.paid}
                                     health={health}
                                     onOpen={() => setEdit(p)}
+                                    onAdvanceStage={() =>
+                                      advanceProjectStage(p)
+                                    }
                                   />
                                 );
                               })}
@@ -1170,10 +1330,62 @@ function Page() {
                       })}
                     </div>
                   </div>
-                  <div className="overflow-x-auto pb-1">
-                    <div className="project-calendar min-w-[560px] sm:min-w-0">
-                      <FullCalendar
-                        plugins={[dayGridPlugin, interactionPlugin]}
+                  {!isDesktopMd ? (
+                    scheduledMobileProjects.length === 0 ? (
+                      <Empty>No scheduled project dates yet.</Empty>
+                    ) : (
+                      <ul className="divide-y divide-border/70">
+                        {scheduledMobileProjects.map((p) => {
+                          const clientName =
+                            db.clients.find((c) => c.id === p.clientId)?.name ??
+                            "No client";
+                          const health =
+                            projectHealthMap.get(p.id) ??
+                            getProjectHealth(p, t);
+                          return (
+                            <li
+                              key={p.id}
+                              className="flex items-center justify-between gap-3 py-2.5"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => setEdit(p)}
+                                className="min-w-0 flex-1 text-left"
+                              >
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-num text-[0.68rem] text-muted-foreground">
+                                    {p.code}
+                                  </span>
+                                  <span className="truncate text-sm font-semibold text-foreground">
+                                    {p.name || "Untitled"}
+                                  </span>
+                                </div>
+                                <p className="font-num mt-0.5 truncate text-xs text-muted-foreground">
+                                  {clientName} ·{" "}
+                                  {p.start ? `${shortDate(p.start)} → ` : ""}
+                                  {p.due ? shortDate(p.due) : "No due date"}
+                                </p>
+                              </button>
+                              <div className="flex shrink-0 items-center gap-1.5">
+                                <Pill s={health.label} />
+                                {nextProjectStage(p.status) && (
+                                  <button
+                                    type="button"
+                                    onClick={() => advanceProjectStage(p)}
+                                    className="inline-flex min-h-[30px] items-center rounded-md border border-primary/35 bg-primary/12 px-2 text-[0.68rem] font-semibold text-primary"
+                                  >
+                                    →
+                                  </button>
+                                )}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )
+                  ) : (
+                    <div className="project-calendar">
+                      <LazyFullCalendar
                         initialView="dayGridMonth"
                         headerToolbar={{
                           left: "prev,next today",
@@ -1195,7 +1407,7 @@ function Page() {
                         eventResize={onCalendarEventResize}
                       />
                     </div>
-                  </div>
+                  )}
                 </Glass>
 
                 {unscheduledProjects.length > 0 && (
@@ -1302,6 +1514,7 @@ function Page() {
                         const billing = projectBilling(p);
                         const health =
                           projectHealthMap.get(p.id) ?? getProjectHealth(p, t);
+                        const nextStage = nextProjectStage(p.status);
                         return (
                           <li
                             key={p.id}
@@ -1310,61 +1523,96 @@ function Page() {
                               animationDelay: `${Math.min(k, 12) * 25}ms`,
                             }}
                           >
-                            <button
-                              onClick={() => setEdit(p)}
-                              className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-2 py-3 text-left hover:bg-muted"
+                            <SwipeRow
+                              onEdit={() => setEdit(p)}
+                              onDelete={() => deleteProjectFromList(p)}
                             >
-                              <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="truncate font-medium">
-                                    {p.name || "Untitled"}{" "}
-                                    <span className="font-num text-xs text-muted-foreground">
-                                      {p.code}
-                                    </span>
-                                  </p>
-                                  <Pill s={health.label} />
-                                </div>
-                                <p
-                                  className={cn(
-                                    "mt-0.5 truncate text-xs text-muted-foreground",
-                                    health.status === "delayed" &&
-                                      "text-destructive",
-                                    health.status === "at-risk" &&
-                                      "text-warning",
-                                  )}
+                              <div className="flex items-center justify-between gap-2 rounded-lg px-2 py-2.5 hover:bg-muted">
+                                <button
+                                  type="button"
+                                  onClick={() => setEdit(p)}
+                                  className="min-w-0 flex-1 text-left"
                                 >
-                                  {db.clients.find((x) => x.id === p.clientId)
-                                    ?.name ?? "No client"}{" "}
-                                  · {p.start ? `${shortDate(p.start)} → ` : ""}
-                                  due {shortDate(p.due)} · {health.reason}
-                                  {billing.docs.length > 0 &&
-                                    ` · ${billing.docs.length} docs`}
-                                </p>
-                                {(p.media?.length ?? 0) > 0 && (
-                                  <div className="mt-1">
-                                    <MediaCountBadge media={p.media} />
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="truncate font-medium">
+                                      {p.name || "Untitled"}{" "}
+                                      <span className="font-num text-xs text-muted-foreground">
+                                        {p.code}
+                                      </span>
+                                    </p>
+                                    <Pill s={health.label} />
                                   </div>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-3">
-                                <div className="text-right">
-                                  <p className="font-num text-sm">
-                                    {money(p.quote)}
+                                  <p
+                                    className={cn(
+                                      "mt-0.5 truncate text-xs text-muted-foreground",
+                                      health.status === "delayed" &&
+                                        "text-destructive",
+                                      health.status === "at-risk" &&
+                                        "text-warning",
+                                    )}
+                                  >
+                                    {db.clients.find((x) => x.id === p.clientId)
+                                      ?.name ?? "No client"}{" "}
+                                    ·{" "}
+                                    {p.start ? `${shortDate(p.start)} → ` : ""}
+                                    due {shortDate(p.due)} · {health.reason}
+                                    {billing.docs.length > 0 &&
+                                      ` · ${billing.docs.length} docs`}
                                   </p>
-                                  {billing.paid > 0 && (
-                                    <p className="text-xs text-positive tabular-nums">
-                                      {money(billing.paid)} paid
-                                    </p>
+                                  {(p.media?.length ?? 0) > 0 && (
+                                    <div className="mt-1">
+                                      <MediaCountBadge media={p.media} />
+                                    </div>
                                   )}
-                                  {c > 0 && (
-                                    <p className="text-xs text-muted-foreground tabular-nums">
-                                      margin {money(p.quote - c)}
+                                </button>
+                                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                                  <div className="text-right">
+                                    <p className="font-num text-sm">
+                                      {money(p.quote)}
                                     </p>
+                                    {billing.paid > 0 && (
+                                      <p className="text-xs text-positive tabular-nums">
+                                        {money(billing.paid)} paid
+                                      </p>
+                                    )}
+                                    {c > 0 && (
+                                      <p className="text-xs text-muted-foreground tabular-nums">
+                                        margin {money(p.quote - c)}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <Pill s={p.status} />
+                                  {nextStage && (
+                                    <button
+                                      type="button"
+                                      onClick={() => advanceProjectStage(p)}
+                                      title={`Move to ${nextStage}`}
+                                      className="hidden min-h-[30px] items-center gap-1 rounded-md border border-primary/35 bg-primary/12 px-2 text-[0.68rem] font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground sm:inline-flex"
+                                    >
+                                      <ArrowRight className="h-3 w-3" />
+                                      <span>{nextStage}</span>
+                                    </button>
                                   )}
+                                  <Link
+                                    to="/invoices/$id"
+                                    params={{ id: "new" }}
+                                    search={{
+                                      project: p.id,
+                                      kind: "Invoice",
+                                      ...(p.clientId
+                                        ? { client: p.clientId }
+                                        : {}),
+                                      ...(p.serviceId
+                                        ? { service: p.serviceId }
+                                        : {}),
+                                    }}
+                                    className="hidden min-h-[30px] items-center rounded-md border border-border bg-secondary px-2 text-[0.68rem] font-medium text-foreground transition-colors hover:border-primary/45 hover:text-primary md:inline-flex"
+                                  >
+                                    + Inv
+                                  </Link>
                                 </div>
-                                <Pill s={p.status} />
                               </div>
-                            </button>
+                            </SwipeRow>
                           </li>
                         );
                       })}
@@ -1424,6 +1672,22 @@ function Page() {
       rows,
       visibleListRows,
       showAllList,
+      isDesktopMd,
+      query,
+      matchesSearch,
+      scheduledMobileProjects,
+      cost,
+      projectBilling,
+      blank,
+      advanceProjectStage,
+      deleteProjectFromList,
+      handleBoardDragStart,
+      handleBoardDragEnd,
+      onCalendarDateClick,
+      onCalendarSelect,
+      onCalendarEventClick,
+      onCalendarEventDrop,
+      onCalendarEventResize,
     ],
   );
 
@@ -1769,6 +2033,7 @@ function BoardCard({
   paidUSD,
   health,
   onOpen,
+  onAdvanceStage,
 }: {
   project: Project;
   clientName: string;
@@ -1776,12 +2041,14 @@ function BoardCard({
   paidUSD: number;
   health: ProjectHealth;
   onOpen: () => void;
+  onAdvanceStage: () => void;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } =
     useDraggable({ id: project.id });
   const style = transform
     ? { transform: CSS.Translate.toString(transform) }
     : undefined;
+  const nextStage = nextProjectStage(project.status);
   return (
     <div
       ref={setNodeRef}
@@ -1852,6 +2119,39 @@ function BoardCard({
           <MediaCountBadge media={project.media} />
         </div>
       )}
+      <div
+        className="mt-2 flex items-center justify-between gap-1.5 border-t border-border/50 pt-2"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {nextStage ? (
+          <button
+            type="button"
+            onClick={onAdvanceStage}
+            className="inline-flex min-h-[28px] items-center gap-1 rounded-md border border-primary/35 bg-primary/12 px-2 text-[0.68rem] font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+          >
+            <ArrowRight className="h-3 w-3 shrink-0" />
+            <span>{nextStage}</span>
+          </button>
+        ) : (
+          <span className="text-[0.65rem] text-muted-foreground">
+            {project.status}
+          </span>
+        )}
+        <Link
+          to="/invoices/$id"
+          params={{ id: "new" }}
+          search={{
+            project: project.id,
+            kind: project.status === "Inquiry" ? "Quotation" : "Invoice",
+            ...(project.clientId ? { client: project.clientId } : {}),
+            ...(project.serviceId ? { service: project.serviceId } : {}),
+          }}
+          className="inline-flex min-h-[28px] items-center rounded-md border border-border bg-secondary px-2 text-[0.68rem] font-medium text-foreground transition-colors hover:border-primary/45 hover:text-primary"
+        >
+          {project.status === "Inquiry" ? "+ Quote" : "+ Invoice"}
+        </Link>
+      </div>
     </div>
   );
 }

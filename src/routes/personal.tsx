@@ -9,9 +9,11 @@ import {
   PiggyBank,
   Plus,
   Search,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SwipeRow } from "@/components/rv/SwipeRow";
+import { parseQuickCommand } from "@/lib/ai-central-engine";
 import {
   Btn,
   Empty,
@@ -124,6 +126,7 @@ function PersonalPage() {
   const [ledgerView, setLedgerView] = useState<LedgerView>("all");
   const [catFilter, setCatFilter] = useState<string>("All");
   const [query, setQuery] = useState("");
+  const [quickText, setQuickText] = useState("");
   const [visibleCount, setVisibleCount] = useState(RECENT_ROWS);
   const [editingLayout, setEditingLayout] = useState(false);
   const [inspectedCategory, setInspectedCategory] = useState<string | null>(
@@ -132,6 +135,79 @@ function PersonalPage() {
   const [expenseDraft, setExpenseDraft] = useState<Expense | null>(null);
   const [incomeDraft, setIncomeDraft] = useState<PersonalIncome | null>(null);
   const [goalDraft, setGoalDraft] = useState<Goal | null>(null);
+
+  const parsedQuick = useMemo(() => {
+    if (!quickText.trim()) return null;
+    const p = parseQuickCommand(quickText, db);
+    return p && (p.kind === "expense" || p.kind === "income") ? p : null;
+  }, [quickText, db]);
+
+  const submitQuickPersonal = useCallback(() => {
+    if (!parsedQuick) return;
+    if (parsedQuick.kind === "expense") {
+      const id = uid();
+      const d = parsedQuick.data;
+      const item: Expense = {
+        id,
+        date: d.date,
+        projectId: "",
+        category: d.category,
+        vendor: d.vendor,
+        description: d.description,
+        amount: d.amount,
+        currency: d.currency,
+        receipt: "",
+        account: "Personal",
+      };
+      setDB((prev) => ({ ...prev, expenses: [item, ...prev.expenses] }));
+      setQuickText("");
+      toast.success(
+        `Logged ${money(-item.amount, item.currency)} · ${item.category}`,
+        {
+          action: {
+            label: "Undo",
+            onClick: () =>
+              setDB((prev) => ({
+                ...prev,
+                expenses: prev.expenses.filter((x) => x.id !== id),
+              })),
+          },
+        },
+      );
+      return;
+    }
+    const id = uid();
+    const d = parsedQuick.data;
+    const inc: PersonalIncome = {
+      id,
+      date: d.date,
+      source: d.source,
+      accountMethod: d.accountMethod,
+      description: d.description,
+      amount: d.amount,
+      currency: d.currency,
+    };
+    setDB((prev) => ({
+      ...prev,
+      personalIncome: [inc, ...(prev.personalIncome ?? [])],
+    }));
+    setQuickText("");
+    toast.success(
+      `Logged +${money(inc.amount, inc.currency)} · ${inc.source}`,
+      {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            setDB((prev) => ({
+              ...prev,
+              personalIncome: (prev.personalIncome ?? []).filter(
+                (x) => x.id !== id,
+              ),
+            })),
+        },
+      },
+    );
+  }, [parsedQuick]);
 
   const monthLabel = new Date(month + "-01T00:00:00Z").toLocaleDateString(
     "en-US",
@@ -345,7 +421,7 @@ function PersonalPage() {
 
   const visibleRows = ledgerRows.slice(0, visibleCount);
 
-  const deleteLedgerRow = (row: LedgerRow) => {
+  const deleteLedgerRow = useCallback((row: LedgerRow) => {
     if (row.kind === "income") {
       const item = row.income;
       setDB((d) => ({
@@ -378,12 +454,12 @@ function PersonalPage() {
         },
       });
     }
-  };
+  }, []);
 
-  const editLedgerRow = (row: LedgerRow) => {
+  const editLedgerRow = useCallback((row: LedgerRow) => {
     if (row.kind === "income") setIncomeDraft(row.income);
     else setExpenseDraft(row.expense);
-  };
+  }, []);
 
   const filterOptions =
     ledgerView === "income"
@@ -828,6 +904,45 @@ function PersonalPage() {
               </div>
             </div>
 
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                submitQuickPersonal();
+              }}
+              className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-border/80 bg-muted/35 p-2"
+            >
+              <Sparkles className="ml-1 h-3.5 w-3.5 shrink-0 text-primary" />
+              <input
+                value={quickText}
+                onChange={(e) => setQuickText(e.target.value)}
+                placeholder='Quick log: "$4.50 iced latte", "20000r ptt fuel", "+$450 freelance"…'
+                aria-label="Quick log personal expense or income"
+                className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground sm:text-xs"
+              />
+              {parsedQuick && (
+                <span
+                  className={cn(
+                    "font-num shrink-0 text-[0.7rem] font-semibold",
+                    parsedQuick.kind === "income"
+                      ? "text-positive"
+                      : "text-foreground",
+                  )}
+                >
+                  {parsedQuick.kind === "income"
+                    ? `+${money(parsedQuick.data.amount, parsedQuick.data.currency)} · ${parsedQuick.data.source}`
+                    : `${money(-parsedQuick.data.amount, parsedQuick.data.currency)} · ${parsedQuick.data.category}`}
+                </span>
+              )}
+              <Btn
+                type="submit"
+                variant="gold"
+                disabled={!parsedQuick}
+                className="min-h-[34px] shrink-0 px-3 py-1 text-xs disabled:opacity-40"
+              >
+                Log
+              </Btn>
+            </form>
+
             <div className="no-scrollbar mb-3 flex flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0">
               <button
                 type="button"
@@ -1012,6 +1127,11 @@ function PersonalPage() {
       visibleCount,
       openNewExpense,
       openNewIncome,
+      deleteLedgerRow,
+      editLedgerRow,
+      quickText,
+      parsedQuick,
+      submitQuickPersonal,
     ],
   );
 

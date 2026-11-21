@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   ChevronDown,
@@ -124,8 +124,10 @@ function Page() {
     return map;
   }, [db]);
 
-  const stats = (c: Client) =>
-    statsMap.get(c.id) ?? { billed: 0, owed: 0, projects: 0 };
+  const stats = useCallback(
+    (c: Client) => statsMap.get(c.id) ?? { billed: 0, owed: 0, projects: 0 },
+    [statsMap],
+  );
 
   const rows = useMemo(
     () =>
@@ -241,70 +243,95 @@ function Page() {
                     {visibleRows.map((c) => {
                       const s = stats(c);
                       return (
-                        <button
-                          type="button"
+                        <div
                           key={c.id}
-                          onClick={() => setEdit(c)}
-                          className="block rounded-xl border border-border bg-muted/40 p-4 text-left transition-all hover:-translate-y-0.5 hover:border-primary/50 hover:bg-muted"
+                          className="flex flex-col justify-between rounded-xl border border-border bg-muted/40 p-4 transition-all hover:border-primary/50 hover:bg-muted"
                         >
-                          <div className="mb-3 flex items-center justify-between gap-2">
-                            {c.avatar ? (
-                              <img
-                                src={c.avatar}
-                                alt={c.name}
-                                className="h-12 w-12 rounded-lg object-cover"
-                              />
-                            ) : (
-                              <span className="grid h-12 w-12 place-items-center rounded-lg bg-primary/15 font-display text-lg text-primary">
-                                {c.name.slice(0, 2).toUpperCase()}
-                              </span>
-                            )}
-                            <Pill s={c.status} />
-                          </div>
-                          <div className="min-w-0">
-                            <p className="font-num text-xs text-muted-foreground">
-                              {c.code}
-                            </p>
-                            <p className="truncate font-display text-lg font-bold">
-                              {c.name || "Untitled"}
-                            </p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {c.contact || "—"}
-                              {c.position ? ` · ${c.position}` : ""}
-                            </p>
-                            <p className="mt-1 truncate text-xs text-muted-foreground">
-                              {c.email ||
-                                c.telegram ||
-                                c.phone ||
-                                c.industry ||
-                                c.type}
-                            </p>
-                          </div>
-                          <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
-                            <div>
-                              <p className="label-mono">Projects</p>
-                              <p className="font-num">{s.projects}</p>
+                          <button
+                            type="button"
+                            onClick={() => setEdit(c)}
+                            className="block w-full text-left"
+                          >
+                            <div className="mb-3 flex items-center justify-between gap-2">
+                              {c.avatar ? (
+                                <img
+                                  src={c.avatar}
+                                  alt={c.name}
+                                  className="h-12 w-12 rounded-lg object-cover"
+                                />
+                              ) : (
+                                <span className="grid h-12 w-12 place-items-center rounded-lg bg-primary/15 font-display text-lg text-primary">
+                                  {c.name.slice(0, 2).toUpperCase()}
+                                </span>
+                              )}
+                              <Pill s={c.status} />
                             </div>
-                            <div title={money(s.billed)}>
-                              <p className="label-mono">Billed</p>
-                              <p className="font-num">
-                                {compactMoney(s.billed)}
+                            <div className="min-w-0">
+                              <p className="font-num text-xs text-muted-foreground">
+                                {c.code}
+                              </p>
+                              <p className="truncate font-display text-lg font-bold">
+                                {c.name || "Untitled"}
+                              </p>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {c.contact || "—"}
+                                {c.position ? ` · ${c.position}` : ""}
+                              </p>
+                              <p className="mt-1 truncate text-xs text-muted-foreground">
+                                {c.email ||
+                                  c.telegram ||
+                                  c.phone ||
+                                  c.industry ||
+                                  c.type}
                               </p>
                             </div>
-                            <div title={money(s.owed)}>
-                              <p className="label-mono">Owed</p>
-                              <p
-                                className={
-                                  s.owed > 0
-                                    ? "font-num text-destructive"
-                                    : "font-num"
-                                }
-                              >
-                                {compactMoney(s.owed)}
-                              </p>
+                            <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
+                              <div>
+                                <p className="label-mono">Projects</p>
+                                <p className="font-num">{s.projects}</p>
+                              </div>
+                              <div title={money(s.billed)}>
+                                <p className="label-mono">Billed</p>
+                                <p className="font-num">
+                                  {compactMoney(s.billed)}
+                                </p>
+                              </div>
+                              <div title={money(s.owed)}>
+                                <p className="label-mono">Owed</p>
+                                <p
+                                  className={
+                                    s.owed > 0
+                                      ? "font-num text-destructive"
+                                      : "font-num"
+                                  }
+                                >
+                                  {compactMoney(s.owed)}
+                                </p>
+                              </div>
                             </div>
+                          </button>
+
+                          <div className="mt-3 flex items-center gap-2 border-t border-border/60 pt-2.5">
+                            <Link
+                              to="/invoices/$id"
+                              params={{ id: "new" }}
+                              search={{ client: c.id, kind: "Quotation" }}
+                              className="inline-flex min-h-[34px] flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-border bg-secondary/80 px-2.5 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:text-primary"
+                            >
+                              <Plus className="h-3 w-3 shrink-0" />
+                              Quote
+                            </Link>
+                            <Link
+                              to="/invoices/$id"
+                              params={{ id: "new" }}
+                              search={{ client: c.id, kind: "Invoice" }}
+                              className="inline-flex min-h-[34px] flex-1 items-center justify-center gap-1 whitespace-nowrap rounded-lg border border-primary/35 bg-primary/12 px-2.5 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                            >
+                              <Plus className="h-3 w-3 shrink-0" />
+                              Invoice
+                            </Link>
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -403,7 +430,7 @@ function Page() {
         ),
       },
     ],
-    [db, q, viewMode, rows, visibleRows, hasMore, showAll],
+    [db, q, viewMode, rows, visibleRows, hasMore, showAll, stats],
   );
 
   return (

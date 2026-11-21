@@ -4,11 +4,13 @@ import {
   FolderKanban,
   Moon,
   ScanLine,
+  Search,
   Settings,
   Sun,
   Users,
   Wallet,
 } from "lucide-react";
+import { CommandPalette } from "@/components/rv/CommandPalette";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   WorkspaceSwitcher,
@@ -187,6 +189,7 @@ function ShellInner({ children }: { children: ReactNode }) {
   const { openScanner } = useReceiptScanner();
 
   const [light, setLight] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [topHidden, setTopHidden] = useState(false);
   const [bottomHidden, setBottomHidden] = useState(false);
   const lastScrollYRef = useRef(0);
@@ -221,7 +224,7 @@ function ShellInner({ children }: { children: ReactNode }) {
           document.documentElement.scrollHeight - window.innerHeight,
         );
 
-        if (y <= 28) {
+        if (y <= 12) {
           setTopHidden(false);
           setBottomHidden(false);
           lastScrollYRef.current = y;
@@ -234,7 +237,7 @@ function ShellInner({ children }: { children: ReactNode }) {
           return;
         }
 
-        if (delta > 8 && y > 48) {
+        if (delta > 6 && y > 16) {
           // Scroll down: hide top navigation, keep/reveal bottom dock
           setTopHidden(true);
           setBottomHidden(false);
@@ -380,7 +383,7 @@ function ShellInner({ children }: { children: ReactNode }) {
       <header
         onFocusCapture={() => setTopHidden(false)}
         className={cn(
-          "no-print pointer-events-none sticky top-0 z-40 w-full bg-gradient-to-b from-background/95 via-background/70 to-transparent px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-2 transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform sm:hidden",
+          "no-print pointer-events-none sticky top-0 z-40 w-full px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-1.5 transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform sm:hidden",
           topHidden
             ? "-translate-y-[120%] opacity-0"
             : "translate-y-0 opacity-100",
@@ -407,6 +410,14 @@ function ShellInner({ children }: { children: ReactNode }) {
             </Link>
 
             <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setPaletteOpen(true)}
+                aria-label="Quick command & search"
+                className="grid h-9 w-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:scale-95"
+              >
+                <Search className="h-4 w-4" />
+              </button>
               <PWAInstallButton compact />
               <button
                 type="button"
@@ -470,7 +481,7 @@ function ShellInner({ children }: { children: ReactNode }) {
         aria-label="Mobile navigation"
         onFocusCapture={() => setBottomHidden(false)}
         className={cn(
-          "no-print pointer-events-none fixed inset-x-0 bottom-0 z-40 bg-gradient-to-t from-background/95 via-background/72 to-transparent px-3 pt-5 pb-[max(0.65rem,env(safe-area-inset-bottom))] transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform sm:hidden",
+          "no-print pointer-events-none fixed inset-x-0 bottom-0 z-40 px-3 pt-2 pb-[max(0.65rem,env(safe-area-inset-bottom))] transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform sm:hidden",
           bottomHidden
             ? "translate-y-[125%] opacity-0"
             : "translate-y-0 opacity-100",
@@ -519,7 +530,7 @@ function ShellInner({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => openScanner(isStudio ? "Studio" : "Personal")}
               aria-label="Scan receipt"
-              className="grid h-11 w-12 place-items-center rounded-xl bg-primary text-primary-foreground shadow-[0_6px_18px_-4px_oklch(0.85_0.15_86/55%)] transition-transform duration-150 hover:bg-[var(--primary-hover,var(--primary))] active:scale-95"
+              className="grid h-11 w-12 place-items-center rounded-xl bg-primary text-primary-foreground shadow-[0_6px_18px_-4px_color-mix(in_oklch,var(--primary)_50%,transparent)] transition-transform duration-150 hover:bg-[var(--primary-hover,var(--primary))] active:scale-95"
             >
               <ScanLine className="h-[19px] w-[19px]" strokeWidth={2.3} />
             </button>
@@ -563,7 +574,7 @@ function ShellInner({ children }: { children: ReactNode }) {
       <nav
         onFocusCapture={() => setTopHidden(false)}
         className={cn(
-          "no-print pointer-events-none sticky top-0 z-40 hidden w-full bg-gradient-to-b from-background/90 via-background/60 to-transparent px-4 pt-3 pb-2 transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform sm:block",
+          "no-print pointer-events-none sticky top-0 z-40 hidden w-full px-4 pt-3 pb-2 transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform sm:block",
           topHidden
             ? "-translate-y-[120%] opacity-0"
             : "translate-y-0 opacity-100",
@@ -619,11 +630,23 @@ function ShellInner({ children }: { children: ReactNode }) {
 
           {/* Zone 3: Primary Action + Theme & Settings */}
           <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setPaletteOpen(true)}
+              aria-label="Quick command bar (⌘K)"
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-border/80 bg-secondary/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/45 hover:text-foreground"
+            >
+              <Search className="h-3.5 w-3.5 shrink-0" />
+              <span className="hidden lg:inline">Quick</span>
+              <kbd className="font-num hidden rounded border border-border/70 bg-background/60 px-1 text-[0.62rem] font-semibold md:inline">
+                ⌘K
+              </kbd>
+            </button>
             <PWAInstallButton />
             <button
               type="button"
               onClick={() => openScanner(isStudio ? "Studio" : "Personal")}
-              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-[0_6px_18px_-6px_oklch(0.85_0.15_86/55%)] transition-all hover:bg-[var(--primary-hover,var(--primary))] active:scale-95"
+              className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground shadow-[0_6px_18px_-6px_color-mix(in_oklch,var(--primary)_50%,transparent)] transition-all hover:bg-[var(--primary-hover,var(--primary))] active:scale-95"
             >
               <ScanLine className="h-3.5 w-3.5 shrink-0" />
               <span className="hidden md:inline">Scan Slip</span>
@@ -663,6 +686,11 @@ function ShellInner({ children }: { children: ReactNode }) {
         {children}
       </main>
       <OfflineIndicator />
+      <CommandPalette
+        open={paletteOpen}
+        onOpenChange={setPaletteOpen}
+        isStudioContext={isStudio}
+      />
     </div>
   );
 }

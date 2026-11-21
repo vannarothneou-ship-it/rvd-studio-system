@@ -28,13 +28,14 @@ export type CentralAiTab = "brief" | "forecast" | "pace" | "ask";
 
 const AI_TABS: { id: CentralAiTab; label: string; icon: typeof Sparkles }[] = [
   { id: "brief", label: "Brief", icon: Sparkles },
-  { id: "forecast", label: "2050 Forecast", icon: TrendingUp },
+  { id: "forecast", label: "Forecast", icon: TrendingUp },
   { id: "pace", label: "Pace", icon: Flame },
   { id: "ask", label: "Ask DB", icon: Search },
 ];
 
 const QUICK_PROMPTS = [
   "Overdue A/R?",
+  "Project health?",
   "Top spending?",
   "Runway & burn",
   "Prius ODO & reminders",
@@ -310,7 +311,7 @@ export function CentralAiBrief({
         </div>
       )}
 
-      {/* TAB 2: 2050 FORECAST */}
+      {/* TAB 2: FORECAST */}
       {tab === "forecast" && (
         <div className="mt-4 space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">

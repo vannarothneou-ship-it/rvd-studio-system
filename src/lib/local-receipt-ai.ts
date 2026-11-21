@@ -489,7 +489,7 @@ function extractAmountAndCurrency(
 
     // CRITICAL: Skip exchange rate lines (e.g. "Exchange Rate : 1 USD = 4,060 KHR") so "1 USD" never hijacks total extraction
     if (
-      /\b(?:exchange\s*rate|fx\s*rate|ex\.?\s*rate|rate\s*:)\b|អត្រាប្តូរប្រាក់|\b1\s*USD\s*=\s*[0-9,.]+\s*KHR\b/i.test(
+      /\b(?:exchange\s*rate|fx\s*rate|ex\.?\s*rate|rate\s*:)\b|អត្រាប្តូរប្រាក់|\b1\s*USD\s*[=:~-]?\s*[0-9,.]{3,}\s*KHR\b/i.test(
         line,
       )
     ) {
@@ -547,11 +547,20 @@ function extractAmountAndCurrency(
 
     let matchedCurrencyOnLine = false;
 
-    // 1. Explicit USD patterns: $12.50, $18.5, -$14.50, -1.61 USD, USD 12.50, 12.50 USD, US$ 12.50 (also handle comma decimal typos like -1,61 USD)
-    const normalizedUsdLine = line.replace(
-      /(^|[:\s-])(\d{1,3}),(\d{2})(?=\s*(?:USD\b|U5D\b|US0\b|\$|ដុល្លារ))/gi,
-      "$1$2.$3",
-    );
+    // 1. Explicit USD patterns: $12.50, $18.5, -$14.50, -1.61 USD, USD 12.50, 12.50 USD, US$ 12.50 (handle comma, middle-dot, and spaced decimal OCR typos like -1,61 USD or -1 .61 USD)
+    const normalizedUsdLine = line
+      .replace(
+        /(^|[:\s-])(\d{1,3})\s*[·•‧]\s*(\d{2})(?=\s*(?:USD\b|U5D\b|US0\b|\$|ដុល្លារ))/gi,
+        "$1$2.$3",
+      )
+      .replace(
+        /(^|[:\s-])(\d{1,3})\s*\.\s*(\d{2})(?=\s*(?:USD\b|U5D\b|US0\b|\$|ដុល្លារ))/gi,
+        "$1$2.$3",
+      )
+      .replace(
+        /(^|[:\s-])(\d{1,3}),(\d{2})(?=\s*(?:USD\b|U5D\b|US0\b|\$|ដុល្លារ))/gi,
+        "$1$2.$3",
+      );
     const usdRegex =
       /(?:[-+]?\s*(?:US\$|\$|USD|U5D|US0|ដុល្លារ)\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?))|(?:(?:[-+]\s*)?([0-9]{1,3}(?:,[0-9]{3})*(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?)\s*(?:USD\b|U5D\b|US0\b|\$|ដុល្លារ))/gi;
     for (const m of normalizedUsdLine.matchAll(usdRegex)) {

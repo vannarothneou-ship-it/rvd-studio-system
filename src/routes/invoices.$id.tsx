@@ -185,10 +185,17 @@ function Editor() {
       payments: open,
     });
   const anyClosed = Object.values(openSections).some((x) => !x);
+  const resetKey = `${id}|${search.kind ?? ""}|${search.client ?? ""}|${search.project ?? ""}|${search.service ?? ""}`;
+  const prevResetKeyRef = useRef<string>(resetKey);
   useEffect(() => {
-    if (id === "new") setDraft(makeNew(search));
-    else if (stored) setDraft(stored);
-  }, [id, search.kind, search.client, search.project, search.service]);
+    if (prevResetKeyRef.current === resetKey) return;
+    prevResetKeyRef.current = resetKey;
+    if (id === "new") {
+      setDraft(makeNew(search));
+    } else if (stored) {
+      setDraft(stored);
+    }
+  }, [resetKey, id, search, stored]);
   const isNew = !stored;
   const v = invoiceView(draft, db);
   const up = (p: Partial<Invoice>) => setDraft((d) => ({ ...d, ...p }));

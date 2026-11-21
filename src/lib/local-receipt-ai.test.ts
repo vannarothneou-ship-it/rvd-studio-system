@@ -427,5 +427,15 @@ ol  SJ023994 444 | 015 999 233   អេសុលដា ស`;
     expect(degradedRes.amount).toBe(1.61);
     expect(degradedRes.currency).toBe("USD");
     expect(degradedRes.txType).toBe("expense");
+
+    // OCR spaced/middle-dot decimals (-1 .61 USD / -1·61 USD) & FX glyph noise ("1 USD ~ 4,060 KHR")
+    const noisyAcleda = degradedKhr
+      .replace("-1.61 USD", "-1 .61 USD")
+      .replace("1 USD = 4,060 KHR", "1 USD ~ 4,060 KHR");
+    const noisyRes = parseReceiptText(noisyAcleda, "2026-11-20", {
+      ownerNames: ["Neou Vannaroth"],
+    });
+    expect(noisyRes.amount).toBe(1.61);
+    expect(noisyRes.currency).toBe("USD");
   });
 });

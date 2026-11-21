@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
   Activity,
   ArrowDownLeft,
@@ -54,6 +55,7 @@ import {
   cashReceived,
   categoryTotals,
   compactMoney,
+  deletePayment,
   documentKind,
   expenseAccount,
   expenseTotal,
@@ -62,6 +64,7 @@ import {
   isInvoice,
   money,
   needsFollowUp,
+  recordPayment,
   setDB,
   shortDate,
   toUSD,
@@ -335,12 +338,39 @@ function StudioDashboard() {
     .slice(0, 7);
 
   const studioGoals = db.goals.filter((g) => goalAccount(g) === "Studio");
-  const goalValue = (g: DB["goals"][number]) =>
-    g.kind === "cash"
-      ? cashReceived(db, year)
-      : g.kind === "clients"
-        ? db.clients.filter((c) => c.status !== "Lead").length
-        : g.current;
+  const goalValue = useCallback(
+    (g: DB["goals"][number]) =>
+      g.kind === "cash"
+        ? cashReceived(db, year)
+        : g.kind === "clients"
+          ? db.clients.filter((c) => c.status !== "Lead").length
+          : g.current,
+    [db, year],
+  );
+
+  const quickPayInvoice = useCallback(
+    (invId: string, invNo: string, amount: number, currency: string) => {
+      const paymentId = uid();
+      setDB((d) =>
+        recordPayment(d, {
+          id: paymentId,
+          invoiceId: invId,
+          date: today(),
+          amount,
+          currency: currency === "KHR" ? "KHR" : "USD",
+          method: "ABA",
+          reference: "1-tap settle",
+        }),
+      );
+      toast.success(`Paid ${invNo}`, {
+        action: {
+          label: "Undo",
+          onClick: () => setDB((d) => deletePayment(d, paymentId)),
+        },
+      });
+    },
+    [],
+  );
 
   const inProductionCount = db.projects.filter(
     (p) => p.status === "In production",
@@ -879,27 +909,39 @@ function StudioDashboard() {
                 {openInvoicesList.map(({ i, v }) => {
                   const client = db.clients.find((c) => c.id === i.clientId);
                   return (
-                    <li key={i.id}>
+                    <li
+                      key={i.id}
+                      className="flex items-center justify-between gap-2 py-2.5 text-xs"
+                    >
                       <Link
                         to="/invoices/$id"
                         params={{ id: i.id }}
-                        className="flex items-center justify-between gap-2 py-2.5 text-xs hover:text-primary"
+                        className="min-w-0 flex-1 hover:text-primary"
                       >
-                        <div className="min-w-0">
-                          <p className="font-num truncate font-medium">
-                            {i.no} · {client?.name ?? "Client"}
-                          </p>
-                          <p className="text-muted-foreground">
-                            Due {shortDate(i.due)}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-num font-semibold">
-                            {compactMoney(v.balanceUSD)}
-                          </span>
-                          <Pill s={v.status} />
-                        </div>
+                        <p className="font-num truncate font-medium">
+                          {i.no} · {client?.name ?? "Client"}
+                        </p>
+                        <p className="text-muted-foreground">
+                          Due {shortDate(i.due)}
+                        </p>
                       </Link>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <span className="font-num font-semibold">
+                          {compactMoney(v.balanceUSD)}
+                        </span>
+                        <Pill s={v.status} />
+                        {v.balance > 0 && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              quickPayInvoice(i.id, i.no, v.balance, i.currency)
+                            }
+                            className="inline-flex min-h-[28px] shrink-0 items-center rounded-md border border-positive/40 bg-positive/12 px-2 text-[0.68rem] font-semibold text-positive transition-colors hover:bg-positive hover:text-white active:scale-95"
+                          >
+                            Pay
+                          </button>
+                        )}
+                      </div>
                     </li>
                   );
                 })}
@@ -982,6 +1024,8 @@ function StudioDashboard() {
       openInvoicesList,
       topClientsList,
       year,
+      goalValue,
+      quickPayInvoice,
     ],
   );
 
@@ -1026,11 +1070,13 @@ function StudioDashboard() {
               editing={editingLayout}
               onToggle={() => setEditingLayout((e) => !e)}
             />
-            <Link to="/invoices/$id" params={{ id: "new" }}>
-              <Btn variant="gold" className="whitespace-nowrap shrink-0">
-                <Plus className="h-4 w-4" />
-                New invoice
-              </Btn>
+            <Link
+              to="/invoices/$id"
+              params={{ id: "new" }}
+              className="btn-gold whitespace-nowrap shrink-0"
+            >
+              <Plus className="h-4 w-4" />
+              New invoice
             </Link>
           </div>
         }

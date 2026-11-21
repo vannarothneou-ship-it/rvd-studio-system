@@ -32,6 +32,88 @@ export interface SlidingTabOption<T extends string> {
   badge?: number | string;
 }
 
+/**
+ * Mini popup label for icon-only controls.
+ * Mouse: shows on hover. Touch: shows while you press and hold (≈350 ms),
+ * then fades after a moment. Rendered in <body> so scroll containers can't clip it.
+ */
+export function useHoldTip(label: string) {
+  const [rect, setRect] = useState<DOMRect | null>(null);
+  const timer = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    return () => window.clearTimeout(timer.current);
+  }, []);
+
+  const hide = () => {
+    window.clearTimeout(timer.current);
+    setRect(null);
+  };
+  const handlers = {
+    onPointerEnter: (e: React.PointerEvent<HTMLElement>) => {
+      if (e.pointerType === "mouse") {
+        setRect(e.currentTarget.getBoundingClientRect());
+      }
+    },
+    onPointerLeave: hide,
+    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+      if (e.pointerType === "mouse") return;
+      const el = e.currentTarget;
+      window.clearTimeout(timer.current);
+      timer.current = window.setTimeout(() => {
+        setRect(el.getBoundingClientRect());
+        timer.current = window.setTimeout(() => setRect(null), 1600);
+      }, 350);
+    },
+    onPointerUp: () => window.clearTimeout(timer.current),
+    onPointerCancel: hide,
+  };
+
+  const openBelow = rect ? rect.top < 48 : false;
+  const bubble =
+    rect && typeof document !== "undefined"
+      ? createPortal(
+          <span
+            role="tooltip"
+            style={{
+              position: "fixed",
+              left: Math.min(
+                window.innerWidth - 56,
+                Math.max(56, rect.left + rect.width / 2),
+              ),
+              top: openBelow ? rect.bottom + 8 : rect.top - 8,
+              transform: openBelow
+                ? "translate(-50%, 0)"
+                : "translate(-50%, -100%)",
+            }}
+            className="pointer-events-none z-[200] animate-in fade-in zoom-in-95 whitespace-nowrap rounded-full border border-[var(--glass-border)] bg-popover px-2.5 py-1 text-[0.7rem] font-medium text-popover-foreground shadow-lg backdrop-blur-xl duration-150"
+          >
+            {label}
+          </span>,
+          document.body,
+        )
+      : null;
+  return { handlers, bubble };
+}
+
+function SlidingTabButton({
+  label,
+  showTip,
+  children,
+  ...rest
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  label: string;
+  showTip: boolean;
+}) {
+  const { handlers, bubble } = useHoldTip(label);
+  return (
+    <button {...rest} {...(showTip ? handlers : {})}>
+      {children}
+      {showTip ? bubble : null}
+    </button>
+  );
+}
+
 export function SlidingTabs<T extends string>({
   options,
   value,
@@ -69,12 +151,14 @@ export function SlidingTabs<T extends string>({
         const Icon = opt.icon;
         const hideLabel = iconOnly && Boolean(Icon);
         return (
-          <button
+          <SlidingTabButton
             key={opt.id}
             type="button"
+            label={opt.label}
+            showTip={hideLabel}
             onClick={() => onChange(opt.id)}
             aria-label={opt.label}
-            title={opt.label}
+            title={hideLabel ? undefined : opt.label}
             className={cn(
               "relative inline-flex min-h-[34px] shrink-0 items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors duration-150 active:scale-[0.97] sm:min-h-0",
               stretch && "flex-1",
@@ -123,7 +207,7 @@ export function SlidingTabs<T extends string>({
                 </span>
               )}
             </span>
-          </button>
+          </SlidingTabButton>
         );
       })}
     </div>
@@ -203,6 +287,9 @@ export function Btn({
   );
 }
 
+let portalLockCount = 0;
+let savedBodyOverflow = "";
+
 /**
  * Renders children into <body> so `position: fixed` overlays always cover the
  * whole viewport (an ancestor with backdrop-filter/transform otherwise traps
@@ -216,10 +303,16 @@ export function Portal({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!mounted) return;
     const body = document.body;
-    const prev = body.style.overflow;
-    body.style.overflow = "hidden";
+    if (portalLockCount === 0) {
+      savedBodyOverflow = body.style.overflow;
+      body.style.overflow = "hidden";
+    }
+    portalLockCount += 1;
     return () => {
-      body.style.overflow = prev;
+      portalLockCount = Math.max(0, portalLockCount - 1);
+      if (portalLockCount === 0) {
+        body.style.overflow = savedBodyOverflow;
+      }
     };
   }, [mounted]);
   return mounted ? createPortal(children, document.body) : null;

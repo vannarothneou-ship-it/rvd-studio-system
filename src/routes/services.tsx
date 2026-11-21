@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowUpDown,
   Box,
@@ -167,104 +167,105 @@ function Services() {
       ? db.services.reduce((a, s) => a + s.rate, 0) / db.services.length
       : 0;
 
-  const openEditor = (s: Service) => {
+  const openEditor = useCallback((s: Service) => {
     setSelectedService({
       ...s,
       tags: effectiveServiceTags(s),
     });
-  };
+  }, []);
 
-  const renderCard = (s: Service) => {
-    const Icon = serviceIcon(s);
-    const active = selectedService?.id === s.id;
-    const tags = effectiveServiceTags(s);
-    return (
-      <div
-        key={s.id}
-        role="button"
-        tabIndex={0}
-        onClick={() => openEditor(s)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            openEditor(s);
-          }
-        }}
-        className={cn(
-          "glass rise group flex cursor-pointer flex-col p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/60",
-          active && "border-primary ring-2 ring-primary/35",
-        )}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-border bg-muted text-primary transition-colors group-hover:border-primary/50 group-hover:bg-primary/15">
-              <Icon className="h-4 w-4" />
-            </span>
-            <div className="min-w-0">
-              <p className="label-mono truncate">{s.code}</p>
-              <p className="truncate text-xs text-muted-foreground">
-                {s.pillar}
-              </p>
+  const renderCard = useCallback(
+    (s: Service) => {
+      const Icon = serviceIcon(s);
+      const active = selectedService?.id === s.id;
+      const tags = effectiveServiceTags(s);
+      return (
+        <div
+          key={s.id}
+          role="button"
+          tabIndex={0}
+          onClick={() => openEditor(s)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              openEditor(s);
+            }
+          }}
+          className={cn(
+            "glass rise group flex cursor-pointer flex-col p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/60",
+            active && "border-primary ring-2 ring-primary/35",
+          )}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl border border-border bg-muted text-primary transition-colors group-hover:border-primary/50 group-hover:bg-primary/15">
+                <Icon className="h-4 w-4" />
+              </span>
+              <div className="min-w-0">
+                <p className="label-mono truncate">{s.code}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {s.pillar}
+                </p>
+              </div>
             </div>
+            <span className="shrink-0 text-xs font-medium text-muted-foreground transition-colors group-hover:text-primary">
+              Edit →
+            </span>
           </div>
-          <span className="shrink-0 text-xs font-medium text-muted-foreground transition-colors group-hover:text-primary">
-            Edit →
-          </span>
-        </div>
 
-        <h2 className="mt-3 font-display text-lg font-bold leading-snug">
-          {s.name || "Untitled service"}
-        </h2>
+          <h2 className="mt-3 font-display text-lg font-bold leading-snug">
+            {s.name || "Untitled service"}
+          </h2>
 
-        <p className="font-num mt-2 text-xl font-semibold text-primary">
-          {money(s.rate)}{" "}
-          <span className="text-xs font-normal text-muted-foreground">
-            {s.unit}
-          </span>
-        </p>
-
-        <p className="mt-1 text-xs text-muted-foreground">
-          {s.timeline || "Timeline not set"}
-          {s.overage > 0 ? ` · +${money(s.overage)} / rev` : ""}
-        </p>
-
-        {tags.length > 0 && (
-          <p className="mt-2 truncate text-[0.72rem] text-muted-foreground/85">
-            {tags.join(" · ")}
+          <p className="font-num mt-2 text-xl font-semibold text-primary">
+            {money(s.rate)}{" "}
+            <span className="text-xs font-normal text-muted-foreground">
+              {s.unit}
+            </span>
           </p>
-        )}
 
-        <ul className="my-3.5 flex-1 space-y-1 text-xs text-muted-foreground">
-          {s.scope
-            .split("\n")
-            .filter(Boolean)
-            .slice(0, 4)
-            .map((l, i) => (
-              <li key={i} className="truncate">
-                · {l}
-              </li>
-            ))}
-        </ul>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {s.timeline || "Timeline not set"}
+            {s.overage > 0 ? ` · +${money(s.overage)} / rev` : ""}
+          </p>
 
-        <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
-          <span className="text-[0.7rem] text-muted-foreground">
-            Click card to edit
-          </span>
-          <Link
-            to="/invoices/$id"
-            params={{ id: "new" }}
-            search={{ service: s.id, kind: "Quotation" }}
-            onClick={(e) => e.stopPropagation()}
-            className="shrink-0"
-          >
-            <Btn variant="gold" className="px-3 py-1 text-xs">
-              Quote
-            </Btn>
-          </Link>
+          {tags.length > 0 && (
+            <p className="mt-2 truncate text-[0.72rem] text-muted-foreground/85">
+              {tags.join(" · ")}
+            </p>
+          )}
+
+          <ul className="my-3.5 flex-1 space-y-1 text-xs text-muted-foreground">
+            {s.scope
+              .split("\n")
+              .filter(Boolean)
+              .slice(0, 4)
+              .map((l, i) => (
+                <li key={i} className="truncate">
+                  · {l}
+                </li>
+              ))}
+          </ul>
+
+          <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3">
+            <span className="text-[0.7rem] text-muted-foreground">
+              Click card to edit
+            </span>
+            <Link
+              to="/invoices/$id"
+              params={{ id: "new" }}
+              search={{ service: s.id, kind: "Quotation" }}
+              onClick={(e) => e.stopPropagation()}
+              className="btn-gold min-h-[34px] shrink-0 whitespace-nowrap px-3 py-1 text-xs"
+            >
+              + Quote
+            </Link>
+          </div>
         </div>
-      </div>
-    );
-  };
+      );
+    },
+    [selectedService?.id, openEditor],
+  );
 
   const bentoWidgets = useMemo<BentoWidgetDef[]>(
     () => [
@@ -454,7 +455,7 @@ function Services() {
       activeTag,
       filtered,
       grouped,
-      selectedService,
+      renderCard,
     ],
   );
 

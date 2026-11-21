@@ -1,7 +1,7 @@
 import { toast } from "sonner";
 import { SwipeRow } from "@/components/rv/SwipeRow";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowLeft,
@@ -229,30 +229,36 @@ function Page() {
     [db.goals],
   );
 
-  const goalNow = (g: Goal) => {
-    if (g.kind === "cash") return studioInYear;
-    if (g.kind === "clients")
-      return db.clients.filter((c) => c.status !== "Lead").length;
-    return g.current;
-  };
+  const goalNow = useCallback(
+    (g: Goal) => {
+      if (g.kind === "cash") return studioInYear;
+      if (g.kind === "clients")
+        return db.clients.filter((c) => c.status !== "Lead").length;
+      return g.current;
+    },
+    [studioInYear, db.clients],
+  );
 
-  const openNewExpense = (category?: string) => {
-    setEdit({
-      id: uid(),
-      date: today().startsWith(month) ? today() : `${month}-01`,
-      projectId: "",
-      category:
-        category && EXPENSE_CATEGORIES.includes(category)
-          ? category
-          : (EXPENSE_CATEGORIES[0] ?? "Other"),
-      vendor: "",
-      description: "",
-      amount: 0,
-      currency: "USD",
-      receipt: "",
-      account: "Studio",
-    });
-  };
+  const openNewExpense = useCallback(
+    (category?: string) => {
+      setEdit({
+        id: uid(),
+        date: today().startsWith(month) ? today() : `${month}-01`,
+        projectId: "",
+        category:
+          category && EXPENSE_CATEGORIES.includes(category)
+            ? category
+            : (EXPENSE_CATEGORIES[0] ?? "Other"),
+        vendor: "",
+        description: "",
+        amount: 0,
+        currency: "USD",
+        receipt: "",
+        account: "Studio",
+      });
+    },
+    [month],
+  );
 
   const openNewGoal = () => {
     setGoal({
@@ -475,6 +481,20 @@ function Page() {
       });
     }
   };
+
+  const deleteStudioExpense = useCallback((item: Expense) => {
+    setDB((d) => ({
+      ...d,
+      expenses: d.expenses.filter((x) => x.id !== item.id),
+    }));
+    toast("Expense deleted", {
+      action: {
+        label: "Undo",
+        onClick: () =>
+          setDB((d) => ({ ...d, expenses: [item, ...d.expenses] })),
+      },
+    });
+  }, []);
 
   const widgets = useMemo<BentoWidgetDef[]>(
     () => [
@@ -928,29 +948,37 @@ function Page() {
                     const ItemIcon = expenseItemIcon(e);
                     return (
                       <li key={e.id}>
-                        <button
-                          onClick={() => setEdit(e)}
-                          className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-muted"
+                        <SwipeRow
+                          onEdit={() => setEdit(e)}
+                          onDelete={() => deleteStudioExpense(e)}
                         >
-                          <div className="flex min-w-0 items-center gap-3">
-                            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-primary">
-                              <ItemIcon className="h-4 w-4" />
-                            </span>
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-medium">
-                                {e.description || e.vendor || "Studio expense"}
-                              </p>
-                              <p className="truncate text-xs text-muted-foreground">
-                                {shortDate(e.date)} · {e.category}
-                                {e.vendor ? ` · ${e.vendor}` : ""}
-                                {proj ? ` · ${proj.code}` : ""}
-                              </p>
+                          <button
+                            type="button"
+                            onClick={() => setEdit(e)}
+                            className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-muted"
+                          >
+                            <div className="flex min-w-0 items-center gap-3">
+                              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-primary">
+                                <ItemIcon className="h-4 w-4" />
+                              </span>
+                              <div className="min-w-0">
+                                <p className="truncate text-sm font-medium">
+                                  {e.description ||
+                                    e.vendor ||
+                                    "Studio expense"}
+                                </p>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {shortDate(e.date)} · {e.category}
+                                  {e.vendor ? ` · ${e.vendor}` : ""}
+                                  {proj ? ` · ${proj.code}` : ""}
+                                </p>
+                              </div>
                             </div>
-                          </div>
-                          <p className="font-num text-sm text-destructive">
-                            {money(-e.amount, e.currency)}
-                          </p>
-                        </button>
+                            <p className="font-num text-sm text-destructive">
+                              {money(-e.amount, e.currency)}
+                            </p>
+                          </button>
+                        </SwipeRow>
                       </li>
                     );
                   })}
@@ -1017,6 +1045,9 @@ function Page() {
       query,
       visibleExpenses,
       visibleCount,
+      goalNow,
+      openNewExpense,
+      deleteStudioExpense,
     ],
   );
 
@@ -1370,68 +1401,76 @@ function Page() {
             ) : (
               <>
                 <ul className="divide-y divide-border">
-                  {combinedVisibleRows.map((row) => (
-                    <li key={row.id}>
-                      <SwipeRow
-                        onDelete={
-                          row.id.startsWith("pay-")
-                            ? undefined
-                            : () => deleteCombinedRow(row.id)
-                        }
-                      >
-                        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-2.5">
-                          <div className="flex min-w-0 items-center gap-3">
+                  {combinedVisibleRows.map((row) => {
+                    const expMatch = row.id.startsWith("exp-")
+                      ? db.expenses.find((x) => `exp-${x.id}` === row.id)
+                      : undefined;
+                    return (
+                      <li key={row.id}>
+                        <SwipeRow
+                          onEdit={
+                            expMatch ? () => setEdit(expMatch) : undefined
+                          }
+                          onDelete={
+                            row.id.startsWith("pay-")
+                              ? undefined
+                              : () => deleteCombinedRow(row.id)
+                          }
+                        >
+                          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-2.5">
+                            <div className="flex min-w-0 items-center gap-3">
+                              <span
+                                className={cn(
+                                  "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
+                                  row.direction === "income"
+                                    ? "text-positive"
+                                    : "text-destructive",
+                                )}
+                              >
+                                {row.direction === "income" ? (
+                                  <ArrowDownLeft className="h-4 w-4" />
+                                ) : (
+                                  <ArrowUpRight className="h-4 w-4" />
+                                )}
+                              </span>
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="truncate text-sm font-medium text-foreground">
+                                    {row.title}
+                                  </p>
+                                  <span
+                                    className={cn(
+                                      "rounded-full border px-2 py-0.5 text-[0.62rem] font-medium",
+                                      row.workspace === "Studio"
+                                        ? "border-primary/40 bg-primary/12 text-primary"
+                                        : "border-border bg-muted text-muted-foreground",
+                                    )}
+                                  >
+                                    {row.workspace}
+                                  </span>
+                                </div>
+                                <p className="truncate text-xs text-muted-foreground">
+                                  {shortDate(row.date)} · {row.sub}
+                                </p>
+                              </div>
+                            </div>
                             <span
                               className={cn(
-                                "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
+                                "font-num shrink-0 text-sm font-semibold",
                                 row.direction === "income"
                                   ? "text-positive"
                                   : "text-destructive",
                               )}
                             >
-                              {row.direction === "income" ? (
-                                <ArrowDownLeft className="h-4 w-4" />
-                              ) : (
-                                <ArrowUpRight className="h-4 w-4" />
-                              )}
+                              {row.direction === "income"
+                                ? `+${money(row.usd)}`
+                                : money(-row.usd)}
                             </span>
-                            <div className="min-w-0">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <p className="truncate text-sm font-medium text-foreground">
-                                  {row.title}
-                                </p>
-                                <span
-                                  className={cn(
-                                    "rounded-full border px-2 py-0.5 text-[0.62rem] font-medium",
-                                    row.workspace === "Studio"
-                                      ? "border-primary/40 bg-primary/12 text-primary"
-                                      : "border-border bg-muted text-muted-foreground",
-                                  )}
-                                >
-                                  {row.workspace}
-                                </span>
-                              </div>
-                              <p className="truncate text-xs text-muted-foreground">
-                                {shortDate(row.date)} · {row.sub}
-                              </p>
-                            </div>
                           </div>
-                          <span
-                            className={cn(
-                              "font-num shrink-0 text-sm font-semibold",
-                              row.direction === "income"
-                                ? "text-positive"
-                                : "text-destructive",
-                            )}
-                          >
-                            {row.direction === "income"
-                              ? `+${money(row.usd)}`
-                              : money(-row.usd)}
-                          </span>
-                        </div>
-                      </SwipeRow>
-                    </li>
-                  ))}
+                        </SwipeRow>
+                      </li>
+                    );
+                  })}
                 </ul>
 
                 {combinedLedgerRows.length > combinedVisibleRows.length && (

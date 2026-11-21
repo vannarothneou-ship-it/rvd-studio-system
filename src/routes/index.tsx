@@ -43,6 +43,7 @@ import {
 } from "@/components/rv/FinanceVisuals";
 import { MoneyFlowSankeyCard } from "@/components/rv/MoneyFlowSankey";
 import { CentralAiBrief } from "@/components/rv/CentralAiBrief";
+import { TodayFocusCard } from "@/components/rv/TodayFocusCard";
 import { DashboardCalendarCard } from "@/components/rv/DashboardCalendar";
 import {
   CHART_LENS_OPTIONS,
@@ -57,6 +58,7 @@ import {
   QuickExpenseDrawer,
   QuickIncomeDrawer,
 } from "@/components/rv/QuickTxDrawer";
+import { SwipeRow } from "@/components/rv/SwipeRow";
 import { useReceiptScanner } from "@/components/rv/ReceiptScanner";
 import {
   DEFAULT_WORK_PROJECTS,
@@ -426,6 +428,69 @@ function CommandDashboard() {
       : unifiedFeed.filter((it) => it.scope === feedScope);
   const visibleFeed = filteredFeed.slice(0, feedExpanded ? 24 : 8);
 
+  const openFeedItem = (item: (typeof unifiedFeed)[number]) => {
+    if (item.expense) setExpenseDraft(item.expense);
+    else if (item.income) setIncomeDraft(item.income);
+    else if (item.workTask) setWorkTaskDraft(item.workTask);
+    else if (item.invoiceId) {
+      navigate({
+        to: "/invoices/$id",
+        params: { id: item.invoiceId },
+      });
+    }
+  };
+
+  const deleteFeedItem = (item: (typeof unifiedFeed)[number]) => {
+    if (item.expense) {
+      const removed = item.expense;
+      setDB((d) => ({
+        ...d,
+        expenses: d.expenses.filter((x) => x.id !== removed.id),
+      }));
+      toast("Expense deleted", {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            setDB((d) => ({ ...d, expenses: [removed, ...d.expenses] })),
+        },
+      });
+    } else if (item.income) {
+      const removed = item.income;
+      setDB((d) => ({
+        ...d,
+        personalIncome: (d.personalIncome ?? []).filter(
+          (x) => x.id !== removed.id,
+        ),
+      }));
+      toast("Income deleted", {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            setDB((d) => ({
+              ...d,
+              personalIncome: [removed, ...(d.personalIncome ?? [])],
+            })),
+        },
+      });
+    } else if (item.workTask) {
+      const removed = item.workTask;
+      setDB((d) => ({
+        ...d,
+        workTasks: (d.workTasks ?? []).filter((x) => x.id !== removed.id),
+      }));
+      toast("Task deleted", {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            setDB((d) => ({
+              ...d,
+              workTasks: [removed, ...(d.workTasks ?? [])],
+            })),
+        },
+      });
+    }
+  };
+
   return (
     <>
       <PageHeader title="Dashboard" owner={db.settings.ownerName} />
@@ -529,6 +594,14 @@ function CommandDashboard() {
           </div>
         </div>
       </Glass>
+
+      {/* Things 3 / Linear style Unified Today Action Queue */}
+      <TodayFocusCard
+        db={db}
+        hideBalances={hideBalances}
+        onOpenWorkTask={(task) => setWorkTaskDraft(task)}
+        className="mb-4"
+      />
 
       {/* Symmetrical Middle Command Cards: Studio · Personal Money · Work & Portfolio */}
       <div className="mb-4 grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
@@ -1101,61 +1174,64 @@ function CommandDashboard() {
 
                   return (
                     <li key={item.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (item.expense) setExpenseDraft(item.expense);
-                          else if (item.income) setIncomeDraft(item.income);
-                          else if (item.workTask)
-                            setWorkTaskDraft(item.workTask);
-                          else if (item.invoiceId)
-                            navigate({
-                              to: "/invoices/$id",
-                              params: { id: item.invoiceId },
-                            });
-                        }}
-                        className="flex w-full items-center justify-between gap-2.5 rounded-xl px-1.5 py-2.5 text-left transition-colors hover:bg-muted/60"
+                      <SwipeRow
+                        onEdit={
+                          item.expense || item.income || item.workTask
+                            ? () => openFeedItem(item)
+                            : undefined
+                        }
+                        onDelete={
+                          item.invoiceId
+                            ? undefined
+                            : () => deleteFeedItem(item)
+                        }
                       >
-                        <div className="flex min-w-0 items-center gap-2.5">
-                          <span
-                            className={cn(
-                              "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-muted/80",
-                              item.direction === "in" && "text-positive",
-                              item.direction === "out" && "text-destructive",
-                              !item.direction && "text-primary",
-                            )}
-                          >
-                            <Icon className="h-4 w-4" />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="truncate text-xs font-semibold text-foreground sm:text-sm">
-                              {item.title}
-                            </p>
-                            <p className="truncate text-[0.7rem] text-muted-foreground">
-                              <span className="font-medium text-primary/90">
-                                {item.scope}
-                              </span>{" "}
-                              · {item.sub} · {shortDate(item.date)}
-                            </p>
+                        <button
+                          type="button"
+                          onClick={() => openFeedItem(item)}
+                          className="flex w-full items-center justify-between gap-2.5 rounded-xl px-1.5 py-2.5 text-left transition-colors hover:bg-muted/60"
+                        >
+                          <div className="flex min-w-0 items-center gap-2.5">
+                            <span
+                              className={cn(
+                                "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-muted/80",
+                                item.direction === "in" && "text-positive",
+                                item.direction === "out" && "text-destructive",
+                                !item.direction && "text-primary",
+                              )}
+                            >
+                              <Icon className="h-4 w-4" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-semibold text-foreground sm:text-sm">
+                                {item.title}
+                              </p>
+                              <p className="truncate text-[0.7rem] text-muted-foreground">
+                                <span className="font-medium text-primary/90">
+                                  {item.scope}
+                                </span>{" "}
+                                · {item.sub} · {shortDate(item.date)}
+                              </p>
+                            </div>
                           </div>
-                        </div>
-                        {item.amount !== undefined ? (
-                          <span
-                            className={cn(
-                              "font-num shrink-0 text-xs font-bold sm:text-sm",
-                              item.direction === "in"
-                                ? "text-positive"
-                                : "text-destructive",
-                            )}
-                          >
-                            {hideBalances
-                              ? "••••"
-                              : money(item.amount, "USD", true)}
-                          </span>
-                        ) : item.badge ? (
-                          <Pill s={item.badge} />
-                        ) : null}
-                      </button>
+                          {item.amount !== undefined ? (
+                            <span
+                              className={cn(
+                                "font-num shrink-0 text-xs font-bold sm:text-sm",
+                                item.direction === "in"
+                                  ? "text-positive"
+                                  : "text-destructive",
+                              )}
+                            >
+                              {hideBalances
+                                ? "••••"
+                                : money(item.amount, "USD", true)}
+                            </span>
+                          ) : item.badge ? (
+                            <Pill s={item.badge} />
+                          ) : null}
+                        </button>
+                      </SwipeRow>
                     </li>
                   );
                 })}

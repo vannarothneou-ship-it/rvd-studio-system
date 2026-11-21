@@ -2,14 +2,28 @@ import {
   addDays,
   cardKind,
   categoryLimit,
+  DEFAULT_WORK_PROJECTS,
+  DESIGN_TYPES,
+  documentKind,
+  EXPENSE_CATEGORIES,
   expenseAccount,
+  getProjectHealth,
   goalAccount,
+  invoiceTotals,
   invoiceView,
   isInvoice,
+  needsFollowUp,
+  normalizeWorkStage,
+  PERSONAL_CATEGORIES,
+  PERSONAL_INCOME_SOURCES,
   previousMonth,
   toUSD,
   today,
+  uid,
+  type Account,
+  type Currency,
   type DB,
+  type WorkPipelineStage,
 } from "@/lib/store";
 import { getDueReminders } from "@/lib/reminders";
 
@@ -34,6 +48,13 @@ export interface CategoryPaceItem {
   baseline3moUSD: number;
   projectedMonthEndUSD: number;
   status: "over" | "watch" | "ok";
+}
+
+export interface SpendAnomalyItem {
+  category: string;
+  spentUSD: number;
+  baseline3moUSD: number;
+  multiplier: number;
 }
 
 export interface GoalEtaItem {
@@ -73,15 +94,120 @@ export interface CentralIntelligenceSnapshot {
   overdueARUSD: number;
   overdueInvoiceCount: number;
   overdueClientNames: string[];
+  unbilledQuotedUSD: number;
+  pipelineValueUSD: number;
+  delayedProjectCount: number;
+  atRiskProjectCount: number;
   activeWorkCount: number;
   dueSoonWorkCount: number;
   dueReminderCount: number;
   latestCarOdoKm: number | null;
   learnedRuleCount: number;
   categoryPace: CategoryPaceItem[];
+  spendAnomalies: SpendAnomalyItem[];
   goalEtas: GoalEtaItem[];
   insights: CentralInsight[];
 }
+
+export type TodayActionScope = "Studio" | "Personal" | "Work" | "Life";
+
+export type TodayActionItem =
+  | {
+      id: string;
+      kind: "invoice";
+      scope: "Studio";
+      urgency: "critical" | "high" | "normal";
+      title: string;
+      subtitle: string;
+      metric: string;
+      invoiceId: string;
+      balanceNative: number;
+      currency: Currency;
+      dueDate: string;
+    }
+  | {
+      id: string;
+      kind: "quote";
+      scope: "Studio";
+      urgency: "high" | "normal";
+      title: string;
+      subtitle: string;
+      metric: string;
+      invoiceId: string;
+      readyToConvert: boolean;
+    }
+  | {
+      id: string;
+      kind: "work";
+      scope: "Work";
+      urgency: "critical" | "high" | "normal";
+      title: string;
+      subtitle: string;
+      metric: string;
+      taskId: string;
+      stage: WorkPipelineStage;
+    }
+  | {
+      id: string;
+      kind: "project";
+      scope: "Studio";
+      urgency: "critical" | "high";
+      title: string;
+      subtitle: string;
+      metric: string;
+      projectId: string;
+    }
+  | {
+      id: string;
+      kind: "reminder";
+      scope: "Life";
+      urgency: "high" | "normal";
+      title: string;
+      subtitle: string;
+      metric: string;
+      reminderId: string;
+      occurrenceDate: string;
+    };
+
+export type ParsedQuickCommand =
+  | {
+      kind: "expense";
+      summary: string;
+      matchedRule?: string;
+      data: {
+        account: Account;
+        amount: number;
+        currency: Currency;
+        category: string;
+        vendor: "Debit" | "Credit";
+        description: string;
+        date: string;
+      };
+    }
+  | {
+      kind: "income";
+      summary: string;
+      data: {
+        amount: number;
+        currency: Currency;
+        source: string;
+        accountMethod: "Debit" | "Credit";
+        description: string;
+        date: string;
+      };
+    }
+  | {
+      kind: "work-task";
+      summary: string;
+      data: {
+        title: string;
+        projectName: string;
+        designType: string;
+        artworkCount: number;
+        dueDate: string;
+        status: WorkPipelineStage;
+      };
+    };
 
 function addMonthsIso(isoDate: string, months: number): string {
   const [y, m, d] = isoDate.split("-").map(Number);
@@ -189,23 +315,68 @@ export function computeCentralIntelligence(
         ? Math.round((netWorthLiquidUSD / monthlyBurnUSD) * 10) / 10
         : null;
 
-  // Open & overdue A/R
+  // Open & overdue A/R + unbilled accepted quotes
   const clientMap = new Map(db.clients.map((c) => [c.id, c.name]));
+  const convertedSourceIds = new Set(
+    db.invoices
+      .filter((i) => isInvoice(i) && i.sourceId)
+      .map((i) => i.sourceId!),
+  );
+
   let openARUSD = 0;
   let overdueARUSD = 0;
   let overdueInvoiceCount = 0;
+  let unbilledQuotedUSD = 0;
   const overdueClientSet = new Set<string>();
 
   for (const inv of db.invoices) {
-    if (!isInvoice(inv)) continue;
-    const v = invoiceView(inv, db);
-    if (v.status === "Draft" || v.balanceUSD <= 0.01) continue;
-    openARUSD += v.balanceUSD;
-    if (v.status === "Overdue" || (inv.due && inv.due < refDate)) {
-      overdueARUSD += v.balanceUSD;
-      overdueInvoiceCount += 1;
-      const cName = clientMap.get(inv.clientId);
-      if (cName) overdueClientSet.add(cName);
+    if (isInvoice(inv)) {
+      const v = invoiceView(inv, db);
+      if (v.status === "Draft" || v.balanceUSD <= 0.01) continue;
+      openARUSD += v.balanceUSD;
+      if (v.status === "Overdue" || (inv.due && inv.due < refDate)) {
+        overdueARUSD += v.balanceUSD;
+        overdueInvoiceCount += 1;
+        const cName = clientMap.get(inv.clientId);
+        if (cName) overdueClientSet.add(cName);
+      }
+    } else if (
+      (documentKind(inv) === "Quotation" ||
+        documentKind(inv) === "Agreement") &&
+      inv.response === "Accepted" &&
+      !convertedSourceIds.has(inv.id)
+    ) {
+      const hasProjectInvoice =
+        Boolean(inv.projectId) &&
+        db.invoices.some(
+          (other) => isInvoice(other) && other.projectId === inv.projectId,
+        );
+      if (!hasProjectInvoice) {
+        unbilledQuotedUSD += toUSD(
+          invoiceTotals(inv).total,
+          inv.currency,
+          rate,
+        );
+      }
+    }
+  }
+
+  // Studio project pipeline & deadline health
+  let pipelineValueUSD = 0;
+  let delayedProjectCount = 0;
+  let atRiskProjectCount = 0;
+  let delayedFirstTitle = "";
+
+  for (const p of db.projects) {
+    if (["Inquiry", "Quoted", "In production"].includes(p.status)) {
+      pipelineValueUSD += Math.max(0, Number(p.quote) || 0);
+    }
+    const h = getProjectHealth(p, refDate);
+    if (h.status === "delayed") {
+      delayedProjectCount += 1;
+      if (!delayedFirstTitle) delayedFirstTitle = p.name || p.code;
+    } else if (h.status === "at-risk") {
+      atRiskProjectCount += 1;
     }
   }
 
@@ -251,6 +422,21 @@ export function computeCentralIntelligence(
     .filter((c) => c.spentUSD > 0 || c.baseline3moUSD > 0)
     .sort((a, b) => b.pct - a.pct || b.spentUSD - a.spentUSD);
 
+  const spendAnomalies: SpendAnomalyItem[] = categoryPace
+    .filter(
+      (c) =>
+        c.baseline3moUSD >= 5 &&
+        c.spentUSD >= 15 &&
+        c.spentUSD >= c.baseline3moUSD * 1.45,
+    )
+    .map((c) => ({
+      category: c.category,
+      spentUSD: c.spentUSD,
+      baseline3moUSD: c.baseline3moUSD,
+      multiplier: Math.round((c.spentUSD / c.baseline3moUSD) * 10) / 10,
+    }))
+    .sort((a, b) => b.multiplier - a.multiplier);
+
   // Saving goal ETAs
   const goalEtas: GoalEtaItem[] = db.goals.map((g) => {
     const account = goalAccount(g);
@@ -291,7 +477,7 @@ export function computeCentralIntelligence(
   // Work & Reminders
   const weekAhead = addDays(refDate, 7);
   const activeWork = (db.workTasks ?? []).filter(
-    (t) => t.status !== "Completed",
+    (t) => normalizeWorkStage(t.status) !== "Completed",
   );
   const dueSoonWork = activeWork.filter(
     (t) => t.dueDate && t.dueDate <= weekAhead,
@@ -321,6 +507,34 @@ export function computeCentralIntelligence(
     });
   }
 
+  if (delayedProjectCount > 0) {
+    insights.push({
+      id: "delayed-projects",
+      severity: "critical",
+      area: "Studio",
+      title: `${delayedProjectCount} studio project${delayedProjectCount === 1 ? "" : "s"} past deadline`,
+      detail: delayedFirstTitle
+        ? `Review "${delayedFirstTitle}" and update delivery dates or convert to delivery note.`
+        : "Update studio project milestones to restore schedule health.",
+      metric: `${delayedProjectCount} delayed`,
+      actionLabel: "Projects",
+      actionTo: "/projects",
+    });
+  }
+
+  if (unbilledQuotedUSD > 0) {
+    insights.push({
+      id: "unbilled-quotes",
+      severity: "warn",
+      area: "Studio",
+      title: "Accepted quotes ready for invoicing",
+      detail: `$${Math.round(unbilledQuotedUSD).toLocaleString("en-US")} in accepted quotations or agreements have no active invoice yet.`,
+      metric: `$${Math.round(unbilledQuotedUSD).toLocaleString("en-US")}`,
+      actionLabel: "Convert",
+      actionTo: "/invoices",
+    });
+  }
+
   const overCats = categoryPace.filter((c) => c.status === "over");
   if (overCats.length > 0) {
     const top = overCats[0]!;
@@ -332,6 +546,18 @@ export function computeCentralIntelligence(
       detail: `Spent $${top.spentUSD.toFixed(2)} of $${top.limitUSD.toFixed(0)} budget (${top.pct}%).`,
       metric: `${top.pct}%`,
       actionLabel: "Inspect",
+      actionTo: "/personal",
+    });
+  } else if (spendAnomalies.length > 0) {
+    const spike = spendAnomalies[0]!;
+    insights.push({
+      id: `spike-${spike.category}`,
+      severity: "warn",
+      area: "Cash",
+      title: `${spike.category} is ${spike.multiplier}x above 3-month average`,
+      detail: `Spent $${spike.spentUSD.toFixed(0)} this month compared to $${spike.baseline3moUSD.toFixed(0)}/mo typical pace.`,
+      metric: `${spike.multiplier}x`,
+      actionLabel: "Review",
       actionTo: "/personal",
     });
   } else {
@@ -435,14 +661,477 @@ export function computeCentralIntelligence(
     overdueARUSD,
     overdueInvoiceCount,
     overdueClientNames: Array.from(overdueClientSet),
+    unbilledQuotedUSD,
+    pipelineValueUSD,
+    delayedProjectCount,
+    atRiskProjectCount,
     activeWorkCount: activeWork.length,
     dueSoonWorkCount: dueSoonWork.length,
     dueReminderCount: dueReminders.length,
     latestCarOdoKm,
     learnedRuleCount: (db.learnedReceiptRules ?? []).length,
     categoryPace,
+    spendAnomalies,
     goalEtas,
     insights: insights.slice(0, 6),
+  };
+}
+
+/**
+ * Things 3 / Linear style unified "Today Focus" action queue across Studio, Work & Reminders.
+ * Items ordered by action urgency so users can clear their day in 1 click per item.
+ */
+export function getTodayActionQueue(
+  db: DB,
+  refDate: string = today(),
+): TodayActionItem[] {
+  const items: TodayActionItem[] = [];
+  const clientMap = new Map(db.clients.map((c) => [c.id, c.name]));
+  const convertedSources = new Set(
+    db.invoices
+      .filter((i) => isInvoice(i) && i.sourceId)
+      .map((i) => i.sourceId!),
+  );
+  const dueSoonThreshold = addDays(refDate, 5);
+  const workThreshold = addDays(refDate, 3);
+
+  // 1. Overdue & due-soon Studio invoices
+  for (const inv of db.invoices) {
+    if (!isInvoice(inv)) continue;
+    const v = invoiceView(inv, db);
+    if (v.status === "Draft" || v.balance <= 0.01) continue;
+    const isOverdue = v.status === "Overdue" || (inv.due && inv.due < refDate);
+    const isDueSoon = inv.due && inv.due <= dueSoonThreshold;
+    if (!isOverdue && !isDueSoon) continue;
+    const clientName = clientMap.get(inv.clientId) ?? "Client";
+    items.push({
+      id: `act-inv-${inv.id}`,
+      kind: "invoice",
+      scope: "Studio",
+      urgency: isOverdue ? "critical" : "high",
+      title: `${inv.no} · ${clientName}`,
+      subtitle: isOverdue
+        ? `Overdue since ${inv.due}`
+        : `Due ${inv.due} · ${v.status}`,
+      metric:
+        inv.currency === "KHR"
+          ? `៛${Math.round(v.balance).toLocaleString("en-US")}`
+          : `$${v.balance.toFixed(2)}`,
+      invoiceId: inv.id,
+      balanceNative: Math.round(v.balance * 100) / 100,
+      currency: inv.currency,
+      dueDate: inv.due,
+    });
+  }
+
+  // 2. Quotations / Agreements accepted (ready to invoice) or follow-up due
+  for (const doc of db.invoices) {
+    const kind = documentKind(doc);
+    if (kind === "Invoice" || kind === "Delivery note") continue;
+    const clientName = clientMap.get(doc.clientId) ?? "Client";
+    const acceptedUnbilled =
+      doc.response === "Accepted" &&
+      !convertedSources.has(doc.id) &&
+      (!doc.projectId ||
+        !db.invoices.some(
+          (other) => isInvoice(other) && other.projectId === doc.projectId,
+        ));
+    const followUpDue = needsFollowUp(doc, refDate);
+    if (!acceptedUnbilled && !followUpDue) continue;
+    const total = invoiceTotals(doc).total;
+    items.push({
+      id: `act-doc-${doc.id}`,
+      kind: "quote",
+      scope: "Studio",
+      urgency: acceptedUnbilled ? "high" : "normal",
+      title: `${doc.no} · ${clientName}`,
+      subtitle: acceptedUnbilled
+        ? `${kind} accepted · Convert to invoice`
+        : `Follow-up due ${doc.followUp}`,
+      metric:
+        doc.currency === "KHR"
+          ? `៛${Math.round(total).toLocaleString("en-US")}`
+          : `$${total.toFixed(0)}`,
+      invoiceId: doc.id,
+      readyToConvert: acceptedUnbilled,
+    });
+  }
+
+  // 3. Work tasks overdue, due within 3 days, or waiting in Review / Approved
+  for (const t of db.workTasks ?? []) {
+    const stage = normalizeWorkStage(t.status);
+    if (stage === "Completed") continue;
+    const isOverdue = Boolean(t.dueDate && t.dueDate < refDate);
+    const isDueSoon = Boolean(t.dueDate && t.dueDate <= workThreshold);
+    const needsDecision = stage === "Review" || stage === "Approved";
+    if (!isOverdue && !isDueSoon && !needsDecision) continue;
+    const proj = t.projectName || t.company || "Work";
+    items.push({
+      id: `act-wrk-${t.id}`,
+      kind: "work",
+      scope: "Work",
+      urgency: isOverdue ? "critical" : isDueSoon ? "high" : "normal",
+      title: `${proj} · ${t.title || t.code}`,
+      subtitle: isOverdue
+        ? `Overdue (${t.dueDate}) · ${stage}`
+        : t.dueDate
+          ? `Due ${t.dueDate} · ${stage}`
+          : `${stage} · ${t.designType}`,
+      metric: stage,
+      taskId: t.id,
+      stage,
+    });
+  }
+
+  // 4. Delayed studio projects
+  for (const p of db.projects) {
+    const h = getProjectHealth(p, refDate);
+    if (h.status !== "delayed") continue;
+    const clientName = clientMap.get(p.clientId) ?? "Studio";
+    items.push({
+      id: `act-proj-${p.id}`,
+      kind: "project",
+      scope: "Studio",
+      urgency: "critical",
+      title: `${p.code} · ${p.name}`,
+      subtitle: `${clientName} · ${p.status} (${h.reason})`,
+      metric: h.label,
+      projectId: p.id,
+    });
+  }
+
+  // 5. Due calendar & car ODO reminders
+  for (const dueRem of getDueReminders(db.reminders ?? [], refDate)) {
+    const when =
+      dueRem.daysUntil === 0
+        ? "Today"
+        : dueRem.daysUntil === 1
+          ? "Tomorrow"
+          : `In ${dueRem.daysUntil}d`;
+    items.push({
+      id: `act-rem-${dueRem.reminder.id}`,
+      kind: "reminder",
+      scope: "Life",
+      urgency: dueRem.daysUntil <= 1 ? "high" : "normal",
+      title: dueRem.reminder.title,
+      subtitle:
+        dueRem.reminder.odoKm && dueRem.reminder.odoKm > 0
+          ? `${dueRem.reminder.odoKm.toLocaleString("en-US")} km · ${dueRem.reminder.notes || when}`
+          : dueRem.reminder.notes || `Scheduled ${dueRem.occurrenceDate}`,
+      metric: when,
+      reminderId: dueRem.reminder.id,
+      occurrenceDate: dueRem.occurrenceDate,
+    });
+  }
+
+  const urgencyRank = { critical: 0, high: 1, normal: 2 } as const;
+  return items.sort((a, b) => urgencyRank[a.urgency] - urgencyRank[b.urgency]);
+}
+
+function inferCategoryFromText(
+  text: string,
+  account: Account,
+  db: DB,
+): { category: string; vendor: "Debit" | "Credit"; matchedRule?: string } {
+  const lower = text.toLowerCase();
+  const vendor: "Debit" | "Credit" = /\b(?:credit|visa|mastercard)\b/i.test(
+    lower,
+  )
+    ? "Credit"
+    : "Debit";
+
+  // 1. Learned rules take highest precedence (unified receipt/command AI)
+  for (const rule of db.learnedReceiptRules ?? []) {
+    if (rule.pattern && lower.includes(rule.pattern.toLowerCase())) {
+      return {
+        category: rule.category,
+        vendor: /\bcredit\b/i.test(lower) ? "Credit" : rule.method,
+        matchedRule: rule.displayPattern,
+      };
+    }
+  }
+
+  const validList =
+    account === "Studio" ? EXPENSE_CATEGORIES : PERSONAL_CATEGORIES;
+
+  // 2. Direct category name mention
+  for (const cat of validList) {
+    if (lower.includes(cat.toLowerCase())) {
+      return { category: cat, vendor };
+    }
+  }
+
+  if (account === "Studio") {
+    if (
+      /\b(?:adobe|figma|framer|canva|font|domain|hosting|ai|saas)\b/.test(lower)
+    )
+      return { category: "Software and subscriptions", vendor };
+    if (/\b(?:print|banner|vinyl|paper|box|dieline)\b/.test(lower))
+      return { category: "Printing and production", vendor };
+    if (/\b(?:fabricat|sign|neon|acrylic|booth|led)\b/.test(lower))
+      return { category: "Fabrication and vendors", vendor };
+    if (/\b(?:freelance|retouch|motion|video|copy)\b/.test(lower))
+      return { category: "Freelancers", vendor };
+    if (/\b(?:grab|taxi|fuel|delivery|courier|passapp)\b/.test(lower))
+      return { category: "Transport", vendor };
+    return { category: "Other", vendor };
+  }
+
+  // Personal category keyword map
+  if (
+    /\b(?:coffee|cafe|onnik|brown|tube|starbucks|food|lunch|dinner|breakfast|grocer|supermarket|snack|tea|drink|meal|burger|noodle|rice|aeon|chip mong|lucky)\b/.test(
+      lower,
+    )
+  ) {
+    return { category: "Food", vendor };
+  }
+  if (
+    /\b(?:prius|ptt|caltex|tela|total|oil|tire|car|service|wash|parking|fuel|gas)\b/.test(
+      lower,
+    )
+  ) {
+    return { category: "Prius 2012", vendor };
+  }
+  if (/\b(?:grab|passapp|tuktuk|tuk|taxi|bus|train|flight)\b/.test(lower)) {
+    return { category: "Transportation", vendor };
+  }
+  if (/\b(?:kid|baby|school|diaper|milk|toy|tuition)\b/.test(lower)) {
+    return { category: "Kid", vendor };
+  }
+  if (
+    /\b(?:edc|electric|water|wifi|internet|smart|cellcard|metfone|bill|rent|utility|utilities)\b/.test(
+      lower,
+    )
+  ) {
+    return { category: "Utilities", vendor };
+  }
+  if (
+    /\b(?:hospital|clinic|pharmacy|med|doctor|dental|health|medicine)\b/.test(
+      lower,
+    )
+  ) {
+    return { category: "Medical & Healthcare", vendor };
+  }
+  if (/\b(?:save|saving|invest|stock|gold|deposit)\b/.test(lower)) {
+    return { category: "Saving & Investing", vendor };
+  }
+  return { category: "Personal Spending", vendor };
+}
+
+function resolveDateToken(
+  text: string,
+  refDate: string,
+): { date: string; cleaned: string } {
+  const isoMatch = text.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+  if (isoMatch?.[1]) {
+    return {
+      date: isoMatch[1],
+      cleaned: text.replace(isoMatch[0], " "),
+    };
+  }
+  if (/\b(?:due\s+)?tomorrow\b/i.test(text)) {
+    return {
+      date: addDays(refDate, 1),
+      cleaned: text.replace(/\b(?:due\s+)?tomorrow\b/i, " "),
+    };
+  }
+  if (/\b(?:due\s+)?today\b/i.test(text)) {
+    return {
+      date: refDate,
+      cleaned: text.replace(/\b(?:due\s+)?today\b/i, " "),
+    };
+  }
+  const plusMatch = text.match(/\b(?:due\s+)?\+(\d{1,2})d\b/i);
+  if (plusMatch?.[1]) {
+    return {
+      date: addDays(refDate, Number(plusMatch[1]) || 0),
+      cleaned: text.replace(plusMatch[0], " "),
+    };
+  }
+  return { date: refDate, cleaned: text };
+}
+
+function titleWords(s: string): string {
+  return s
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b([a-z])/g, (ch) => ch.toUpperCase());
+}
+
+/**
+ * Natural Language Quick-Capture Parser used by the global Spotlight (⌘K) bar.
+ * Examples:
+ * - "spent $6.50 Onnik coffee"
+ * - "20000r ptt fuel credit"
+ * - "+$500 freelance"
+ * - "task DBG social banner due tomorrow 3 pcs"
+ */
+export function parseQuickCommand(
+  raw: string,
+  db: DB,
+  refDate: string = today(),
+): ParsedQuickCommand | null {
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed.endsWith("?")) return null;
+
+  // 1. Work task command ("task ...", "wrk ...", "work ...")
+  const workLead = trimmed.match(/^(?:task|wrk|work)\s*:?\s+(.+)$/i);
+  if (workLead?.[1]) {
+    let body = workLead[1].trim();
+    const { date: dueDate, cleaned } = resolveDateToken(body, refDate);
+    body = cleaned;
+
+    let artworkCount = 1;
+    const qtyMatch = body.match(/\b(\d{1,3})\s*(?:pcs?|artworks?|files?|x)\b/i);
+    if (qtyMatch?.[1]) {
+      artworkCount = Math.max(1, Number(qtyMatch[1]) || 1);
+      body = body.replace(qtyMatch[0], " ");
+    }
+
+    const workProjects = db.settings.workProjects?.length
+      ? db.settings.workProjects
+      : [...DEFAULT_WORK_PROJECTS];
+    let projectName = workProjects[0] ?? "DBG";
+    for (const proj of workProjects) {
+      const rx = new RegExp(
+        `\\b${proj.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+        "i",
+      );
+      if (rx.test(body)) {
+        projectName = proj;
+        body = body.replace(rx, " ");
+        break;
+      }
+    }
+
+    let designType: string = DESIGN_TYPES[0];
+    const lowerBody = body.toLowerCase();
+    if (/\b(?:social|post|banner|story|ig|fb|ad)\b/.test(lowerBody))
+      designType = "Social & Campaign";
+    else if (/\b(?:print|flyer|brochure|menu|poster|card)\b/.test(lowerBody))
+      designType = "Print & Collateral";
+    else if (/\b(?:pack|box|label|dieline)\b/.test(lowerBody))
+      designType = "Marketing & Packaging";
+    else if (/\b(?:ui|web|app|page|landing)\b/.test(lowerBody))
+      designType = "UI & Web";
+    else if (/\b(?:3d|booth|sign|backdrop|led)\b/.test(lowerBody))
+      designType = "Spatial & Signage";
+    else if (/\b(?:deck|slide|ppt|presentation)\b/.test(lowerBody))
+      designType = "Presentation & Deck";
+
+    const cleanTitle = body
+      .replace(/\b(?:due)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!cleanTitle) return null;
+    const formattedTitle =
+      cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
+    const metaLabel = `${projectName} · ${artworkCount} ${artworkCount === 1 ? "pc" : "pcs"} · Due ${dueDate}`;
+
+    return {
+      kind: "work-task",
+      summary: `Create task: "${formattedTitle}" (${metaLabel})`,
+      data: {
+        title: formattedTitle,
+        projectName,
+        designType,
+        artworkCount,
+        dueDate,
+        status: "Design",
+      },
+    };
+  }
+
+  // 2. Monetary quick command (Income or Expense)
+  const { date, cleaned: dateCleaned } = resolveDateToken(trimmed, refDate);
+  const amountRx =
+    /(?:([+-])\s*)?(?:(\$|៛)\s*)?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d{1,2})?)\s*(khr|riel|r\b|usd|\$)?/i;
+  const amtMatch = dateCleaned.match(amountRx);
+  if (!amtMatch?.[3]) return null;
+
+  const amount = Number(amtMatch[3].replace(/,/g, ""));
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+
+  const signToken = amtMatch[1];
+  const prefixSym = amtMatch[2] ?? "";
+  const suffixSym = (amtMatch[4] ?? "").toLowerCase();
+  const isKHR =
+    prefixSym === "៛" ||
+    suffixSym === "khr" ||
+    suffixSym === "riel" ||
+    suffixSym === "r";
+  const currency: Currency = isKHR ? "KHR" : "USD";
+
+  const isIncome =
+    signToken === "+" ||
+    /^(?:income|earned|received|salary|bonus|in)\b/i.test(dateCleaned) ||
+    /\b(?:income|salary|bonus|refund|dividend)\b/i.test(dateCleaned);
+
+  const rest = dateCleaned
+    .replace(amtMatch[0], " ")
+    .replace(
+      /\b(?:spent|paid|bought|expense|income|earned|received|in|out|studio|credit|debit|visa|mastercard)\b/gi,
+      " ",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (isIncome) {
+    const lower = dateCleaned.toLowerCase();
+    let source: string = PERSONAL_INCOME_SOURCES[0];
+    if (/\b(?:freelance|client)\b/.test(lower)) source = "Freelance";
+    else if (/\b(?:studio\s*draw|draw)\b/.test(lower)) source = "Studio Draw";
+    else if (/\b(?:bonus)\b/.test(lower)) source = "Bonus";
+    else if (/\b(?:invest|dividend)\b/.test(lower)) source = "Investment";
+    else if (/\b(?:gift|refund)\b/.test(lower)) source = "Gift & Refund";
+    else if (/\b(?:other)\b/.test(lower)) source = "Other";
+
+    const method: "Debit" | "Credit" = /\bcredit\b/i.test(lower)
+      ? "Credit"
+      : "Debit";
+    const description = rest ? titleWords(rest) : source;
+    const fmt =
+      currency === "KHR"
+        ? `៛${Math.round(amount).toLocaleString("en-US")}`
+        : `$${amount.toFixed(2)}`;
+    return {
+      kind: "income",
+      summary: `Log Income · +${fmt} · ${source} · ${method}`,
+      data: {
+        amount,
+        currency,
+        source,
+        accountMethod: method,
+        description,
+        date,
+      },
+    };
+  }
+
+  // Expense quick capture (only trigger if it looks like an expense or has merchant/category text)
+  const account: Account = /\bstudio\b/i.test(dateCleaned)
+    ? "Studio"
+    : "Personal";
+  const inferred = inferCategoryFromText(dateCleaned, account, db);
+  const description = rest ? titleWords(rest) : inferred.category;
+  const fmt =
+    currency === "KHR"
+      ? `៛${Math.round(amount).toLocaleString("en-US")}`
+      : `$${amount.toFixed(2)}`;
+
+  return {
+    kind: "expense",
+    ...(inferred.matchedRule ? { matchedRule: inferred.matchedRule } : {}),
+    summary: `Log ${account} Expense · -${fmt} · ${inferred.category} · ${inferred.vendor}`,
+    data: {
+      account,
+      amount,
+      currency,
+      category: inferred.category,
+      vendor: inferred.vendor,
+      description,
+      date,
+    },
   };
 }
 
@@ -544,7 +1233,7 @@ export function askCentralDB(
   if (!q) {
     return {
       answer:
-        "Ask about top spending categories, overdue studio invoices, runway, saving goals, Debit vs Credit cards, work deadlines, or car ODO mileage.",
+        "Ask about top spending categories, overdue studio invoices, project health, pipeline value, saving goals, Debit vs Credit cards, work deadlines, or car ODO mileage.",
       facts: [
         {
           label: "Liquid Net",
@@ -558,7 +1247,62 @@ export function askCentralDB(
     };
   }
 
-  // 1. Overdue A/R / clients owing money
+  // 0. Client-specific lookup by name
+  const matchedClient = db.clients.find(
+    (c) => c.name.trim().length >= 3 && q.includes(c.name.trim().toLowerCase()),
+  );
+  if (matchedClient) {
+    let billedUSD = 0;
+    let owedUSD = 0;
+    let docCount = 0;
+    for (const inv of db.invoices) {
+      if (inv.clientId !== matchedClient.id) continue;
+      docCount += 1;
+      const v = invoiceView(inv, db);
+      billedUSD += v.totalUSD;
+      if (v.status !== "Draft") owedUSD += v.balanceUSD;
+    }
+    const clientProjects = db.projects.filter(
+      (p) => p.clientId === matchedClient.id,
+    ).length;
+    return {
+      answer: `${matchedClient.name} (${matchedClient.status}) has ${clientProjects} project${clientProjects === 1 ? "" : "s"} and ${docCount} document${docCount === 1 ? "" : "s"}: $${billedUSD.toFixed(2)} billed and $${owedUSD.toFixed(2)} outstanding.`,
+      facts: [
+        { label: "Billed", value: `$${billedUSD.toFixed(2)}` },
+        { label: "Owed", value: `$${owedUSD.toFixed(2)}` },
+        { label: "Projects", value: String(clientProjects) },
+      ],
+      routeHint: { label: "Open Clients", to: "/clients" },
+    };
+  }
+
+  // 1. Project health / studio pipeline / unbilled accepted quotes
+  if (
+    /\b(?:health|delayed|at-risk|at risk|pipeline|unbilled|quotes?|quotations?)\b/i.test(
+      q,
+    )
+  ) {
+    return {
+      answer: `Studio pipeline holds $${Math.round(snapshot.pipelineValueUSD).toLocaleString("en-US")} in active projects (${snapshot.delayedProjectCount} delayed, ${snapshot.atRiskProjectCount} at-risk) and $${Math.round(snapshot.unbilledQuotedUSD).toLocaleString("en-US")} in accepted unbilled quotes.`,
+      facts: [
+        {
+          label: "Pipeline",
+          value: `$${Math.round(snapshot.pipelineValueUSD).toLocaleString("en-US")}`,
+        },
+        {
+          label: "Unbilled Quotes",
+          value: `$${Math.round(snapshot.unbilledQuotedUSD).toLocaleString("en-US")}`,
+        },
+        {
+          label: "Delayed",
+          value: String(snapshot.delayedProjectCount),
+        },
+      ],
+      routeHint: { label: "Studio Projects", to: "/projects" },
+    };
+  }
+
+  // 2. Overdue A/R / clients owing money
   if (
     /\b(?:overdue|unpaid|owe|owes|a\/r|receivable|invoices?|clients?)\b/i.test(
       q,
@@ -579,7 +1323,7 @@ export function askCentralDB(
     };
   }
 
-  // 2. Car / Prius / ODO / Reminders
+  // 3. Car / Prius / ODO / Reminders
   if (
     /\b(?:odo|mileage|prius|cars?|oil|maintenance|reminders?|birthday)\b/i.test(
       q,
@@ -610,7 +1354,7 @@ export function askCentralDB(
     };
   }
 
-  // 3. Debit vs Credit card split
+  // 4. Debit vs Credit card split
   if (/\b(?:cards?|debit|credit|visa|mastercard)\b/i.test(q)) {
     let debit = 0;
     let credit = 0;
@@ -635,7 +1379,7 @@ export function askCentralDB(
     };
   }
 
-  // 4. Saving goals
+  // 5. Saving goals
   if (/\b(?:goals?|save|saving|savings|target|eta)\b/i.test(q)) {
     const active = snapshot.goalEtas.slice(0, 3);
     if (active.length === 0) {
@@ -661,7 +1405,7 @@ export function askCentralDB(
     };
   }
 
-  // 5. Work tasks & Studio projects
+  // 6. Work tasks & Studio projects
   if (
     /\b(?:work|tasks?|projects?|deliverables?|deadlines?|schedule|dbg|ocic|connexion)\b/i.test(
       q,
@@ -684,9 +1428,11 @@ export function askCentralDB(
     };
   }
 
-  // 6. Runway / burn / savings rate
+  // 7. Runway / burn / savings rate / studio profit margin
   if (
-    /\b(?:runway|burn|net|income|cash|balance|forecast|save rate)\b/i.test(q)
+    /\b(?:runway|burn|net|income|cash|balance|forecast|save rate|studio|margin|profit)\b/i.test(
+      q,
+    )
   ) {
     return {
       answer: `Combined liquid balance is $${snapshot.netWorthLiquidUSD.toFixed(2)} (Studio $${snapshot.studioBalanceUSD.toFixed(0)} + Personal $${snapshot.personalBalanceUSD.toFixed(0)}). 3-month average inflow is $${snapshot.monthlyIncomeAvgUSD.toFixed(0)}/mo vs burn of $${snapshot.monthlyBurnUSD.toFixed(0)}/mo (${snapshot.savingsRatePct}% savings rate).`,
@@ -699,8 +1445,8 @@ export function askCentralDB(
               : "Self-sustaining",
         },
         {
-          label: "Burn / mo",
-          value: `$${Math.round(snapshot.monthlyBurnUSD).toLocaleString("en-US")}`,
+          label: "Studio Net",
+          value: `$${Math.round(snapshot.studioBalanceUSD).toLocaleString("en-US")}`,
         },
         { label: "Savings", value: `${snapshot.savingsRatePct}%` },
       ],
@@ -708,7 +1454,7 @@ export function askCentralDB(
     };
   }
 
-  // 7. Category spending default (also checks if user named a specific category)
+  // 8. Category spending default (also checks if user named a specific category)
   const matchedCat = snapshot.categoryPace.find((c) =>
     q.includes(c.category.toLowerCase()),
   );
@@ -751,5 +1497,52 @@ export function askCentralDB(
       { label: "Open A/R", value: `$${Math.round(snapshot.openARUSD)}` },
       { label: "AI Rules", value: String(snapshot.learnedRuleCount) },
     ],
+  };
+}
+
+/**
+ * Helper to create a clean WorkTask object from a parsed command or quick-add bar.
+ */
+export function buildQuickWorkTask(
+  db: DB,
+  fields: {
+    title: string;
+    projectName?: string;
+    designType?: string;
+    artworkCount?: number;
+    dueDate?: string;
+    status?: WorkPipelineStage;
+  },
+  refDate: string = today(),
+) {
+  const existing = db.workTasks ?? [];
+  let maxN = 0;
+  for (const t of existing) {
+    const n = Number(String(t.code).replace(/\D+/g, "")) || 0;
+    if (n > maxN) maxN = n;
+  }
+  const code = `WRK-${String(maxN + 1).padStart(2, "0")}`;
+  const proj =
+    fields.projectName?.trim() ||
+    db.settings.workProjects?.[0] ||
+    DEFAULT_WORK_PROJECTS[0];
+  const stage: WorkPipelineStage = fields.status ?? "Design";
+  const due = fields.dueDate || refDate;
+  return {
+    id: uid(),
+    code,
+    title: fields.title.trim(),
+    status: stage,
+    designType: fields.designType || DESIGN_TYPES[0],
+    artworkCount: Math.max(1, Number(fields.artworkCount) || 1),
+    projectName: proj,
+    company: proj,
+    startDate: refDate,
+    dueDate: due,
+    completedDate: stage === "Completed" ? refDate : "",
+    conceptOnly: false,
+    notes: "",
+    media: [],
+    featured: false,
   };
 }

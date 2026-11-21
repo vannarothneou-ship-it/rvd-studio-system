@@ -4,8 +4,10 @@ import {
   Outlet,
   useRouterState,
 } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
+  Check,
   ChevronDown,
   ChevronUp,
   Columns3,
@@ -30,13 +32,22 @@ import {
 import {
   DOCUMENT_TYPES,
   compactMoney,
+  convertDocument,
+  deletePayment,
   documentKind,
   invoiceView,
   isInvoice,
   money,
   needsFollowUp,
+  recordPayment,
+  reconcileProjects,
+  saveDocument,
+  setDB,
   shortDate,
+  today,
+  uid,
   useDB,
+  type Invoice,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -109,6 +120,75 @@ function Invoices() {
 
   const visibleRows = showAll ? rows : rows.slice(0, INITIAL_LIMIT);
   const hasMore = rows.length > INITIAL_LIMIT;
+
+  const convertedSourceIds = useMemo(
+    () =>
+      new Set(
+        db.invoices
+          .filter((inv) => isInvoice(inv) && inv.sourceId)
+          .map((inv) => inv.sourceId!),
+      ),
+    [db.invoices],
+  );
+
+  const handleQuickPayFull = useCallback(
+    (inv: Invoice, balance: number, clientName: string) => {
+      const payment = {
+        id: uid(),
+        invoiceId: inv.id,
+        date: today(),
+        amount: Math.round(balance * 100) / 100,
+        currency: inv.currency,
+        method: "Bank transfer",
+        reference: "Quick settle",
+      };
+      try {
+        setDB((d) => recordPayment(d, payment));
+        toast.success(`Paid ${inv.no}${clientName ? ` · ${clientName}` : ""}`, {
+          action: {
+            label: "Undo",
+            onClick: () => setDB((d) => deletePayment(d, payment.id)),
+          },
+        });
+      } catch (err) {
+        toast.error(
+          err instanceof Error ? err.message : "Could not record payment",
+        );
+      }
+    },
+    [],
+  );
+
+  const handleQuickConvertToInvoice = useCallback(
+    (source: Invoice) => {
+      const prevInvoices = db.invoices;
+      const prevProjects = db.projects;
+      const prevClients = db.clients;
+      const converted = convertDocument(
+        source,
+        "Invoice",
+        db.invoices,
+        today(),
+        db.settings.dueDays || 28,
+      );
+      setDB((d) => saveDocument(d, converted));
+      toast.success(`Converted ${source.no} → ${converted.no}`, {
+        cancel: {
+          label: "Undo",
+          onClick: () =>
+            setDB((d) =>
+              reconcileProjects({
+                ...d,
+                invoices: prevInvoices,
+                projects: prevProjects,
+                clients: prevClients,
+              }),
+            ),
+        },
+      });
+    },
+    [db.invoices, db.projects, db.clients, db.settings.dueDays],
+  );
 
   const widgets = useMemo<BentoWidgetDef[]>(
     () => [
@@ -293,20 +373,30 @@ function Invoices() {
             ) : (
               <>
                 <ul className="divide-y divide-border">
-                  {visibleRows.map(({ i, v, c }) => (
-                    <li key={i.id}>
-                      <Link
-                        to="/invoices/$id"
-                        params={{ id: i.id }}
-                        className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-2 py-3 hover:bg-muted"
+                  {visibleRows.map(({ i, v, c }) => {
+                    const kindName = documentKind(i);
+                    const canPayFull =
+                      isInvoice(i) && v.balance > 0.01 && v.status !== "Draft";
+                    const canConvertQuote =
+                      (kindName === "Quotation" || kindName === "Agreement") &&
+                      i.response === "Accepted" &&
+                      !convertedSourceIds.has(i.id);
+                    return (
+                      <li
+                        key={i.id}
+                        className="flex flex-wrap items-center justify-between gap-2 rounded-lg px-2 py-3 transition-colors hover:bg-muted sm:flex-nowrap"
                       >
-                        <div className="min-w-0">
-                          <p className="font-num truncate text-sm">{i.no}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {documentKind(i)} · {c?.name ?? "No client"} ·{" "}
-                            {documentKind(i) === "Quotation"
-                              ? "valid until"
-                              : "due"}{" "}
+                        <Link
+                          to="/invoices/$id"
+                          params={{ id: i.id }}
+                          className="min-w-0 flex-1"
+                        >
+                          <p className="font-num truncate text-sm font-medium text-foreground">
+                            {i.no}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {kindName} · {c?.name ?? "No client"} ·{" "}
+                            {kindName === "Quotation" ? "valid until" : "due"}{" "}
                             {shortDate(i.due)}
                           </p>
                           {needsFollowUp(i) && (
@@ -314,9 +404,13 @@ function Invoices() {
                               Follow-up due {shortDate(i.followUp ?? "")}
                             </p>
                           )}
-                        </div>
-                        <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3">
-                          <div className="text-right">
+                        </Link>
+                        <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+                          <Link
+                            to="/invoices/$id"
+                            params={{ id: i.id }}
+                            className="text-right"
+                          >
                             <p className="font-num text-sm">
                               {money(v.total, i.currency)}
                             </p>
@@ -325,12 +419,33 @@ function Invoices() {
                                 {money(v.balance, i.currency)} due
                               </p>
                             )}
-                          </div>
+                          </Link>
                           <Pill s={v.status} />
+                          {canPayFull && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleQuickPayFull(i, v.balance, c?.name ?? "")
+                              }
+                              className="inline-flex min-h-[34px] items-center gap-1 whitespace-nowrap rounded-lg border border-positive/45 bg-positive/15 px-2.5 text-xs font-semibold text-positive transition-colors hover:bg-positive hover:text-white active:scale-95"
+                            >
+                              <Check className="h-3.5 w-3.5" />
+                              <span className="hidden sm:inline">Pay</span>
+                            </button>
+                          )}
+                          {canConvertQuote && (
+                            <button
+                              type="button"
+                              onClick={() => handleQuickConvertToInvoice(i)}
+                              className="inline-flex min-h-[34px] items-center gap-1 whitespace-nowrap rounded-lg border border-primary/45 bg-primary/15 px-2.5 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
+                            >
+                              <span>→ Invoice</span>
+                            </button>
+                          )}
                         </div>
-                      </Link>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
                 {hasMore && (
                   <div className="mt-4 flex items-center justify-between gap-3 border-t border-border/70 pt-3 text-xs text-muted-foreground">
@@ -373,6 +488,9 @@ function Invoices() {
       visibleRows,
       hasMore,
       showAll,
+      convertedSourceIds,
+      handleQuickPayFull,
+      handleQuickConvertToInvoice,
     ],
   );
 

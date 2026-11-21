@@ -24,6 +24,7 @@ import {
   Plus,
   RotateCcw,
   Sparkles,
+  Wand2,
 } from "lucide-react";
 import {
   useCallback,
@@ -33,6 +34,8 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { toast } from "sonner";
+import { autoArrange, recordChoice, type LearnedSpans } from "@/lib/bento-ai";
 import { cn } from "@/lib/utils";
 
 export type BentoSpan = 4 | 5 | 6 | 7 | 8 | 12;
@@ -64,6 +67,27 @@ export interface PackedBentoEntry {
 const LAYOUT_STORAGE_KEY = "rv-bento-layouts-v1";
 const TABS_STORAGE_KEY = "rv-custom-tabs-v1";
 const AUTOFILL_STORAGE_KEY = "rv-bento-autofill-v1";
+const LEARNED_STORAGE_KEY = "rv-bento-learned-v1";
+
+function readLearned(): LearnedSpans {
+  if (typeof window === "undefined") return {};
+  try {
+    return JSON.parse(
+      window.localStorage.getItem(LEARNED_STORAGE_KEY) ?? "{}",
+    ) as LearnedSpans;
+  } catch {
+    return {};
+  }
+}
+
+function writeLearned(v: LearnedSpans) {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(LEARNED_STORAGE_KEY, JSON.stringify(v));
+  } catch {
+    /* storage full / private mode */
+  }
+}
 
 const SPAN_CLASS: Record<number, string> = {
   4: "lg:col-span-4",
@@ -210,10 +234,14 @@ export function usePageLayout(pageKey: string, defaults: LayoutItemConfig[]) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pageKey, defaultSig]);
 
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
   const commit = useCallback(
     (updater: (prev: LayoutItemConfig[]) => LayoutItemConfig[]) => {
       setItems((prev) => {
         const next = updater(prev);
+        itemsRef.current = next;
         const all = readLayouts();
         all[pageKey] = next;
         writeLayouts(all);
@@ -225,7 +253,29 @@ export function usePageLayout(pageKey: string, defaults: LayoutItemConfig[]) {
 
   const setSpan = useCallback(
     (id: string, span: BentoSpan) => {
+      writeLearned(recordChoice(readLearned(), id, span));
       commit((prev) => prev.map((x) => (x.id === id ? { ...x, span } : x)));
+    },
+    [commit],
+  );
+
+  /** Smart layout: re-split visible cards into gap-free rows. Returns fit %. */
+  const smartLayout = useCallback(
+    (titles: Map<string, string>) => {
+      const visible = itemsRef.current.filter((x) => !x.hidden);
+      const result = autoArrange(
+        visible.map((x) => ({
+          id: x.id,
+          title: titles.get(x.id) ?? x.id,
+          span: x.span,
+        })),
+        readLearned(),
+      );
+      const map = new Map(result.spans.map((r) => [r.id, r.span]));
+      commit((prev) =>
+        prev.map((x) => (map.has(x.id) ? { ...x, span: map.get(x.id)! } : x)),
+      );
+      return result.fit;
     },
     [commit],
   );
@@ -325,6 +375,7 @@ export function usePageLayout(pageKey: string, defaults: LayoutItemConfig[]) {
     autoFill,
     setAutoFill,
     setSpan,
+    smartLayout,
     pairWithNext,
     toggleHide,
     showWidget,
@@ -440,6 +491,7 @@ export function EditableBentoGrid({
     autoFill,
     setAutoFill,
     setSpan,
+    smartLayout,
     pairWithNext,
     toggleHide,
     showWidget,
@@ -578,6 +630,22 @@ export function EditableBentoGrid({
             })}
             <button
               type="button"
+              onClick={() => {
+                const fit = smartLayout(
+                  new Map(widgets.map((w) => [w.id, w.title])),
+                );
+                toast.success(`Smart layout applied · ${fit}% fit`, {
+                  description: "No empty gaps. Resize a card to teach it.",
+                });
+              }}
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground"
+              title="Arrange every card into gap-free rows, using your past resizes"
+            >
+              <Wand2 className="h-3 w-3" />
+              Smart layout
+            </button>
+            <button
+              type="button"
               onClick={() => setAutoFill(!autoFill)}
               className={cn(
                 "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition-colors",
@@ -627,7 +695,7 @@ export function EditableBentoGrid({
       >
         <div
           ref={gridRef}
-          className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-12"
+          className="grid grid-cols-1 items-stretch gap-4 [grid-auto-flow:dense] md:grid-cols-2 lg:grid-cols-12"
         >
           {packedEntries.map((entry) => {
             const def = widgetMap.get(entry.config.id);
@@ -795,6 +863,7 @@ function BentoSlot({
       {...(editing ? attributes : {})}
       className={cn(
         "group/bento col-span-1 flex h-full min-w-0 flex-col",
+        effectiveSpan >= 8 && "md:col-span-2",
         SPAN_CLASS[effectiveSpan] ?? SPAN_CLASS[config.span],
         editing && "transition-all duration-200",
         editing &&

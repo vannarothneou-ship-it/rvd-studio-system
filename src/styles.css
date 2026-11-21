@@ -61,9 +61,11 @@
   --color-warning: var(--warning);
   --color-warning-foreground: var(--warning-foreground);
   --font-display:
-    "SF Pro Display", -apple-system, BlinkMacSystemFont, "Inter", "Noto Sans Khmer", system-ui, sans-serif;
+    "SF Pro Display", -apple-system, BlinkMacSystemFont, "Inter",
+    "Noto Sans Khmer", system-ui, sans-serif;
   --font-sans:
-    "SF Pro Text", -apple-system, BlinkMacSystemFont, "Inter", "Noto Sans Khmer", system-ui, sans-serif;
+    "SF Pro Text", -apple-system, BlinkMacSystemFont, "Inter",
+    "Noto Sans Khmer", system-ui, sans-serif;
   --font-mono:
     "Inter", "Plus Jakarta Sans", "Noto Sans Khmer", system-ui, sans-serif;
   --font-khmer: "Noto Sans Khmer", "Plus Jakarta Sans", sans-serif;
@@ -84,7 +86,7 @@
 
 :root {
   --radius: 1.125rem;
-  --background: oklch(0.000 0.000 0);
+  --background: oklch(0 0 0);
   --foreground: oklch(0.971 0.003 286);
   --card: oklch(0.227 0.004 286);
   --card-foreground: oklch(0.971 0.003 286);
@@ -113,7 +115,7 @@
   --chart-4: oklch(0.663 0.224 28);
   --chart-5: oklch(0.656 0.227 312);
   --glass: oklch(0.227 0.004 286 / 78%);
-  --glass-strong: oklch(0.000 0.000 0 / 82%);
+  --glass-strong: oklch(0.16 0.004 286 / 82%);
   --glass-border: oklch(1 0 0 / 12%);
   --bg-gradient: none;
   --shadow-glass: 0 0 0 0.5px oklch(1 0 0 / 8%);
@@ -130,9 +132,9 @@
 .light {
   --background: oklch(0.971 0.003 286);
   --foreground: oklch(0.232 0.004 286);
-  --card: oklch(1.000 0.000 90);
+  --card: oklch(1 0 90);
   --card-foreground: oklch(0.232 0.004 286);
-  --popover: oklch(1.000 0.000 90 / 96%);
+  --popover: oklch(1 0 90 / 96%);
   --popover-foreground: oklch(0.232 0.004 286);
   --primary: oklch(0.522 0.177 256);
   --primary-hover: oklch(0.563 0.193 256);
@@ -140,13 +142,13 @@
   --secondary: oklch(0.932 0.007 286);
   --secondary-foreground: oklch(0.232 0.004 286);
   --muted: oklch(0.944 0.005 286);
-  --muted-foreground: oklch(0.540 0.008 286);
+  --muted-foreground: oklch(0.54 0.008 286);
   --accent: oklch(0.946 0.019 256);
   --accent-foreground: oklch(0.522 0.177 256);
   --destructive: oklch(0.553 0.225 27);
   --destructive-foreground: oklch(1 0 0);
   --positive: oklch(0.511 0.133 148);
-  --warning: oklch(0.570 0.138 57);
+  --warning: oklch(0.57 0.138 57);
   --warning-foreground: oklch(1 0 0);
   --border: oklch(0 0 0 / 9%);
   --input: oklch(0 0 0 / 14%);
@@ -156,7 +158,7 @@
   --chart-3: oklch(0.666 0.157 58);
   --chart-4: oklch(0.553 0.225 27);
   --chart-5: oklch(0.519 0.166 313);
-  --glass: oklch(1.000 0.000 90 / 80%);
+  --glass: oklch(1 0 90 / 80%);
   --glass-strong: oklch(0.971 0.003 286 / 86%);
   --glass-border: oklch(0 0 0 / 8%);
   --bg-gradient: none;
@@ -572,7 +574,11 @@
   color: #fef3c7 !important;
 }
 .project-calendar .fc-event-sel {
-  background-color: color-mix(in oklch, var(--primary) 26%, transparent) !important;
+  background-color: color-mix(
+    in oklch,
+    var(--primary) 26%,
+    transparent
+  ) !important;
   border-color: color-mix(in oklch, var(--primary) 58%, transparent) !important;
 }
 .light .project-calendar .fc-event-sel,
@@ -740,7 +746,6 @@
   }
 }
 
-
 /* Focused motion language for page changes and finance visualizations. */
 @keyframes pageEnter {
   from {
@@ -763,8 +768,12 @@
   }
 }
 @keyframes flowRibbonEnter {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 @keyframes flowNodeEnter {
   from {
@@ -808,12 +817,20 @@
   }
 }
 
-
 /* ---- iOS polish ---- */
-html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
-button, [role="button"], a { touch-action: manipulation; }
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+button,
+[role="button"],
+a {
+  touch-action: manipulation;
+}
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
@@ -822,15 +839,36 @@ button, [role="button"], a { touch-action: manipulation; }
 }
 
 /* ---- Apple-style system (from design.md) ---- */
-:root { --ease-ios: cubic-bezier(0.22, 1, 0.36, 1); }
-body { letter-spacing: -0.011em; }
-h1, h2, h3, .font-display { letter-spacing: -0.022em; font-weight: 600; }
-/* single press micro-interaction: scale .95 on every button */
-button:not(:disabled), [role="button"], a.btn {
-  transition: transform 0.18s var(--ease-ios), background-color 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s;
+:root {
+  --ease-ios: cubic-bezier(0.22, 1, 0.36, 1);
 }
-button:not(:disabled):active, [role="button"]:active { transform: scale(0.96); }
+body {
+  letter-spacing: -0.011em;
+}
+h1,
+h2,
+h3,
+.font-display {
+  letter-spacing: -0.022em;
+  font-weight: 600;
+}
+/* single press micro-interaction: scale .95 on every button */
+button:not(:disabled),
+[role="button"],
+a.btn {
+  transition:
+    transform 0.18s var(--ease-ios),
+    background-color 0.2s,
+    color 0.2s,
+    border-color 0.2s,
+    opacity 0.2s;
+}
+button:not(:disabled):active,
+[role="button"]:active {
+  transform: scale(0.96);
+}
 /* keyboard focus ring: 2px focus blue */
-:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
-/* frosted bars */
-.no-print.sticky, .no-print.fixed { backdrop-filter: saturate(180%) blur(20px); }
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}

@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   animate,
   motion,
@@ -8,6 +8,7 @@ import {
 } from "motion/react";
 import { Pencil, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { RowMenu } from "@/components/rv/RowMenu";
 
 const ACTION_W = 88;
 const COMMIT_AT = 168;
@@ -24,6 +25,7 @@ function haptic(ms = 8) {
  * iOS-style swipe row.
  * - swipe left  → reveals red Delete (swipe far = delete immediately)
  * - swipe right → reveals Edit
+ * - long-press / right-click → opens RowMenu
  * - tap while open closes it; tap while closed calls onTap
  * The row is marked data-no-swipe so the page-level tab swipe never fires.
  */
@@ -44,6 +46,16 @@ export function SwipeRow({
   const [gone, setGone] = useState(false);
   const dragged = useRef(false);
   const crossed = useRef(false);
+  const deletingRef = useRef(false);
+  const timerRef = useRef<number | undefined>(undefined);
+  const dragTimerRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(timerRef.current);
+      window.clearTimeout(dragTimerRef.current);
+    };
+  }, []);
 
   const delOpacity = useTransform(x, [-ACTION_W, -24, 0], [1, 0.6, 0]);
   const delScale = useTransform(x, [-COMMIT_AT, -ACTION_W, 0], [1.25, 1, 0.7]);
@@ -53,10 +65,13 @@ export function SwipeRow({
     animate(x, to, { type: "spring", stiffness: 520, damping: 42 });
 
   const remove = () => {
+    if (deletingRef.current) return;
+    deletingRef.current = true;
     haptic(14);
     setGone(true);
     // let the collapse animation finish, then call the real delete
-    window.setTimeout(() => onDelete?.(), 220);
+    window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => onDelete?.(), 220);
   };
 
   const onDrag = () => {
@@ -82,7 +97,10 @@ export function SwipeRow({
     } else {
       settle(0);
     }
-    window.setTimeout(() => (dragged.current = false), 0);
+    window.clearTimeout(dragTimerRef.current);
+    dragTimerRef.current = window.setTimeout(() => {
+      dragged.current = false;
+    }, 0);
   };
 
   return (
@@ -93,7 +111,7 @@ export function SwipeRow({
         gone ? { height: 0, opacity: 0 } : { height: "auto", opacity: 1 }
       }
       transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-      className={cn("relative overflow-hidden", className)}
+      className={cn("relative overflow-hidden rounded-xl", className)}
     >
       {/* Edit action (revealed by swiping right) */}
       {onEdit ? (
@@ -147,9 +165,11 @@ export function SwipeRow({
           }
         }}
         onClick={onTap}
-        className="relative bg-card"
+        className="relative rounded-xl bg-card"
       >
-        {children}
+        <RowMenu onEdit={onEdit} onDelete={onDelete ? remove : undefined}>
+          {children}
+        </RowMenu>
       </motion.div>
     </motion.div>
   );

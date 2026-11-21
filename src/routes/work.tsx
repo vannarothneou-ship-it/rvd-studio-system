@@ -46,6 +46,7 @@ import {
   PortfolioSummaryView,
 } from "@/components/rv/PortfolioShowcase";
 import { WorkTasksCalendar } from "@/components/rv/WorkTasksCalendar";
+import { SwipeRow } from "@/components/rv/SwipeRow";
 import {
   workProjectMeta,
   workTaskProjectName,
@@ -254,6 +255,9 @@ function WorkPage() {
 
   const [newProjectInputOpen, setNewProjectInputOpen] = useState(false);
   const [newProjectDraft, setNewProjectDraft] = useState("");
+  const [quickTitle, setQuickTitle] = useState("");
+  const [quickDue, setQuickDue] = useState(() => today());
+  const [quickProject, setQuickProject] = useState("");
 
   // Work tasks filters
   const [query, setQuery] = useState("");
@@ -503,6 +507,43 @@ function WorkPage() {
     toast.success(`Removed ${task.title || task.code}`);
   };
 
+  const swipeDeleteTask = (task: WorkTask) => {
+    const removed = task;
+    setDB((d) => ({
+      ...d,
+      workTasks: (d.workTasks ?? []).filter((x) => x.id !== removed.id),
+    }));
+    toast(`Removed ${removed.title || removed.code}`, {
+      action: {
+        label: "Undo",
+        onClick: () =>
+          setDB((d) => ({
+            ...d,
+            workTasks: upsert(d.workTasks ?? [], removed),
+          })),
+      },
+    });
+  };
+
+  const handleQuickAddTask = (e: React.FormEvent) => {
+    e.preventDefault();
+    const title = quickTitle.trim();
+    if (!title) return;
+    const proj =
+      quickProject ||
+      (projectFilter !== "All" ? projectFilter : (projectNames[0] ?? "DBG"));
+    const created = blankTask({
+      title,
+      projectName: proj,
+      company: proj,
+      status: statusFilter !== "All" ? statusFilter : "Design",
+      startDate: today(),
+      dueDate: quickDue || today(),
+    });
+    saveTask(created);
+    setQuickTitle("");
+  };
+
   const openItemPreviewOrAttach = (item: ShowcaseWorkItem) => {
     if (item.media.length > 0) {
       setLightboxState({ item });
@@ -632,135 +673,139 @@ function WorkPage() {
     const ProjIcon = meta.icon;
 
     return (
-      <li
-        key={t.id}
-        className="flex flex-wrap items-center justify-between gap-3 py-3 transition-colors hover:bg-muted/35 sm:flex-nowrap sm:rounded-xl sm:px-2"
-      >
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <button
-            type="button"
-            onClick={() => toggleTaskComplete(t)}
-            title={done ? "Reopen task" : "Mark as completed"}
-            aria-label={done ? "Reopen task" : "Mark as completed"}
-            className={cn(
-              "shrink-0 rounded-lg p-1 transition-colors",
-              done
-                ? "text-positive hover:text-positive/80"
-                : "text-muted-foreground hover:text-primary",
-            )}
-          >
-            {done ? (
-              <CheckCircle2 className="h-5 w-5" />
-            ) : (
-              <Circle className="h-5 w-5" />
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              if (t.media.length > 0) {
-                setLightboxState({
-                  item: {
-                    id: t.id,
-                    source: "work",
-                    code: t.code,
-                    title: t.title,
-                    subtitle: proj || "Full-time design",
-                    projectGroup: proj || "General",
-                    designType: t.designType,
-                    status: stage,
-                    completed: done,
-                    date: dateShown,
-                    artworkCount: t.artworkCount,
-                    media: t.media,
-                    notes: t.notes,
-                    featured: Boolean(t.featured),
-                  },
-                });
-              } else {
-                setEditingTask(t);
-              }
-            }}
-            className="grid h-11 w-13 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-muted/60 hover:border-primary/60"
-          >
-            {thumb?.dataUrl ? (
-              <img
-                src={thumb.dataUrl}
-                alt={t.title}
-                className="h-full w-full object-cover"
-              />
-            ) : hasPdfOrDesign ? (
-              <FileText className="h-4 w-4 text-primary" />
-            ) : (
-              <ImageIcon className="h-4 w-4 text-muted-foreground/60" />
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setEditingTask(t)}
-            className="min-w-0 flex-1 text-left"
-          >
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-num text-xs text-muted-foreground">
-                {t.code}
-              </span>
-              {proj && (
-                <span className="inline-flex items-center gap-1 text-xs font-semibold text-foreground/90">
-                  <ProjIcon
-                    className="h-3.5 w-3.5 shrink-0"
-                    style={{ color: meta.accent.dot }}
-                  />
-                  <span>{meta.shortCode}</span>
-                </span>
-              )}
-              <span
+      <li key={t.id}>
+        <SwipeRow
+          onEdit={() => setEditingTask(t)}
+          onDelete={() => swipeDeleteTask(t)}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 py-3 transition-colors hover:bg-muted/35 sm:flex-nowrap sm:rounded-xl sm:px-2">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
+              <button
+                type="button"
+                onClick={() => toggleTaskComplete(t)}
+                title={done ? "Reopen task" : "Mark as completed"}
+                aria-label={done ? "Reopen task" : "Mark as completed"}
                 className={cn(
-                  "truncate text-sm font-semibold",
-                  done && "text-foreground/90",
+                  "shrink-0 rounded-lg p-1 transition-colors",
+                  done
+                    ? "text-positive hover:text-positive/80"
+                    : "text-muted-foreground hover:text-primary",
                 )}
               >
-                {t.title || "Untitled task"}
-              </span>
-            </div>
-            <p className="font-num mt-0.5 truncate text-xs text-muted-foreground">
-              {t.designType}
-              {t.conceptOnly ? " · Concept only" : ""}
-              {t.startDate && t.dueDate && t.startDate !== t.dueDate
-                ? ` · ${shortDate(t.startDate)} → ${shortDate(t.dueDate)}`
-                : dateShown
-                  ? ` · ${done ? "Done" : "Due"} ${shortDate(dateShown)}`
-                  : ""}
-            </p>
-          </button>
-        </div>
+                {done ? (
+                  <CheckCircle2 className="h-5 w-5" />
+                ) : (
+                  <Circle className="h-5 w-5" />
+                )}
+              </button>
 
-        <div className="flex shrink-0 items-center gap-2 pl-9 sm:pl-0">
-          <MediaCountBadge media={t.media} />
-          <span className="font-num text-xs font-medium text-muted-foreground">
-            {t.artworkCount} {t.artworkCount === 1 ? "pc" : "pcs"}
-          </span>
-          <Pill s={stage} />
-          {!done && (
-            <button
-              type="button"
-              onClick={() => advanceTaskStage(t)}
-              title={`Advance to ${nextStage}`}
-              className="inline-flex min-h-[30px] items-center gap-1 rounded-md border border-primary/35 bg-primary/12 px-2 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
-            >
-              <span className="hidden sm:inline">{nextStage}</span>
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
-          )}
-          <Btn
-            type="button"
-            onClick={() => setEditingTask(t)}
-            className="min-h-[32px] px-3 py-1 text-xs"
-          >
-            Edit
-          </Btn>
-        </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (t.media.length > 0) {
+                    setLightboxState({
+                      item: {
+                        id: t.id,
+                        source: "work",
+                        code: t.code,
+                        title: t.title,
+                        subtitle: proj || "Full-time design",
+                        projectGroup: proj || "General",
+                        designType: t.designType,
+                        status: stage,
+                        completed: done,
+                        date: dateShown,
+                        artworkCount: t.artworkCount,
+                        media: t.media,
+                        notes: t.notes,
+                        featured: Boolean(t.featured),
+                      },
+                    });
+                  } else {
+                    setEditingTask(t);
+                  }
+                }}
+                className="grid h-11 w-13 shrink-0 place-items-center overflow-hidden rounded-lg border border-border bg-muted/60 hover:border-primary/60"
+              >
+                {thumb?.dataUrl ? (
+                  <img
+                    src={thumb.dataUrl}
+                    alt={t.title}
+                    className="h-full w-full object-cover"
+                  />
+                ) : hasPdfOrDesign ? (
+                  <FileText className="h-4 w-4 text-primary" />
+                ) : (
+                  <ImageIcon className="h-4 w-4 text-muted-foreground/60" />
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setEditingTask(t)}
+                className="min-w-0 flex-1 text-left"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-num text-xs text-muted-foreground">
+                    {t.code}
+                  </span>
+                  {proj && (
+                    <span className="inline-flex items-center gap-1 text-xs font-semibold text-foreground/90">
+                      <ProjIcon
+                        className="h-3.5 w-3.5 shrink-0"
+                        style={{ color: meta.accent.dot }}
+                      />
+                      <span>{meta.shortCode}</span>
+                    </span>
+                  )}
+                  <span
+                    className={cn(
+                      "truncate text-sm font-semibold",
+                      done && "text-foreground/90",
+                    )}
+                  >
+                    {t.title || "Untitled task"}
+                  </span>
+                </div>
+                <p className="font-num mt-0.5 truncate text-xs text-muted-foreground">
+                  {t.designType}
+                  {t.conceptOnly ? " · Concept only" : ""}
+                  {t.startDate && t.dueDate && t.startDate !== t.dueDate
+                    ? ` · ${shortDate(t.startDate)} → ${shortDate(t.dueDate)}`
+                    : dateShown
+                      ? ` · ${done ? "Done" : "Due"} ${shortDate(dateShown)}`
+                      : ""}
+                </p>
+              </button>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2 pl-9 sm:pl-0">
+              <MediaCountBadge media={t.media} />
+              <span className="font-num text-xs font-medium text-muted-foreground">
+                {t.artworkCount} {t.artworkCount === 1 ? "pc" : "pcs"}
+              </span>
+              <Pill s={stage} />
+              {!done && (
+                <button
+                  type="button"
+                  onClick={() => advanceTaskStage(t)}
+                  title={`Advance to ${nextStage}`}
+                  className="inline-flex min-h-[30px] items-center gap-1 rounded-md border border-primary/35 bg-primary/12 px-2 py-1 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                >
+                  <span className="hidden sm:inline">{nextStage}</span>
+                  <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              )}
+              <Btn
+                type="button"
+                onClick={() => setEditingTask(t)}
+                className="min-h-[32px] px-3 py-1 text-xs"
+              >
+                Edit
+              </Btn>
+            </div>
+          </div>
+        </SwipeRow>
       </li>
     );
   };
@@ -1046,6 +1091,46 @@ function WorkPage() {
                   </button>
                 </div>
               </div>
+
+              {/* Things 3-style 1-Line Inline Quick Add Bar */}
+              <form
+                onSubmit={handleQuickAddTask}
+                className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-3 sm:flex-nowrap"
+              >
+                <div className="w-28 shrink-0">
+                  <Sel
+                    value={
+                      quickProject ||
+                      (projectFilter !== "All"
+                        ? projectFilter
+                        : (projectNames[0] ?? "DBG"))
+                    }
+                    onChange={setQuickProject}
+                    options={projectNames}
+                  />
+                </div>
+                <input
+                  value={quickTitle}
+                  onChange={(e) => setQuickTitle(e.target.value)}
+                  placeholder="Quick add task (press Enter to save)…"
+                  className="field min-h-[42px] min-w-0 flex-1 text-sm"
+                />
+                <input
+                  type="date"
+                  value={quickDue}
+                  onChange={(e) => setQuickDue(e.target.value)}
+                  aria-label="Due date"
+                  className="field font-num min-h-[42px] w-full shrink-0 text-xs sm:w-36"
+                />
+                <Btn
+                  type="submit"
+                  variant="gold"
+                  className="min-h-[42px] w-full justify-center whitespace-nowrap sm:w-auto sm:shrink-0"
+                >
+                  <Plus className="h-4 w-4 shrink-0" />
+                  Quick add
+                </Btn>
+              </form>
             </div>
           </Glass>
 
