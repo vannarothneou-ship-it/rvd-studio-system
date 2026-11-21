@@ -203,6 +203,28 @@ export function Btn({
   );
 }
 
+/**
+ * Renders children into <body> so `position: fixed` overlays always cover the
+ * whole viewport (an ancestor with backdrop-filter/transform otherwise traps
+ * them inside its own box), and locks page scroll while mounted.
+ */
+export function Portal({ children }: { children: ReactNode }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  useEffect(() => {
+    if (!mounted) return;
+    const body = document.body;
+    const prev = body.style.overflow;
+    body.style.overflow = "hidden";
+    return () => {
+      body.style.overflow = prev;
+    };
+  }, [mounted]);
+  return mounted ? createPortal(children, document.body) : null;
+}
+
 export function Modal({
   open,
   onClose,
@@ -223,7 +245,7 @@ export function Modal({
     return () => window.removeEventListener("keydown", k);
   }, [open, onClose]);
   if (!open) return null;
-  return (
+  const overlay = (
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-black/65 p-0 backdrop-blur-sm animate-in fade-in sm:items-center sm:p-4"
       onClick={onClose}
@@ -251,6 +273,7 @@ export function Modal({
       </div>
     </div>
   );
+  return <Portal>{overlay}</Portal>;
 }
 
 export function SlideDrawer({
@@ -279,7 +302,7 @@ export function SlideDrawer({
     return () => window.removeEventListener("keydown", k);
   }, [open, onClose]);
   if (!open) return null;
-  return (
+  const overlay = (
     <div
       className={cn(
         "fixed inset-0 z-50 flex items-end sm:items-stretch",
@@ -297,7 +320,7 @@ export function SlideDrawer({
       />
       <aside
         className={cn(
-          "drawer-in relative z-10 mt-[env(safe-area-inset-top)] flex max-h-[92dvh] w-full flex-col rounded-t-2xl border-t border-[var(--glass-border)] bg-popover shadow-2xl backdrop-blur-2xl backdrop-saturate-150 sm:mt-0 sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0 sm:pt-[env(safe-area-inset-top)]",
+          "drawer-in relative z-10 mt-[env(safe-area-inset-top)] flex h-[calc(100dvh-env(safe-area-inset-top)-0.75rem)] w-full flex-col rounded-t-2xl border-t border-[var(--glass-border)] bg-popover shadow-2xl backdrop-blur-2xl backdrop-saturate-150 sm:mt-0 sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0 sm:pt-[env(safe-area-inset-top)]",
           widthClass,
           side === "left"
             ? "sm:border-r sm:border-[var(--glass-border)]"
@@ -342,6 +365,7 @@ export function SlideDrawer({
       </aside>
     </div>
   );
+  return <Portal>{overlay}</Portal>;
 }
 
 export function F({

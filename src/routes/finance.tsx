@@ -1,3 +1,5 @@
+import { toast } from "sonner";
+import { SwipeRow } from "@/components/rv/SwipeRow";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -433,6 +435,46 @@ function Page() {
     combinedQuery,
   ]);
   const combinedVisibleRows = combinedLedgerRows.slice(0, combinedVisible);
+
+  /** Swipe-delete for expenses & personal income (invoice payments stay protected). */
+  const deleteCombinedRow = (rowId: string) => {
+    if (rowId.startsWith("exp-")) {
+      const item = db.expenses.find((x) => `exp-${x.id}` === rowId);
+      if (!item) return;
+      setDB((d) => ({
+        ...d,
+        expenses: d.expenses.filter((x) => x.id !== item.id),
+      }));
+      toast("Expense deleted", {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            setDB((d) => ({ ...d, expenses: [item, ...d.expenses] })),
+        },
+      });
+    } else if (rowId.startsWith("pinc-")) {
+      const item = (db.personalIncome ?? []).find(
+        (x) => `pinc-${x.id}` === rowId,
+      );
+      if (!item) return;
+      setDB((d) => ({
+        ...d,
+        personalIncome: (d.personalIncome ?? []).filter(
+          (x) => x.id !== item.id,
+        ),
+      }));
+      toast("Income deleted", {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            setDB((d) => ({
+              ...d,
+              personalIncome: [item, ...(d.personalIncome ?? [])],
+            })),
+        },
+      });
+    }
+  };
 
   const widgets = useMemo<BentoWidgetDef[]>(
     () => [
@@ -1329,58 +1371,65 @@ function Page() {
               <>
                 <ul className="divide-y divide-border">
                   {combinedVisibleRows.map((row) => (
-                    <li
-                      key={row.id}
-                      className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-2.5"
-                    >
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span
-                          className={cn(
-                            "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
-                            row.direction === "income"
-                              ? "text-positive"
-                              : "text-destructive",
-                          )}
-                        >
-                          {row.direction === "income" ? (
-                            <ArrowDownLeft className="h-4 w-4" />
-                          ) : (
-                            <ArrowUpRight className="h-4 w-4" />
-                          )}
-                        </span>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <p className="truncate text-sm font-medium text-foreground">
-                              {row.title}
-                            </p>
+                    <li key={row.id}>
+                      <SwipeRow
+                        onDelete={
+                          row.id.startsWith("pay-")
+                            ? undefined
+                            : () => deleteCombinedRow(row.id)
+                        }
+                      >
+                        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-2 py-2.5">
+                          <div className="flex min-w-0 items-center gap-3">
                             <span
                               className={cn(
-                                "rounded-full border px-2 py-0.5 text-[0.62rem] font-medium",
-                                row.workspace === "Studio"
-                                  ? "border-primary/40 bg-primary/12 text-primary"
-                                  : "border-border bg-muted text-muted-foreground",
+                                "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
+                                row.direction === "income"
+                                  ? "text-positive"
+                                  : "text-destructive",
                               )}
                             >
-                              {row.workspace}
+                              {row.direction === "income" ? (
+                                <ArrowDownLeft className="h-4 w-4" />
+                              ) : (
+                                <ArrowUpRight className="h-4 w-4" />
+                              )}
                             </span>
+                            <div className="min-w-0">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="truncate text-sm font-medium text-foreground">
+                                  {row.title}
+                                </p>
+                                <span
+                                  className={cn(
+                                    "rounded-full border px-2 py-0.5 text-[0.62rem] font-medium",
+                                    row.workspace === "Studio"
+                                      ? "border-primary/40 bg-primary/12 text-primary"
+                                      : "border-border bg-muted text-muted-foreground",
+                                  )}
+                                >
+                                  {row.workspace}
+                                </span>
+                              </div>
+                              <p className="truncate text-xs text-muted-foreground">
+                                {shortDate(row.date)} · {row.sub}
+                              </p>
+                            </div>
                           </div>
-                          <p className="truncate text-xs text-muted-foreground">
-                            {shortDate(row.date)} · {row.sub}
-                          </p>
+                          <span
+                            className={cn(
+                              "font-num shrink-0 text-sm font-semibold",
+                              row.direction === "income"
+                                ? "text-positive"
+                                : "text-destructive",
+                            )}
+                          >
+                            {row.direction === "income"
+                              ? `+${money(row.usd)}`
+                              : money(-row.usd)}
+                          </span>
                         </div>
-                      </div>
-                      <span
-                        className={cn(
-                          "font-num shrink-0 text-sm font-semibold",
-                          row.direction === "income"
-                            ? "text-positive"
-                            : "text-destructive",
-                        )}
-                      >
-                        {row.direction === "income"
-                          ? `+${money(row.usd)}`
-                          : money(-row.usd)}
-                      </span>
+                      </SwipeRow>
                     </li>
                   ))}
                 </ul>

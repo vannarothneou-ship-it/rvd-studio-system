@@ -84,7 +84,14 @@ import {
   type GoalContribution,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { Btn, F, Sel, SlideDrawer, SlidingTabs } from "@/components/rv/ui";
+import {
+  Btn,
+  F,
+  Sel,
+  SlideDrawer,
+  SlidingTabs,
+  Portal,
+} from "@/components/rv/ui";
 
 /* ---------- Category & Item Icon Mapping ---------- */
 
@@ -795,7 +802,7 @@ export function CategoryInspectorDrawer({
     window.setTimeout(() => setSavedFlash(false), 1400);
   };
 
-  return (
+  const overlay = (
     <div
       className="fixed inset-0 z-50 flex justify-end"
       role="dialog"
@@ -1256,6 +1263,7 @@ export function CategoryInspectorDrawer({
       </aside>
     </div>
   );
+  return <Portal>{overlay}</Portal>;
 }
 
 /* ---------- Circular SVG Ring Goal Card & Daily/Monthly/Yearly Goal Planner ---------- */

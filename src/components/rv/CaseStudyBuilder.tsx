@@ -36,7 +36,7 @@ import {
   Type,
   X,
 } from "lucide-react";
-import { Btn, F, SlidingTabs } from "@/components/rv/ui";
+import { Btn, F, SlidingTabs, Portal } from "@/components/rv/ui";
 import { DesignMediaUploader } from "@/components/rv/DesignMediaTools";
 import { downloadCaseStudy } from "@/lib/case-study-export";
 import { loadMediaBlob } from "@/lib/media-store";
@@ -758,7 +758,7 @@ export function CaseStudyBuilder({
         ? "bg-[#1b2638] border-white/10"
         : "bg-[#232328] border-white/10";
 
-  return (
+  const overlay = (
     <div
       className="fixed inset-0 z-[115] flex items-center justify-center bg-black/75 p-2 backdrop-blur-md sm:p-5"
       role="dialog"
@@ -1489,4 +1489,5 @@ export function CaseStudyBuilder({
       </div>
     </div>
   );
+  return <Portal>{overlay}</Portal>;
 }

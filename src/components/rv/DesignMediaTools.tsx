@@ -1,3 +1,4 @@
+import { Portal } from "@/components/rv/ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -320,7 +321,7 @@ export function MediaLightboxViewer({
 
   if (!item) return null;
 
-  return (
+  const overlay = (
     <div
       className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 p-3 backdrop-blur-sm sm:p-6"
       role="dialog"
@@ -527,6 +528,7 @@ export function MediaLightboxViewer({
       </div>
     </div>
   );
+  return <Portal>{overlay}</Portal>;
 }
 
 export function MediaCountBadge({
