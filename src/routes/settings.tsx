@@ -169,7 +169,24 @@ function Page() {
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error("Invalid backup file");
       }
-      const p = parsed as Record<string, unknown>;
+      type BackupShape = {
+        settings?: unknown;
+        mediaBlobs?: unknown;
+        clients?: unknown;
+        services?: unknown;
+        projects?: unknown;
+        invoices?: unknown;
+        payments?: unknown;
+        expenses?: unknown;
+        goals?: unknown;
+        personalIncome?: unknown;
+        workTasks?: unknown;
+        reminders?: unknown;
+        learnedReceiptRules?: unknown;
+        categoryLimits?: unknown;
+        caseStudies?: unknown;
+      };
+      const p = parsed as BackupShape & Record<string, unknown>;
       const isObject = (value: unknown): value is Record<string, unknown> =>
         Boolean(value) && typeof value === "object" && !Array.isArray(value);
       const requiredArrays = [
@@ -221,12 +238,15 @@ function Page() {
             >)
           : [],
         goals: p.goals as typeof prev.goals,
-        settings: { ...prev.settings, ...p.settings },
+        settings: {
+          ...prev.settings,
+          ...(p.settings as Partial<typeof prev.settings>),
+        },
         categoryLimits: isObject(p.categoryLimits)
-          ? (p.categoryLimits as typeof prev.categoryLimits)
+          ? (p.categoryLimits as NonNullable<typeof prev.categoryLimits>)
           : {},
         caseStudies: isObject(p.caseStudies)
-          ? (p.caseStudies as typeof prev.caseStudies)
+          ? (p.caseStudies as NonNullable<typeof prev.caseStudies>)
           : {},
       }));
       toast.success(

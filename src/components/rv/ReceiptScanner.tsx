@@ -92,8 +92,8 @@ interface RecordedRecord {
   notes: string;
   receiptThumb: string;
   saved: boolean;
-  matchedRule?: string;
-  mathVerified?: boolean;
+  matchedRule?: string | undefined;
+  mathVerified?: boolean | undefined;
 }
 
 function buildDescription(rec: RecordedRecord): string {
@@ -494,7 +494,7 @@ export function ReceiptScannerDrawer({
           merchantOrPayer: next.merchantOrPayer,
           txType: next.txType,
           category: next.category,
-          method: next.method,
+          method: next.method === "Credit" ? "Credit" : "Debit",
         }),
       }));
     }
@@ -564,7 +564,7 @@ export function ReceiptScannerDrawer({
         merchantOrPayer: savedRec.merchantOrPayer,
         txType: savedRec.txType,
         category: savedRec.category,
-        method: savedRec.method,
+        method: savedRec.method === "Credit" ? "Credit" : "Debit",
       }),
     }));
     setRecord(savedRec);

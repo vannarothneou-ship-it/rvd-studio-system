@@ -11,6 +11,7 @@ import {
   Search,
 } from "lucide-react";
 import { toast } from "sonner";
+import { SwipeRow } from "@/components/rv/SwipeRow";
 import {
   Btn,
   Empty,
@@ -343,6 +344,46 @@ function PersonalPage() {
   ]);
 
   const visibleRows = ledgerRows.slice(0, visibleCount);
+
+  const deleteLedgerRow = (row: LedgerRow) => {
+    if (row.kind === "income") {
+      const item = row.income;
+      setDB((d) => ({
+        ...d,
+        personalIncome: (d.personalIncome ?? []).filter(
+          (x) => x.id !== item.id,
+        ),
+      }));
+      toast("Income deleted", {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            setDB((d) => ({
+              ...d,
+              personalIncome: upsert(d.personalIncome ?? [], item),
+            })),
+        },
+      });
+    } else {
+      const item = row.expense;
+      setDB((d) => ({
+        ...d,
+        expenses: d.expenses.filter((x) => x.id !== item.id),
+      }));
+      toast("Expense deleted", {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            setDB((d) => ({ ...d, expenses: upsert(d.expenses, item) })),
+        },
+      });
+    }
+  };
+
+  const editLedgerRow = (row: LedgerRow) => {
+    if (row.kind === "income") setIncomeDraft(row.income);
+    else setExpenseDraft(row.expense);
+  };
 
   const filterOptions =
     ledgerView === "income"
@@ -847,64 +888,69 @@ function PersonalPage() {
                         : expenseItemIcon(row.expense);
                     return (
                       <li key={row.id}>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (row.kind === "income") {
-                              setIncomeDraft(row.income);
-                            } else {
-                              setExpenseDraft(row.expense);
-                            }
-                          }}
-                          className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-muted"
+                        <SwipeRow
+                          onDelete={() => deleteLedgerRow(row)}
+                          onEdit={() => editLedgerRow(row)}
                         >
-                          <div className="flex min-w-0 items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (row.kind === "income") {
+                                setIncomeDraft(row.income);
+                              } else {
+                                setExpenseDraft(row.expense);
+                              }
+                            }}
+                            className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-muted"
+                          >
+                            <div className="flex min-w-0 items-center gap-3">
+                              <span
+                                className={cn(
+                                  "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
+                                  row.kind === "income"
+                                    ? "text-positive"
+                                    : "text-primary",
+                                )}
+                              >
+                                {row.kind === "income" ? (
+                                  <ArrowDownLeft className="h-4 w-4" />
+                                ) : (
+                                  <Icon className="h-4 w-4" />
+                                )}
+                              </span>
+                              <div className="min-w-0">
+                                <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                                  <span className="truncate">{row.title}</span>
+                                </p>
+                                <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                                  {row.kind === "income" && (
+                                    <Icon className="h-3 w-3 shrink-0 text-positive" />
+                                  )}
+                                  <span className="truncate">
+                                    {shortDate(row.date)} · {row.sub}
+                                  </span>
+                                </p>
+                              </div>
+                            </div>
                             <span
                               className={cn(
-                                "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
+                                "font-num flex items-center gap-1 text-sm",
                                 row.kind === "income"
                                   ? "text-positive"
-                                  : "text-primary",
+                                  : "text-destructive",
                               )}
                             >
                               {row.kind === "income" ? (
-                                <ArrowDownLeft className="h-4 w-4" />
+                                <>+{money(row.rawAmount, row.currency)}</>
                               ) : (
-                                <Icon className="h-4 w-4" />
+                                <>
+                                  <ArrowUpRight className="hidden h-3 w-3 sm:inline" />
+                                  {money(-row.rawAmount, row.currency)}
+                                </>
                               )}
                             </span>
-                            <div className="min-w-0">
-                              <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                                <span className="truncate">{row.title}</span>
-                              </p>
-                              <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                                {row.kind === "income" && (
-                                  <Icon className="h-3 w-3 shrink-0 text-positive" />
-                                )}
-                                <span className="truncate">
-                                  {shortDate(row.date)} · {row.sub}
-                                </span>
-                              </p>
-                            </div>
-                          </div>
-                          <span
-                            className={cn(
-                              "font-num flex items-center gap-1 text-sm",
-                              row.kind === "income"
-                                ? "text-positive"
-                                : "text-destructive",
-                            )}
-                          >
-                            {row.kind === "income" ? (
-                              <>+{money(row.rawAmount, row.currency)}</>
-                            ) : (
-                              <>
-                                <ArrowUpRight className="hidden h-3 w-3 sm:inline" />
-                                {money(-row.rawAmount, row.currency)}
-                              </>
-                            )}
-                          </span>
-                        </button>
+                          </button>
+                        </SwipeRow>
                       </li>
                     );
                   })}

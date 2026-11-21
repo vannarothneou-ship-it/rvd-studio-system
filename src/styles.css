@@ -212,6 +212,7 @@
     background-color: var(--background);
     background-image: var(--bg-gradient);
     min-height: 100vh;
+    min-height: 100dvh;
     overflow-x: clip;
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
@@ -833,5 +834,18 @@
     transition-duration: 0.01ms !important;
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
+  }
+}
+
+
+/* ---- iOS polish ---- */
+html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
+button, [role="button"], a { touch-action: manipulation; }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

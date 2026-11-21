@@ -10,8 +10,8 @@ export interface ReceiptParseContext {
 }
 
 export interface LocalScannedReceiptResult extends ScannedReceiptResult {
-  matchedRule?: string;
-  mathVerified?: boolean;
+  matchedRule?: string | undefined;
+  mathVerified?: boolean | undefined;
 }
 
 const KHMER_DIGITS: Record<string, string> = {
@@ -1041,7 +1041,7 @@ export function learnReceiptRule(
     merchantOrPayer: string;
     txType: "expense" | "income";
     category: string;
-    method: string;
+    method: LearnedReceiptRule["method"];
   },
   atDate: string = today(),
 ): LearnedReceiptRule[] {

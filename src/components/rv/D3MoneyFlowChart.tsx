@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import * as d3 from "d3";
 import { ArrowDownLeft, ArrowUpRight, Sparkles, Wallet } from "lucide-react";
 import { categoryIcon } from "@/components/rv/FinanceVisuals";
@@ -31,8 +38,18 @@ interface TooltipState {
   category?: string | null | undefined;
 }
 
-const CHART_W = 640;
-const CHART_H = 340;
+const DEFAULT_W = 640;
+const DEFAULT_H = 340;
+
+/** Single source of truth for donut geometry (used by draw + hover effects). */
+function pieGeometry(w: number, h: number) {
+  const outerR = Math.max(56, Math.min(w, h) * 0.5 - 34);
+  return { outerR, innerR: outerR * 0.6 };
+}
+
+function isTouchEvent(e: Event) {
+  return (e as PointerEvent).pointerType === "touch";
+}
 
 export function D3MoneyFlowChart({
   chartType,
@@ -67,6 +84,50 @@ export function D3MoneyFlowChart({
 
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
   const [activeSliceId, setActiveSliceId] = useState<string | null>(null);
+  const activeRef = useRef<string | null>(null);
+  const clearVisualsRef = useRef<(() => void) | null>(null);
+  const [size, setSize] = useState({ w: DEFAULT_W, h: DEFAULT_H });
+  const CHART_W = size.w;
+  const CHART_H = size.h;
+
+  // Measure the real container so the SVG is drawn 1:1 (no tiny scaled-down text on phones).
+  useLayoutEffect(() => {
+    const el = svgRef.current;
+    if (!el) return;
+    const measure = () => {
+      const w = Math.round(el.getBoundingClientRect().width);
+      if (!w) return;
+      const h =
+        w < 520 ? Math.min(300, Math.max(240, Math.round(w * 0.82))) : 340;
+      setSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const setActive = useCallback(
+    (id: string | null) => {
+      activeRef.current = id;
+      setActiveSliceId(id);
+      onHoverId?.(id);
+    },
+    [onHoverId],
+  );
+
+  // Tap outside any interactive element (touch UX) dismisses tooltip + highlight.
+  useEffect(() => {
+    const onDocDown = (e: PointerEvent) => {
+      const t = e.target as Element | null;
+      if (t?.closest?.(".pie-slice, .hit-col, .line-hit")) return;
+      clearVisualsRef.current?.();
+      setTooltip(null);
+      if (activeRef.current) setActive(null);
+    };
+    document.addEventListener("pointerdown", onDocDown);
+    return () => document.removeEventListener("pointerdown", onDocDown);
+  }, [setActive]);
 
   const normalizedPieData = useMemo<D3PieDatum[]>(() => {
     if (pieData.length > 0) return pieData;
@@ -112,8 +173,7 @@ export function D3MoneyFlowChart({
     if (chartType === "pie") {
       const cx = CHART_W / 2;
       const cy = CHART_H / 2;
-      const outerR = Math.min(CHART_W, CHART_H) * 0.41;
-      const innerR = outerR * 0.6;
+      const { outerR, innerR } = pieGeometry(CHART_W, CHART_H);
 
       const root = svg.append("g").attr("transform", `translate(${cx}, ${cy})`);
 
@@ -143,12 +203,6 @@ export function D3MoneyFlowChart({
         .innerRadius(innerR)
         .outerRadius(outerR)
         .cornerRadius(9);
-
-      const hoverArcGen = d3
-        .arc<d3.PieArcDatum<D3PieDatum>>()
-        .innerRadius(innerR - 2)
-        .outerRadius(outerR + 9)
-        .cornerRadius(10);
 
       const pieTotal =
         normalizedPieData.reduce((s, d) => s + d.value, 0) || totalSpend || 1;
@@ -204,47 +258,49 @@ export function D3MoneyFlowChart({
         .duration(240)
         .style("opacity", 0.9);
 
+      const showSlice = (
+        event: PointerEvent,
+        d: d3.PieArcDatum<D3PieDatum>,
+      ) => {
+        const pct = Math.round((d.data.value / pieTotal) * 100);
+        setActive(d.data.id);
+        updateTooltipPosition(event.clientX, event.clientY, {
+          title: shortFlowLabel(d.data.label),
+          primary: formatMoney(d.data.value),
+          secondary: `${pct}% of spending`,
+          color: d.data.color,
+          category: d.data.category,
+        });
+      };
+      const hideSlice = () => {
+        setActive(null);
+        setTooltip(null);
+      };
+      clearVisualsRef.current = hideSlice;
+
       sliceGroups
-        .on("mouseenter", function (event: MouseEvent, d) {
-          d3.select(this)
-            .select("path")
-            .transition()
-            .duration(160)
-            .ease(d3.easeCubicOut)
-            .attr("d", hoverArcGen(d) ?? "");
-          setActiveSliceId(d.data.id);
-          onHoverId?.(d.data.id);
-          const pct = Math.round((d.data.value / pieTotal) * 100);
-          updateTooltipPosition(event.clientX, event.clientY, {
-            title: shortFlowLabel(d.data.label),
-            primary: formatMoney(d.data.value),
-            secondary: `${pct}% of spending`,
-            color: d.data.color,
-            category: d.data.category,
-          });
+        .style("touch-action", "manipulation")
+        .on("pointerenter pointermove", (event: PointerEvent, d) => {
+          if (isTouchEvent(event)) return;
+          showSlice(event, d);
         })
-        .on("mousemove", function (event: MouseEvent, d) {
-          const pct = Math.round((d.data.value / pieTotal) * 100);
-          updateTooltipPosition(event.clientX, event.clientY, {
-            title: shortFlowLabel(d.data.label),
-            primary: formatMoney(d.data.value),
-            secondary: `${pct}% of spending`,
-            color: d.data.color,
-            category: d.data.category,
-          });
+        .on("pointerleave", (event: PointerEvent) => {
+          if (isTouchEvent(event)) return;
+          hideSlice();
         })
-        .on("mouseleave", function (_event: MouseEvent, d) {
-          d3.select(this)
-            .select("path")
-            .transition()
-            .duration(180)
-            .ease(d3.easeCubicOut)
-            .attr("d", arcGen(d) ?? "");
-          setActiveSliceId(null);
-          onHoverId?.(null);
-          setTooltip(null);
+        .on("pointerdown", (event: PointerEvent, d) => {
+          if (!isTouchEvent(event)) return;
+          // Touch: first tap previews the slice, second tap opens the category.
+          if (activeRef.current === d.data.id) {
+            if (d.data.account && d.data.category && onSelectCategory) {
+              onSelectCategory(d.data.account, d.data.category);
+            }
+            return;
+          }
+          showSlice(event, d);
         })
-        .on("click", (_event: MouseEvent, d) => {
+        .on("click", (event: MouseEvent, d) => {
+          if ((event as PointerEvent).pointerType === "touch") return;
           if (d.data.account && d.data.category && onSelectCategory) {
             onSelectCategory(d.data.account, d.data.category);
           }
@@ -428,20 +484,27 @@ export function D3MoneyFlowChart({
         .attr("width", bandW)
         .attr("height", innerH)
         .attr("fill", "transparent")
-        .on("mouseenter mousemove click", (event: MouseEvent, d) => {
-          hoverBand.attr("x", xScale(d.key) ?? 0).attr("fill-opacity", 0.06);
-          updateTooltipPosition(event.clientX, event.clientY, {
-            title: d.fullDate,
-            primary: `Out ${formatMoney(d.spend)}`,
-            secondary: hasIncome ? `In ${formatMoney(d.income)}` : undefined,
-            tertiary: hasIncome ? `Net ${formatMoney(d.net)}` : undefined,
-            color: "var(--primary)",
-          });
-        })
-        .on("mouseleave", () => {
+        .style("touch-action", "pan-y")
+        .on(
+          "pointerenter pointermove pointerdown",
+          (event: PointerEvent, d) => {
+            hoverBand.attr("x", xScale(d.key) ?? 0).attr("fill-opacity", 0.06);
+            updateTooltipPosition(event.clientX, event.clientY, {
+              title: d.fullDate,
+              primary: `Out ${formatMoney(d.spend)}`,
+              secondary: hasIncome ? `In ${formatMoney(d.income)}` : undefined,
+              tertiary: hasIncome ? `Net ${formatMoney(d.net)}` : undefined,
+              color: "var(--primary)",
+            });
+          },
+        )
+        .on("pointerleave", (event: PointerEvent) => {
+          if (isTouchEvent(event)) return;
           hoverBand.attr("fill-opacity", 0);
           setTooltip(null);
         });
+
+      clearVisualsRef.current = () => hoverBand.attr("fill-opacity", 0);
 
       return;
     }
@@ -593,7 +656,8 @@ export function D3MoneyFlowChart({
       .attr("width", stepW)
       .attr("height", innerH)
       .attr("fill", "transparent")
-      .on("mouseenter mousemove click", (event: MouseEvent, d) => {
+      .style("touch-action", "pan-y")
+      .on("pointerenter pointermove pointerdown", (event: PointerEvent, d) => {
         const px = xPoint(d.key) ?? 0;
         const py = yScale(d.spend);
         crosshair.attr("x1", px).attr("x2", px).attr("stroke-opacity", 0.55);
@@ -606,11 +670,17 @@ export function D3MoneyFlowChart({
           color: "var(--primary)",
         });
       })
-      .on("mouseleave", () => {
+      .on("pointerleave", (event: PointerEvent) => {
+        if (isTouchEvent(event)) return;
         crosshair.attr("stroke-opacity", 0);
         focusDot.style("opacity", 0);
         setTooltip(null);
       });
+
+    clearVisualsRef.current = () => {
+      crosshair.attr("stroke-opacity", 0);
+      focusDot.style("opacity", 0);
+    };
   }, [
     chartType,
     range,
@@ -620,9 +690,41 @@ export function D3MoneyFlowChart({
     totalSpend,
     formatMoney,
     formatCompact,
-    onHoverId,
     onSelectCategory,
+    setActive,
+    CHART_W,
+    CHART_H,
   ]);
+
+  // Highlight the active slice (mouse hover OR touch tap) without rebuilding the chart.
+  const prevActiveRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (chartType !== "pie" || prevActiveRef.current === activeSliceId) {
+      prevActiveRef.current = activeSliceId;
+      return;
+    }
+    prevActiveRef.current = activeSliceId;
+    const { outerR, innerR } = pieGeometry(CHART_W, CHART_H);
+    const base = d3
+      .arc<d3.PieArcDatum<D3PieDatum>>()
+      .innerRadius(innerR)
+      .outerRadius(outerR)
+      .cornerRadius(9);
+    const lifted = d3
+      .arc<d3.PieArcDatum<D3PieDatum>>()
+      .innerRadius(innerR - 2)
+      .outerRadius(outerR + 9)
+      .cornerRadius(10);
+    d3.select(svgRef.current)
+      .selectAll<SVGPathElement, d3.PieArcDatum<D3PieDatum>>("g.pie-slice path")
+      .transition("hover")
+      .duration(180)
+      .ease(d3.easeCubicOut)
+      .attr(
+        "d",
+        (d) => (d.data.id === activeSliceId ? lifted(d) : base(d)) ?? "",
+      );
+  }, [activeSliceId, chartType, CHART_W, CHART_H]);
 
   const ActiveCenterIcon = activeSlice?.category
     ? categoryIcon(activeSlice.category)
@@ -635,6 +737,7 @@ export function D3MoneyFlowChart({
     <div className="space-y-3">
       <div
         ref={containerRef}
+        data-no-swipe
         className="relative w-full overflow-hidden rounded-xl border border-[var(--glass-border)] bg-muted/35 p-2 backdrop-blur-md sm:p-3"
       >
         {/* Center Overlay inside D3 Donut for clean icon + figure readout */}
@@ -660,7 +763,8 @@ export function D3MoneyFlowChart({
         <svg
           ref={svgRef}
           viewBox={`0 0 ${CHART_W} ${CHART_H}`}
-          className="h-[250px] w-full select-none sm:h-[330px]"
+          style={{ height: CHART_H }}
+          className="w-full select-none"
           role="img"
           aria-label={`D3 ${chartType} finance chart`}
         />
