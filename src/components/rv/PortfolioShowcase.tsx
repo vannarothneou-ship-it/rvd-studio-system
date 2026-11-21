@@ -37,7 +37,7 @@ import { shortDate, today, type ShowcaseWorkItem } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const TYPE_COLORS = [
-  "oklch(0.83 0.13 82)",
+  "var(--primary)",
   "oklch(0.78 0.13 155)",
   "oklch(0.68 0.12 245)",
   "oklch(0.72 0.15 48)",

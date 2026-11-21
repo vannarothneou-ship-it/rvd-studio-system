@@ -175,7 +175,7 @@ function TimeSlotTick({
 }
 
 const PIE_PALETTE = [
-  "oklch(0.83 0.13 82)", // RothVan Gold
+  "var(--primary)", // RothVan Gold
   "oklch(0.78 0.13 155)", // Sage Emerald
   "oklch(0.68 0.12 245)", // Slate Sky
   "oklch(0.72 0.15 48)", // Warm Amber

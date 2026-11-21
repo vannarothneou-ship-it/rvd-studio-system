@@ -400,10 +400,10 @@ export function DashboardCalendarCard({
           allDay: true,
           backgroundColor: done
             ? "oklch(0.68 0.13 155 / 38%)"
-            : "oklch(0.83 0.13 82 / 38%)",
+            : "color-mix(in oklch, var(--primary) 38%, transparent)",
           borderColor: done
             ? "oklch(0.68 0.13 155 / 78%)"
-            : "oklch(0.83 0.13 82 / 78%)",
+            : "color-mix(in oklch, var(--primary) 78%, transparent)",
           textColor: "var(--foreground)",
           classNames: ["fc-event-studio"],
         });

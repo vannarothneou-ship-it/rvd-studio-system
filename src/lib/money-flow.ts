@@ -153,7 +153,7 @@ export const BUCKET_META: Record<
   },
   studio: {
     label: "Studio",
-    color: "oklch(0.83 0.13 82)",
+    color: "var(--primary)",
     stroke: "oklch(0.75 0.14 82)",
   },
   future: {
@@ -164,7 +164,7 @@ export const BUCKET_META: Record<
 };
 
 const SOURCE_COLORS = [
-  "oklch(0.83 0.13 82)",
+  "var(--primary)",
   "oklch(0.75 0.13 155)",
   "oklch(0.68 0.12 245)",
   "oklch(0.74 0.14 48)",

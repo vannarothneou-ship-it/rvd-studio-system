@@ -335,7 +335,7 @@ function KeptDonutRing({
             hasIncome
               ? clamped >= 15
                 ? "oklch(0.68 0.12 245)"
-                : "oklch(0.83 0.13 82)"
+                : "var(--primary)"
               : "oklch(0.75 0.13 155)"
           }
           strokeWidth="6.5"

@@ -143,7 +143,7 @@ const BOARD_COLORS: readonly BoardColorPreset[] = [
     headerBorder: "rgba(230, 184, 92, 0.45)",
     pillText: "#f3cf80",
     colBorder: "rgba(230, 184, 92, 0.35)",
-    calBg: "oklch(0.83 0.13 82)",
+    calBg: "var(--primary)",
     calBorder: "oklch(0.9 0.12 82)",
     calText: "#18181b",
   },
@@ -156,7 +156,7 @@ const BOARD_COLORS: readonly BoardColorPreset[] = [
     pillText: "#eab875",
     colBorder: "rgba(217, 154, 78, 0.32)",
     calBg: "oklch(0.68 0.12 80)",
-    calBorder: "oklch(0.83 0.13 82)",
+    calBorder: "var(--primary)",
     calText: "#18181b",
   },
   {
