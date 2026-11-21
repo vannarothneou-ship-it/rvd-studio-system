@@ -1,0 +1,1241 @@
+From 4e3f784da673a1fb0d204bf9bb52f48709a54c31 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 21 Nov 2026 03:26:43 +0000
+Subject: [PATCH 1/2] Mobile: responsive touch D3 charts, SwipeRow
+ swipe-to-delete with undo, iOS CSS polish, fix all TS errors
+
+---
+ src/components/rv/D3MoneyFlowChart.tsx | 230 ++++++++++++++++++-------
+ src/components/rv/ReceiptScanner.tsx   |   8 +-
+ src/components/rv/SwipeRow.tsx         | 156 +++++++++++++++++
+ src/lib/ai-central-engine.test.ts      |  13 +-
+ src/lib/local-receipt-ai.ts            |   6 +-
+ src/routes/personal.tsx                | 140 ++++++++++-----
+ src/routes/settings.tsx                |  28 ++-
+ src/styles.css                         |  14 ++
+ 8 files changed, 472 insertions(+), 123 deletions(-)
+ create mode 100644 src/components/rv/SwipeRow.tsx
+
+diff --git a/src/components/rv/D3MoneyFlowChart.tsx b/src/components/rv/D3MoneyFlowChart.tsx
+index 01403b4..fceae67 100644
+--- a/src/components/rv/D3MoneyFlowChart.tsx
++++ b/src/components/rv/D3MoneyFlowChart.tsx
+@@ -1,4 +1,11 @@
+-import { useEffect, useMemo, useRef, useState } from "react";
++import {
++  useCallback,
++  useEffect,
++  useLayoutEffect,
++  useMemo,
++  useRef,
++  useState,
++} from "react";
+ import * as d3 from "d3";
+ import { ArrowDownLeft, ArrowUpRight, Sparkles, Wallet } from "lucide-react";
+ import { categoryIcon } from "@/components/rv/FinanceVisuals";
+@@ -31,8 +38,18 @@ interface TooltipState {
+   category?: string | null | undefined;
+ }
+ 
+-const CHART_W = 640;
+-const CHART_H = 340;
++const DEFAULT_W = 640;
++const DEFAULT_H = 340;
++
++/** Single source of truth for donut geometry (used by draw + hover effects). */
++function pieGeometry(w: number, h: number) {
++  const outerR = Math.max(56, Math.min(w, h) * 0.5 - 34);
++  return { outerR, innerR: outerR * 0.6 };
++}
++
++function isTouchEvent(e: Event) {
++  return (e as PointerEvent).pointerType === "touch";
++}
+ 
+ export function D3MoneyFlowChart({
+   chartType,
+@@ -67,6 +84,50 @@ export function D3MoneyFlowChart({
+ 
+   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
+   const [activeSliceId, setActiveSliceId] = useState<string | null>(null);
++  const activeRef = useRef<string | null>(null);
++  const clearVisualsRef = useRef<(() => void) | null>(null);
++  const [size, setSize] = useState({ w: DEFAULT_W, h: DEFAULT_H });
++  const CHART_W = size.w;
++  const CHART_H = size.h;
++
++  // Measure the real container so the SVG is drawn 1:1 (no tiny scaled-down text on phones).
++  useLayoutEffect(() => {
++    const el = svgRef.current;
++    if (!el) return;
++    const measure = () => {
++      const w = Math.round(el.getBoundingClientRect().width);
++      if (!w) return;
++      const h =
++        w < 520 ? Math.min(300, Math.max(240, Math.round(w * 0.82))) : 340;
++      setSize((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
++    };
++    measure();
++    const ro = new ResizeObserver(measure);
++    ro.observe(el);
++    return () => ro.disconnect();
++  }, []);
++
++  const setActive = useCallback(
++    (id: string | null) => {
++      activeRef.current = id;
++      setActiveSliceId(id);
++      onHoverId?.(id);
++    },
++    [onHoverId],
++  );
++
++  // Tap outside any interactive element (touch UX) dismisses tooltip + highlight.
++  useEffect(() => {
++    const onDocDown = (e: PointerEvent) => {
++      const t = e.target as Element | null;
++      if (t?.closest?.(".pie-slice, .hit-col, .line-hit")) return;
++      clearVisualsRef.current?.();
++      setTooltip(null);
++      if (activeRef.current) setActive(null);
++    };
++    document.addEventListener("pointerdown", onDocDown);
++    return () => document.removeEventListener("pointerdown", onDocDown);
++  }, [setActive]);
+ 
+   const normalizedPieData = useMemo<D3PieDatum[]>(() => {
+     if (pieData.length > 0) return pieData;
+@@ -112,8 +173,7 @@ export function D3MoneyFlowChart({
+     if (chartType === "pie") {
+       const cx = CHART_W / 2;
+       const cy = CHART_H / 2;
+-      const outerR = Math.min(CHART_W, CHART_H) * 0.41;
+-      const innerR = outerR * 0.6;
++      const { outerR, innerR } = pieGeometry(CHART_W, CHART_H);
+ 
+       const root = svg.append("g").attr("transform", `translate(${cx}, ${cy})`);
+ 
+@@ -144,12 +204,6 @@ export function D3MoneyFlowChart({
+         .outerRadius(outerR)
+         .cornerRadius(9);
+ 
+-      const hoverArcGen = d3
+-        .arc<d3.PieArcDatum<D3PieDatum>>()
+-        .innerRadius(innerR - 2)
+-        .outerRadius(outerR + 9)
+-        .cornerRadius(10);
+-
+       const pieTotal =
+         normalizedPieData.reduce((s, d) => s + d.value, 0) || totalSpend || 1;
+       const arcsData = pieGen(normalizedPieData);
+@@ -204,47 +258,49 @@ export function D3MoneyFlowChart({
+         .duration(240)
+         .style("opacity", 0.9);
+ 
++      const showSlice = (
++        event: PointerEvent,
++        d: d3.PieArcDatum<D3PieDatum>,
++      ) => {
++        const pct = Math.round((d.data.value / pieTotal) * 100);
++        setActive(d.data.id);
++        updateTooltipPosition(event.clientX, event.clientY, {
++          title: shortFlowLabel(d.data.label),
++          primary: formatMoney(d.data.value),
++          secondary: `${pct}% of spending`,
++          color: d.data.color,
++          category: d.data.category,
++        });
++      };
++      const hideSlice = () => {
++        setActive(null);
++        setTooltip(null);
++      };
++      clearVisualsRef.current = hideSlice;
++
+       sliceGroups
+-        .on("mouseenter", function (event: MouseEvent, d) {
+-          d3.select(this)
+-            .select("path")
+-            .transition()
+-            .duration(160)
+-            .ease(d3.easeCubicOut)
+-            .attr("d", hoverArcGen(d) ?? "");
+-          setActiveSliceId(d.data.id);
+-          onHoverId?.(d.data.id);
+-          const pct = Math.round((d.data.value / pieTotal) * 100);
+-          updateTooltipPosition(event.clientX, event.clientY, {
+-            title: shortFlowLabel(d.data.label),
+-            primary: formatMoney(d.data.value),
+-            secondary: `${pct}% of spending`,
+-            color: d.data.color,
+-            category: d.data.category,
+-          });
++        .style("touch-action", "manipulation")
++        .on("pointerenter pointermove", (event: PointerEvent, d) => {
++          if (isTouchEvent(event)) return;
++          showSlice(event, d);
+         })
+-        .on("mousemove", function (event: MouseEvent, d) {
+-          const pct = Math.round((d.data.value / pieTotal) * 100);
+-          updateTooltipPosition(event.clientX, event.clientY, {
+-            title: shortFlowLabel(d.data.label),
+-            primary: formatMoney(d.data.value),
+-            secondary: `${pct}% of spending`,
+-            color: d.data.color,
+-            category: d.data.category,
+-          });
++        .on("pointerleave", (event: PointerEvent) => {
++          if (isTouchEvent(event)) return;
++          hideSlice();
+         })
+-        .on("mouseleave", function (_event: MouseEvent, d) {
+-          d3.select(this)
+-            .select("path")
+-            .transition()
+-            .duration(180)
+-            .ease(d3.easeCubicOut)
+-            .attr("d", arcGen(d) ?? "");
+-          setActiveSliceId(null);
+-          onHoverId?.(null);
+-          setTooltip(null);
++        .on("pointerdown", (event: PointerEvent, d) => {
++          if (!isTouchEvent(event)) return;
++          // Touch: first tap previews the slice, second tap opens the category.
++          if (activeRef.current === d.data.id) {
++            if (d.data.account && d.data.category && onSelectCategory) {
++              onSelectCategory(d.data.account, d.data.category);
++            }
++            return;
++          }
++          showSlice(event, d);
+         })
+-        .on("click", (_event: MouseEvent, d) => {
++        .on("click", (event: MouseEvent, d) => {
++          if ((event as PointerEvent).pointerType === "touch") return;
+           if (d.data.account && d.data.category && onSelectCategory) {
+             onSelectCategory(d.data.account, d.data.category);
+           }
+@@ -428,21 +484,28 @@ export function D3MoneyFlowChart({
+         .attr("width", bandW)
+         .attr("height", innerH)
+         .attr("fill", "transparent")
+-        .on("mouseenter mousemove click", (event: MouseEvent, d) => {
+-          hoverBand.attr("x", xScale(d.key) ?? 0).attr("fill-opacity", 0.06);
+-          updateTooltipPosition(event.clientX, event.clientY, {
+-            title: d.fullDate,
+-            primary: `Out ${formatMoney(d.spend)}`,
+-            secondary: hasIncome ? `In ${formatMoney(d.income)}` : undefined,
+-            tertiary: hasIncome ? `Net ${formatMoney(d.net)}` : undefined,
+-            color: "var(--primary)",
+-          });
+-        })
+-        .on("mouseleave", () => {
++        .style("touch-action", "pan-y")
++        .on(
++          "pointerenter pointermove pointerdown",
++          (event: PointerEvent, d) => {
++            hoverBand.attr("x", xScale(d.key) ?? 0).attr("fill-opacity", 0.06);
++            updateTooltipPosition(event.clientX, event.clientY, {
++              title: d.fullDate,
++              primary: `Out ${formatMoney(d.spend)}`,
++              secondary: hasIncome ? `In ${formatMoney(d.income)}` : undefined,
++              tertiary: hasIncome ? `Net ${formatMoney(d.net)}` : undefined,
++              color: "var(--primary)",
++            });
++          },
++        )
++        .on("pointerleave", (event: PointerEvent) => {
++          if (isTouchEvent(event)) return;
+           hoverBand.attr("fill-opacity", 0);
+           setTooltip(null);
+         });
+ 
++      clearVisualsRef.current = () => hoverBand.attr("fill-opacity", 0);
++
+       return;
+     }
+ 
+@@ -593,7 +656,8 @@ export function D3MoneyFlowChart({
+       .attr("width", stepW)
+       .attr("height", innerH)
+       .attr("fill", "transparent")
+-      .on("mouseenter mousemove click", (event: MouseEvent, d) => {
++      .style("touch-action", "pan-y")
++      .on("pointerenter pointermove pointerdown", (event: PointerEvent, d) => {
+         const px = xPoint(d.key) ?? 0;
+         const py = yScale(d.spend);
+         crosshair.attr("x1", px).attr("x2", px).attr("stroke-opacity", 0.55);
+@@ -606,11 +670,17 @@ export function D3MoneyFlowChart({
+           color: "var(--primary)",
+         });
+       })
+-      .on("mouseleave", () => {
++      .on("pointerleave", (event: PointerEvent) => {
++        if (isTouchEvent(event)) return;
+         crosshair.attr("stroke-opacity", 0);
+         focusDot.style("opacity", 0);
+         setTooltip(null);
+       });
++
++    clearVisualsRef.current = () => {
++      crosshair.attr("stroke-opacity", 0);
++      focusDot.style("opacity", 0);
++    };
+   }, [
+     chartType,
+     range,
+@@ -620,10 +690,42 @@ export function D3MoneyFlowChart({
+     totalSpend,
+     formatMoney,
+     formatCompact,
+-    onHoverId,
+     onSelectCategory,
++    setActive,
++    CHART_W,
++    CHART_H,
+   ]);
+ 
++  // Highlight the active slice (mouse hover OR touch tap) without rebuilding the chart.
++  const prevActiveRef = useRef<string | null>(null);
++  useEffect(() => {
++    if (chartType !== "pie" || prevActiveRef.current === activeSliceId) {
++      prevActiveRef.current = activeSliceId;
++      return;
++    }
++    prevActiveRef.current = activeSliceId;
++    const { outerR, innerR } = pieGeometry(CHART_W, CHART_H);
++    const base = d3
++      .arc<d3.PieArcDatum<D3PieDatum>>()
++      .innerRadius(innerR)
++      .outerRadius(outerR)
++      .cornerRadius(9);
++    const lifted = d3
++      .arc<d3.PieArcDatum<D3PieDatum>>()
++      .innerRadius(innerR - 2)
++      .outerRadius(outerR + 9)
++      .cornerRadius(10);
++    d3.select(svgRef.current)
++      .selectAll<SVGPathElement, d3.PieArcDatum<D3PieDatum>>("g.pie-slice path")
++      .transition("hover")
++      .duration(180)
++      .ease(d3.easeCubicOut)
++      .attr(
++        "d",
++        (d) => (d.data.id === activeSliceId ? lifted(d) : base(d)) ?? "",
++      );
++  }, [activeSliceId, chartType, CHART_W, CHART_H]);
++
+   const ActiveCenterIcon = activeSlice?.category
+     ? categoryIcon(activeSlice.category)
+     : Wallet;
+@@ -635,6 +737,7 @@ export function D3MoneyFlowChart({
+     <div className="space-y-3">
+       <div
+         ref={containerRef}
++        data-no-swipe
+         className="relative w-full overflow-hidden rounded-xl border border-[var(--glass-border)] bg-muted/35 p-2 backdrop-blur-md sm:p-3"
+       >
+         {/* Center Overlay inside D3 Donut for clean icon + figure readout */}
+@@ -660,7 +763,8 @@ export function D3MoneyFlowChart({
+         <svg
+           ref={svgRef}
+           viewBox={`0 0 ${CHART_W} ${CHART_H}`}
+-          className="h-[250px] w-full select-none sm:h-[330px]"
++          style={{ height: CHART_H }}
++          className="w-full select-none"
+           role="img"
+           aria-label={`D3 ${chartType} finance chart`}
+         />
+diff --git a/src/components/rv/ReceiptScanner.tsx b/src/components/rv/ReceiptScanner.tsx
+index a973d5f..e4bd862 100644
+--- a/src/components/rv/ReceiptScanner.tsx
++++ b/src/components/rv/ReceiptScanner.tsx
+@@ -92,8 +92,8 @@ interface RecordedRecord {
+   notes: string;
+   receiptThumb: string;
+   saved: boolean;
+-  matchedRule?: string;
+-  mathVerified?: boolean;
++  matchedRule?: string | undefined;
++  mathVerified?: boolean | undefined;
+ }
+ 
+ function buildDescription(rec: RecordedRecord): string {
+@@ -494,7 +494,7 @@ export function ReceiptScannerDrawer({
+           merchantOrPayer: next.merchantOrPayer,
+           txType: next.txType,
+           category: next.category,
+-          method: next.method,
++          method: next.method === "Credit" ? "Credit" : "Debit",
+         }),
+       }));
+     }
+@@ -564,7 +564,7 @@ export function ReceiptScannerDrawer({
+         merchantOrPayer: savedRec.merchantOrPayer,
+         txType: savedRec.txType,
+         category: savedRec.category,
+-        method: savedRec.method,
++        method: savedRec.method === "Credit" ? "Credit" : "Debit",
+       }),
+     }));
+     setRecord(savedRec);
+diff --git a/src/components/rv/SwipeRow.tsx b/src/components/rv/SwipeRow.tsx
+new file mode 100644
+index 0000000..ebd04ab
+--- /dev/null
++++ b/src/components/rv/SwipeRow.tsx
+@@ -0,0 +1,156 @@
++import { useRef, useState, type ReactNode } from "react";
++import {
++  animate,
++  motion,
++  useMotionValue,
++  useTransform,
++  type PanInfo,
++} from "motion/react";
++import { Pencil, Trash2 } from "lucide-react";
++import { cn } from "@/lib/utils";
++
++const ACTION_W = 88;
++const COMMIT_AT = 168;
++
++function haptic(ms = 8) {
++  try {
++    navigator.vibrate?.(ms);
++  } catch {
++    /* iOS Safari has no vibrate – ignore */
++  }
++}
++
++/**
++ * iOS-style swipe row.
++ * - swipe left  → reveals red Delete (swipe far = delete immediately)
++ * - swipe right → reveals Edit
++ * - tap while open closes it; tap while closed calls onTap
++ * The row is marked data-no-swipe so the page-level tab swipe never fires.
++ */
++export function SwipeRow({
++  children,
++  onDelete,
++  onEdit,
++  onTap,
++  className,
++}: {
++  children: ReactNode;
++  onDelete?: (() => void) | undefined;
++  onEdit?: (() => void) | undefined;
++  onTap?: (() => void) | undefined;
++  className?: string | undefined;
++}) {
++  const x = useMotionValue(0);
++  const [gone, setGone] = useState(false);
++  const dragged = useRef(false);
++  const crossed = useRef(false);
++
++  const delOpacity = useTransform(x, [-ACTION_W, -24, 0], [1, 0.6, 0]);
++  const delScale = useTransform(x, [-COMMIT_AT, -ACTION_W, 0], [1.25, 1, 0.7]);
++  const editOpacity = useTransform(x, [0, 24, ACTION_W], [0, 0.6, 1]);
++
++  const settle = (to: number) =>
++    animate(x, to, { type: "spring", stiffness: 520, damping: 42 });
++
++  const remove = () => {
++    haptic(14);
++    setGone(true);
++    // let the collapse animation finish, then call the real delete
++    window.setTimeout(() => onDelete?.(), 220);
++  };
++
++  const onDrag = () => {
++    dragged.current = true;
++    const past = x.get() < -COMMIT_AT;
++    if (past !== crossed.current) {
++      crossed.current = past;
++      haptic(6);
++    }
++  };
++
++  const onDragEnd = (_: unknown, info: PanInfo) => {
++    const cur = x.get();
++    const fling = info.velocity.x;
++    crossed.current = false;
++    if (onDelete && (cur < -COMMIT_AT || fling < -900)) {
++      animate(x, -480, { duration: 0.18 });
++      remove();
++    } else if (onDelete && cur < -ACTION_W / 2) {
++      settle(-ACTION_W);
++    } else if (onEdit && cur > ACTION_W / 2) {
++      settle(ACTION_W);
++    } else {
++      settle(0);
++    }
++    window.setTimeout(() => (dragged.current = false), 0);
++  };
++
++  return (
++    <motion.div
++      data-no-swipe
++      initial={false}
++      animate={
++        gone ? { height: 0, opacity: 0 } : { height: "auto", opacity: 1 }
++      }
++      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
++      className={cn("relative overflow-hidden", className)}
++    >
++      {/* Edit action (revealed by swiping right) */}
++      {onEdit ? (
++        <motion.button
++          type="button"
++          aria-label="Edit"
++          style={{ opacity: editOpacity, width: ACTION_W }}
++          onClick={() => {
++            settle(0);
++            onEdit();
++          }}
++          className="absolute inset-y-0 left-0 grid place-items-center bg-primary text-primary-foreground"
++        >
++          <Pencil className="h-5 w-5" />
++        </motion.button>
++      ) : null}
++
++      {/* Delete action (revealed by swiping left) */}
++      {onDelete ? (
++        <motion.button
++          type="button"
++          aria-label="Delete"
++          style={{ opacity: delOpacity }}
++          onClick={remove}
++          className="absolute inset-y-0 right-0 flex w-full items-center justify-end bg-destructive pr-7 text-destructive-foreground"
++        >
++          <motion.span style={{ scale: delScale }}>
++            <Trash2 className="h-5 w-5" />
++          </motion.span>
++        </motion.button>
++      ) : null}
++
++      <motion.div
++        drag="x"
++        dragDirectionLock
++        dragConstraints={{ left: 0, right: 0 }}
++        dragElastic={{ left: 0.55, right: onEdit ? 0.4 : 0 }}
++        style={{ x, touchAction: "pan-y" }}
++        onDrag={onDrag}
++        onDragEnd={onDragEnd}
++        onClickCapture={(e) => {
++          if (dragged.current) {
++            e.stopPropagation();
++            e.preventDefault();
++            return;
++          }
++          if (Math.abs(x.get()) > 4) {
++            e.stopPropagation();
++            e.preventDefault();
++            settle(0);
++          }
++        }}
++        onClick={onTap}
++        className="relative bg-card"
++      >
++        {children}
++      </motion.div>
++    </motion.div>
++  );
++}
+diff --git a/src/lib/ai-central-engine.test.ts b/src/lib/ai-central-engine.test.ts
+index 1629b97..ba47c92 100644
+--- a/src/lib/ai-central-engine.test.ts
++++ b/src/lib/ai-central-engine.test.ts
+@@ -42,7 +42,16 @@ function makeTestDb(): DB {
+         currency: "USD",
+         discount: 0,
+         notes: "",
+-        items: [{ id: "it1", desc: "Brand system", qty: 1, price: 1000 }],
++        items: [
++          {
++            id: "it1",
++            description: "Brand system",
++            scope: "",
++            timeline: "",
++            qty: 1,
++            price: 1000,
++          },
++        ],
+         images: [],
+       },
+     ],
+@@ -117,7 +126,7 @@ function makeTestDb(): DB {
+         date: "2026-11-22",
+         odoKm: 148500,
+         notifyDaysBefore: 5,
+-        repeat: "none",
++        repeatYearly: false,
+         notes: "5W-30 synthetic",
+       },
+     ],
+diff --git a/src/lib/local-receipt-ai.ts b/src/lib/local-receipt-ai.ts
+index 75c2f60..23b8923 100644
+--- a/src/lib/local-receipt-ai.ts
++++ b/src/lib/local-receipt-ai.ts
+@@ -10,8 +10,8 @@ export interface ReceiptParseContext {
+ }
+ 
+ export interface LocalScannedReceiptResult extends ScannedReceiptResult {
+-  matchedRule?: string;
+-  mathVerified?: boolean;
++  matchedRule?: string | undefined;
++  mathVerified?: boolean | undefined;
+ }
+ 
+ const KHMER_DIGITS: Record<string, string> = {
+@@ -1041,7 +1041,7 @@ export function learnReceiptRule(
+     merchantOrPayer: string;
+     txType: "expense" | "income";
+     category: string;
+-    method: string;
++    method: LearnedReceiptRule["method"];
+   },
+   atDate: string = today(),
+ ): LearnedReceiptRule[] {
+diff --git a/src/routes/personal.tsx b/src/routes/personal.tsx
+index e16b7eb..2aae754 100644
+--- a/src/routes/personal.tsx
++++ b/src/routes/personal.tsx
+@@ -11,6 +11,7 @@ import {
+   Search,
+ } from "lucide-react";
+ import { toast } from "sonner";
++import { SwipeRow } from "@/components/rv/SwipeRow";
+ import {
+   Btn,
+   Empty,
+@@ -344,6 +345,46 @@ function PersonalPage() {
+ 
+   const visibleRows = ledgerRows.slice(0, visibleCount);
+ 
++  const deleteLedgerRow = (row: LedgerRow) => {
++    if (row.kind === "income") {
++      const item = row.income;
++      setDB((d) => ({
++        ...d,
++        personalIncome: (d.personalIncome ?? []).filter(
++          (x) => x.id !== item.id,
++        ),
++      }));
++      toast("Income deleted", {
++        action: {
++          label: "Undo",
++          onClick: () =>
++            setDB((d) => ({
++              ...d,
++              personalIncome: upsert(d.personalIncome ?? [], item),
++            })),
++        },
++      });
++    } else {
++      const item = row.expense;
++      setDB((d) => ({
++        ...d,
++        expenses: d.expenses.filter((x) => x.id !== item.id),
++      }));
++      toast("Expense deleted", {
++        action: {
++          label: "Undo",
++          onClick: () =>
++            setDB((d) => ({ ...d, expenses: upsert(d.expenses, item) })),
++        },
++      });
++    }
++  };
++
++  const editLedgerRow = (row: LedgerRow) => {
++    if (row.kind === "income") setIncomeDraft(row.income);
++    else setExpenseDraft(row.expense);
++  };
++
+   const filterOptions =
+     ledgerView === "income"
+       ? PERSONAL_INCOME_SOURCES
+@@ -847,64 +888,69 @@ function PersonalPage() {
+                         : expenseItemIcon(row.expense);
+                     return (
+                       <li key={row.id}>
+-                        <button
+-                          type="button"
+-                          onClick={() => {
+-                            if (row.kind === "income") {
+-                              setIncomeDraft(row.income);
+-                            } else {
+-                              setExpenseDraft(row.expense);
+-                            }
+-                          }}
+-                          className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-muted"
++                        <SwipeRow
++                          onDelete={() => deleteLedgerRow(row)}
++                          onEdit={() => editLedgerRow(row)}
+                         >
+-                          <div className="flex min-w-0 items-center gap-3">
++                          <button
++                            type="button"
++                            onClick={() => {
++                              if (row.kind === "income") {
++                                setIncomeDraft(row.income);
++                              } else {
++                                setExpenseDraft(row.expense);
++                              }
++                            }}
++                            className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-muted"
++                          >
++                            <div className="flex min-w-0 items-center gap-3">
++                              <span
++                                className={cn(
++                                  "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
++                                  row.kind === "income"
++                                    ? "text-positive"
++                                    : "text-primary",
++                                )}
++                              >
++                                {row.kind === "income" ? (
++                                  <ArrowDownLeft className="h-4 w-4" />
++                                ) : (
++                                  <Icon className="h-4 w-4" />
++                                )}
++                              </span>
++                              <div className="min-w-0">
++                                <p className="flex items-center gap-1.5 truncate text-sm font-medium">
++                                  <span className="truncate">{row.title}</span>
++                                </p>
++                                <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
++                                  {row.kind === "income" && (
++                                    <Icon className="h-3 w-3 shrink-0 text-positive" />
++                                  )}
++                                  <span className="truncate">
++                                    {shortDate(row.date)} · {row.sub}
++                                  </span>
++                                </p>
++                              </div>
++                            </div>
+                             <span
+                               className={cn(
+-                                "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
++                                "font-num flex items-center gap-1 text-sm",
+                                 row.kind === "income"
+                                   ? "text-positive"
+-                                  : "text-primary",
++                                  : "text-destructive",
+                               )}
+                             >
+                               {row.kind === "income" ? (
+-                                <ArrowDownLeft className="h-4 w-4" />
++                                <>+{money(row.rawAmount, row.currency)}</>
+                               ) : (
+-                                <Icon className="h-4 w-4" />
++                                <>
++                                  <ArrowUpRight className="hidden h-3 w-3 sm:inline" />
++                                  {money(-row.rawAmount, row.currency)}
++                                </>
+                               )}
+                             </span>
+-                            <div className="min-w-0">
+-                              <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+-                                <span className="truncate">{row.title}</span>
+-                              </p>
+-                              <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+-                                {row.kind === "income" && (
+-                                  <Icon className="h-3 w-3 shrink-0 text-positive" />
+-                                )}
+-                                <span className="truncate">
+-                                  {shortDate(row.date)} · {row.sub}
+-                                </span>
+-                              </p>
+-                            </div>
+-                          </div>
+-                          <span
+-                            className={cn(
+-                              "font-num flex items-center gap-1 text-sm",
+-                              row.kind === "income"
+-                                ? "text-positive"
+-                                : "text-destructive",
+-                            )}
+-                          >
+-                            {row.kind === "income" ? (
+-                              <>+{money(row.rawAmount, row.currency)}</>
+-                            ) : (
+-                              <>
+-                                <ArrowUpRight className="hidden h-3 w-3 sm:inline" />
+-                                {money(-row.rawAmount, row.currency)}
+-                              </>
+-                            )}
+-                          </span>
+-                        </button>
++                          </button>
++                        </SwipeRow>
+                       </li>
+                     );
+                   })}
+diff --git a/src/routes/settings.tsx b/src/routes/settings.tsx
+index dc3bce1..17b7f9c 100644
+--- a/src/routes/settings.tsx
++++ b/src/routes/settings.tsx
+@@ -169,7 +169,24 @@ function Page() {
+       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+         throw new Error("Invalid backup file");
+       }
+-      const p = parsed as Record<string, unknown>;
++      type BackupShape = {
++        settings?: unknown;
++        mediaBlobs?: unknown;
++        clients?: unknown;
++        services?: unknown;
++        projects?: unknown;
++        invoices?: unknown;
++        payments?: unknown;
++        expenses?: unknown;
++        goals?: unknown;
++        personalIncome?: unknown;
++        workTasks?: unknown;
++        reminders?: unknown;
++        learnedReceiptRules?: unknown;
++        categoryLimits?: unknown;
++        caseStudies?: unknown;
++      };
++      const p = parsed as BackupShape & Record<string, unknown>;
+       const isObject = (value: unknown): value is Record<string, unknown> =>
+         Boolean(value) && typeof value === "object" && !Array.isArray(value);
+       const requiredArrays = [
+@@ -221,12 +238,15 @@ function Page() {
+             >)
+           : [],
+         goals: p.goals as typeof prev.goals,
+-        settings: { ...prev.settings, ...p.settings },
++        settings: {
++          ...prev.settings,
++          ...(p.settings as Partial<typeof prev.settings>),
++        },
+         categoryLimits: isObject(p.categoryLimits)
+-          ? (p.categoryLimits as typeof prev.categoryLimits)
++          ? (p.categoryLimits as NonNullable<typeof prev.categoryLimits>)
+           : {},
+         caseStudies: isObject(p.caseStudies)
+-          ? (p.caseStudies as typeof prev.caseStudies)
++          ? (p.caseStudies as NonNullable<typeof prev.caseStudies>)
+           : {},
+       }));
+       toast.success(
+diff --git a/src/styles.css b/src/styles.css
+index 66ea497..f76ae7f 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -212,6 +212,7 @@
+     background-color: var(--background);
+     background-image: var(--bg-gradient);
+     min-height: 100vh;
++    min-height: 100dvh;
+     overflow-x: clip;
+     font-family: var(--font-sans);
+     -webkit-font-smoothing: antialiased;
+@@ -835,3 +836,16 @@
+     animation-iteration-count: 1 !important;
+   }
+ }
++
++
++/* ---- iOS polish ---- */
++html { -webkit-text-size-adjust: 100%; -webkit-tap-highlight-color: transparent; }
++button, [role="button"], a { touch-action: manipulation; }
++@media (prefers-reduced-motion: reduce) {
++  *, *::before, *::after {
++    animation-duration: 0.01ms !important;
++    animation-iteration-count: 1 !important;
++    transition-duration: 0.01ms !important;
++    scroll-behavior: auto !important;
++  }
++}
+-- 
+2.43.0
+
+
+From 5e43971eef8a8d8bb1514b24c4de2bb0cca9b752 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Sat, 21 Nov 2026 03:32:41 +0000
+Subject: [PATCH 2/2] Apple-style theme: system blue accent, SF type stack,
+ solid cards, pill buttons, press scale
+
+---
+ src/components/rv/Charts.tsx            |   2 +-
+ src/components/rv/DashboardCalendar.tsx |   4 +-
+ src/components/rv/MoneyFlowSankey.tsx   |   2 +-
+ src/components/rv/PortfolioShowcase.tsx |   2 +-
+ src/components/rv/ui.tsx                |   2 +-
+ src/lib/money-flow.ts                   |   4 +-
+ src/routes/projects.tsx                 |   4 +-
+ src/styles.css                          | 205 +++++++++++-------------
+ 8 files changed, 105 insertions(+), 120 deletions(-)
+
+diff --git a/src/components/rv/Charts.tsx b/src/components/rv/Charts.tsx
+index ef2a2be..d5a7662 100644
+--- a/src/components/rv/Charts.tsx
++++ b/src/components/rv/Charts.tsx
+@@ -175,7 +175,7 @@ function TimeSlotTick({
+ }
+ 
+ const PIE_PALETTE = [
+-  "oklch(0.83 0.13 82)", // RothVan Gold
++  "var(--primary)", // RothVan Gold
+   "oklch(0.78 0.13 155)", // Sage Emerald
+   "oklch(0.68 0.12 245)", // Slate Sky
+   "oklch(0.72 0.15 48)", // Warm Amber
+diff --git a/src/components/rv/DashboardCalendar.tsx b/src/components/rv/DashboardCalendar.tsx
+index 1570d7c..0eccf5e 100644
+--- a/src/components/rv/DashboardCalendar.tsx
++++ b/src/components/rv/DashboardCalendar.tsx
+@@ -400,10 +400,10 @@ export function DashboardCalendarCard({
+           allDay: true,
+           backgroundColor: done
+             ? "oklch(0.68 0.13 155 / 38%)"
+-            : "oklch(0.83 0.13 82 / 38%)",
++            : "color-mix(in oklch, var(--primary) 38%, transparent)",
+           borderColor: done
+             ? "oklch(0.68 0.13 155 / 78%)"
+-            : "oklch(0.83 0.13 82 / 78%)",
++            : "color-mix(in oklch, var(--primary) 78%, transparent)",
+           textColor: "var(--foreground)",
+           classNames: ["fc-event-studio"],
+         });
+diff --git a/src/components/rv/MoneyFlowSankey.tsx b/src/components/rv/MoneyFlowSankey.tsx
+index 9d688ef..e32f35e 100644
+--- a/src/components/rv/MoneyFlowSankey.tsx
++++ b/src/components/rv/MoneyFlowSankey.tsx
+@@ -335,7 +335,7 @@ function KeptDonutRing({
+             hasIncome
+               ? clamped >= 15
+                 ? "oklch(0.68 0.12 245)"
+-                : "oklch(0.83 0.13 82)"
++                : "var(--primary)"
+               : "oklch(0.75 0.13 155)"
+           }
+           strokeWidth="6.5"
+diff --git a/src/components/rv/PortfolioShowcase.tsx b/src/components/rv/PortfolioShowcase.tsx
+index 97642fd..0b4a77b 100644
+--- a/src/components/rv/PortfolioShowcase.tsx
++++ b/src/components/rv/PortfolioShowcase.tsx
+@@ -37,7 +37,7 @@ import { shortDate, today, type ShowcaseWorkItem } from "@/lib/store";
+ import { cn } from "@/lib/utils";
+ 
+ const TYPE_COLORS = [
+-  "oklch(0.83 0.13 82)",
++  "var(--primary)",
+   "oklch(0.78 0.13 155)",
+   "oklch(0.68 0.12 245)",
+   "oklch(0.72 0.15 48)",
+diff --git a/src/components/rv/ui.tsx b/src/components/rv/ui.tsx
+index 9698522..537aebf 100644
+--- a/src/components/rv/ui.tsx
++++ b/src/components/rv/ui.tsx
+@@ -190,7 +190,7 @@ export function Btn({
+     <button
+       {...p}
+       className={cn(
+-        "inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-4 py-2 text-sm font-medium transition-colors duration-150 active:scale-[0.98] disabled:opacity-50 sm:min-h-[38px]",
++        "inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-colors duration-150 disabled:opacity-50 sm:min-h-[38px]",
+         variant === "gold" &&
+           "bg-primary text-primary-foreground hover:bg-[var(--primary-hover,var(--primary))]",
+         variant === "ghost" &&
+diff --git a/src/lib/money-flow.ts b/src/lib/money-flow.ts
+index 9f35b51..d56064c 100644
+--- a/src/lib/money-flow.ts
++++ b/src/lib/money-flow.ts
+@@ -153,7 +153,7 @@ export const BUCKET_META: Record<
+   },
+   studio: {
+     label: "Studio",
+-    color: "oklch(0.83 0.13 82)",
++    color: "var(--primary)",
+     stroke: "oklch(0.75 0.14 82)",
+   },
+   future: {
+@@ -164,7 +164,7 @@ export const BUCKET_META: Record<
+ };
+ 
+ const SOURCE_COLORS = [
+-  "oklch(0.83 0.13 82)",
++  "var(--primary)",
+   "oklch(0.75 0.13 155)",
+   "oklch(0.68 0.12 245)",
+   "oklch(0.74 0.14 48)",
+diff --git a/src/routes/projects.tsx b/src/routes/projects.tsx
+index 1a7b59c..7ddc989 100644
+--- a/src/routes/projects.tsx
++++ b/src/routes/projects.tsx
+@@ -143,7 +143,7 @@ const BOARD_COLORS: readonly BoardColorPreset[] = [
+     headerBorder: "rgba(230, 184, 92, 0.45)",
+     pillText: "#f3cf80",
+     colBorder: "rgba(230, 184, 92, 0.35)",
+-    calBg: "oklch(0.83 0.13 82)",
++    calBg: "var(--primary)",
+     calBorder: "oklch(0.9 0.12 82)",
+     calText: "#18181b",
+   },
+@@ -156,7 +156,7 @@ const BOARD_COLORS: readonly BoardColorPreset[] = [
+     pillText: "#eab875",
+     colBorder: "rgba(217, 154, 78, 0.32)",
+     calBg: "oklch(0.68 0.12 80)",
+-    calBorder: "oklch(0.83 0.13 82)",
++    calBorder: "var(--primary)",
+     calText: "#18181b",
+   },
+   {
+diff --git a/src/styles.css b/src/styles.css
+index f76ae7f..8c26656 100644
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -61,9 +61,9 @@
+   --color-warning: var(--warning);
+   --color-warning-foreground: var(--warning-foreground);
+   --font-display:
+-    "Plus Jakarta Sans", "Noto Sans Khmer", system-ui, sans-serif;
++    "SF Pro Display", -apple-system, BlinkMacSystemFont, "Inter", "Noto Sans Khmer", system-ui, sans-serif;
+   --font-sans:
+-    "Plus Jakarta Sans", "Inter", "Noto Sans Khmer", system-ui, sans-serif;
++    "SF Pro Text", -apple-system, BlinkMacSystemFont, "Inter", "Noto Sans Khmer", system-ui, sans-serif;
+   --font-mono:
+     "Inter", "Plus Jakarta Sans", "Noto Sans Khmer", system-ui, sans-serif;
+   --font-khmer: "Noto Sans Khmer", "Plus Jakarta Sans", sans-serif;
+@@ -83,113 +83,84 @@
+ }
+ 
+ :root {
+-  --radius: 0.75rem;
+-  --background: oklch(0.195 0.012 78);
+-  --foreground: oklch(0.945 0.006 85);
+-  --card: oklch(0.255 0.012 80 / 64%);
+-  --card-foreground: oklch(0.945 0.006 85);
+-  --popover: oklch(0.235 0.012 80 / 92%);
+-  --popover-foreground: oklch(0.945 0.006 85);
+-  --primary: oklch(0.85 0.15 86);
+-  --primary-hover: oklch(0.89 0.135 88);
+-  --primary-foreground: oklch(0.18 0.025 80);
+-  --secondary: oklch(0.305 0.013 80 / 68%);
+-  --secondary-foreground: oklch(0.94 0.006 85);
+-  --muted: oklch(0.275 0.012 80 / 56%);
+-  --muted-foreground: oklch(0.75 0.014 82);
+-  --accent: oklch(0.335 0.018 82 / 74%);
+-  --accent-foreground: oklch(0.955 0.005 85);
+-  --destructive: oklch(0.68 0.18 24);
+-  --destructive-foreground: oklch(0.985 0 0);
+-  --positive: oklch(0.72 0.155 150);
+-  --warning: oklch(0.79 0.16 65);
+-  --warning-foreground: oklch(0.18 0.02 65);
+-  --border: oklch(1 0 0 / 13%);
+-  --input: oklch(1 0 0 / 17%);
+-  --ring: oklch(0.85 0.15 86 / 55%);
+-  --chart-1: oklch(0.85 0.15 86);
+-  --chart-2: oklch(0.72 0.155 150);
+-  --chart-3: oklch(0.76 0.145 58);
+-  --chart-4: oklch(0.68 0.18 24);
+-  --chart-5: oklch(0.72 0.13 225);
+-  --glass: oklch(0.255 0.012 80 / 62%);
+-  --glass-strong: oklch(0.225 0.012 80 / 78%);
+-  --glass-border: oklch(1 0 0 / 15%);
+-  --bg-gradient:
+-    radial-gradient(
+-      920px 540px at 14% -6%,
+-      oklch(0.85 0.14 86 / 16%),
+-      transparent 62%
+-    ),
+-    radial-gradient(
+-      780px 480px at 88% 12%,
+-      oklch(0.68 0.08 235 / 11%),
+-      transparent 64%
+-    ),
+-    radial-gradient(
+-      700px 520px at 50% 106%,
+-      oklch(0.85 0.14 86 / 9%),
+-      transparent 68%
+-    );
+-  --shadow-glass:
+-    0 14px 36px -16px oklch(0 0 0 / 48%),
+-    inset 0 1px 0 oklch(1 0 0 / 10%);
+-  --sidebar: oklch(0.22 0.012 80 / 88%);
+-  --sidebar-foreground: oklch(0.945 0.006 85);
+-  --sidebar-primary: oklch(0.85 0.15 86);
+-  --sidebar-primary-foreground: oklch(0.18 0.025 80);
+-  --sidebar-accent: oklch(0.305 0.013 80 / 72%);
+-  --sidebar-accent-foreground: oklch(0.955 0.005 85);
+-  --sidebar-border: oklch(1 0 0 / 13%);
+-  --sidebar-ring: oklch(0.85 0.15 86);
++  --radius: 1.125rem;
++  --background: oklch(0.000 0.000 0);
++  --foreground: oklch(0.971 0.003 286);
++  --card: oklch(0.227 0.004 286);
++  --card-foreground: oklch(0.971 0.003 286);
++  --popover: oklch(0.294 0.004 286 / 94%);
++  --popover-foreground: oklch(0.971 0.003 286);
++  --primary: oklch(0.669 0.181 252);
++  --primary-hover: oklch(0.715 0.155 249);
++  --primary-foreground: oklch(1 0 0);
++  --secondary: oklch(0.294 0.004 286);
++  --secondary-foreground: oklch(0.971 0.003 286);
++  --muted: oklch(0.294 0.004 286);
++  --muted-foreground: oklch(0.711 0.007 286);
++  --accent: oklch(0.281 0.069 252);
++  --accent-foreground: oklch(0.669 0.181 252);
++  --destructive: oklch(0.663 0.224 28);
++  --destructive-foreground: oklch(1 0 0);
++  --positive: oklch(0.756 0.208 147);
++  --warning: oklch(0.782 0.171 67);
++  --warning-foreground: oklch(0 0 0);
++  --border: oklch(1 0 0 / 12%);
++  --input: oklch(1 0 0 / 16%);
++  --ring: oklch(0.669 0.181 252 / 60%);
++  --chart-1: oklch(0.669 0.181 252);
++  --chart-2: oklch(0.756 0.208 147);
++  --chart-3: oklch(0.782 0.171 67);
++  --chart-4: oklch(0.663 0.224 28);
++  --chart-5: oklch(0.656 0.227 312);
++  --glass: oklch(0.227 0.004 286 / 78%);
++  --glass-strong: oklch(0.000 0.000 0 / 82%);
++  --glass-border: oklch(1 0 0 / 12%);
++  --bg-gradient: none;
++  --shadow-glass: 0 0 0 0.5px oklch(1 0 0 / 8%);
++  --sidebar: oklch(0.227 0.004 286 / 88%);
++  --sidebar-foreground: oklch(0.971 0.003 286);
++  --sidebar-primary: oklch(0.669 0.181 252);
++  --sidebar-primary-foreground: oklch(1 0 0);
++  --sidebar-accent: oklch(0.294 0.004 286);
++  --sidebar-accent-foreground: oklch(0.971 0.003 286);
++  --sidebar-border: oklch(1 0 0 / 12%);
++  --sidebar-ring: oklch(0.669 0.181 252);
+ }
+ 
+ .light {
+-  --background: oklch(0.962 0.012 86);
+-  --foreground: oklch(0.18 0.014 80);
+-  --card: oklch(1 0 0 / 72%);
+-  --card-foreground: oklch(0.18 0.014 80);
+-  --popover: oklch(0.995 0.004 85 / 95%);
+-  --popover-foreground: oklch(0.18 0.014 80);
+-  --primary: oklch(0.60 0.16 74);
+-  --primary-hover: oklch(0.54 0.16 72);
+-  --primary-foreground: oklch(0.99 0.004 85);
+-  --secondary: oklch(0.94 0.01 84 / 75%);
+-  --secondary-foreground: oklch(0.22 0.014 80);
+-  --muted: oklch(0.945 0.008 84 / 65%);
+-  --muted-foreground: oklch(0.46 0.015 80);
+-  --accent: oklch(0.915 0.022 84 / 78%);
+-  --accent-foreground: oklch(0.18 0.014 80);
+-  --destructive: oklch(0.55 0.19 25);
+-  --destructive-foreground: oklch(0.99 0 0);
+-  --positive: oklch(0.48 0.155 150);
+-  --warning: oklch(0.58 0.165 55);
+-  --warning-foreground: oklch(0.99 0 0);
+-  --border: oklch(0.22 0.015 80 / 11%);
+-  --input: oklch(0.22 0.015 80 / 15%);
+-  --ring: oklch(0.60 0.16 74 / 45%);
+-  --chart-1: oklch(0.75 0.165 82);
+-  --chart-2: oklch(0.52 0.155 150);
+-  --chart-3: oklch(0.66 0.16 58);
+-  --chart-4: oklch(0.56 0.19 25);
+-  --chart-5: oklch(0.56 0.13 225);
+-  --glass: oklch(1 0 0 / 72%);
+-  --glass-strong: oklch(0.985 0.006 85 / 84%);
+-  --glass-border: oklch(0.22 0.015 80 / 12%);
+-  --bg-gradient:
+-    radial-gradient(
+-      920px 540px at 14% -8%,
+-      oklch(0.86 0.12 86 / 26%),
+-      transparent 62%
+-    ),
+-    radial-gradient(
+-      780px 480px at 88% 10%,
+-      oklch(0.80 0.06 230 / 14%),
+-      transparent 64%
+-    );
+-  --shadow-glass:
+-    0 12px 32px -16px oklch(0.25 0.02 80 / 14%),
+-    inset 0 1px 0 oklch(1 0 0 / 80%);
++  --background: oklch(0.971 0.003 286);
++  --foreground: oklch(0.232 0.004 286);
++  --card: oklch(1.000 0.000 90);
++  --card-foreground: oklch(0.232 0.004 286);
++  --popover: oklch(1.000 0.000 90 / 96%);
++  --popover-foreground: oklch(0.232 0.004 286);
++  --primary: oklch(0.522 0.177 256);
++  --primary-hover: oklch(0.563 0.193 256);
++  --primary-foreground: oklch(1 0 0);
++  --secondary: oklch(0.932 0.007 286);
++  --secondary-foreground: oklch(0.232 0.004 286);
++  --muted: oklch(0.944 0.005 286);
++  --muted-foreground: oklch(0.540 0.008 286);
++  --accent: oklch(0.946 0.019 256);
++  --accent-foreground: oklch(0.522 0.177 256);
++  --destructive: oklch(0.553 0.225 27);
++  --destructive-foreground: oklch(1 0 0);
++  --positive: oklch(0.511 0.133 148);
++  --warning: oklch(0.570 0.138 57);
++  --warning-foreground: oklch(1 0 0);
++  --border: oklch(0 0 0 / 9%);
++  --input: oklch(0 0 0 / 14%);
++  --ring: oklch(0.563 0.193 256 / 55%);
++  --chart-1: oklch(0.522 0.177 256);
++  --chart-2: oklch(0.558 0.146 148);
++  --chart-3: oklch(0.666 0.157 58);
++  --chart-4: oklch(0.553 0.225 27);
++  --chart-5: oklch(0.519 0.166 313);
++  --glass: oklch(1.000 0.000 90 / 80%);
++  --glass-strong: oklch(0.971 0.003 286 / 86%);
++  --glass-border: oklch(0 0 0 / 8%);
++  --bg-gradient: none;
++  --shadow-glass: 0 0 0 0.5px oklch(0 0 0 / 6%);
+ }
+ 
+ @layer base {
+@@ -249,7 +220,7 @@
+     background-clip: padding-box;
+   }
+   *::-webkit-scrollbar-thumb:hover {
+-    background: oklch(0.84 0.155 86 / 65%);
++    background: color-mix(in oklch, var(--primary) 65%, transparent);
+     background-clip: padding-box;
+   }
+   *::-webkit-scrollbar-button {
+@@ -523,7 +494,7 @@
+   --fc-border-color: var(--border);
+   --fc-page-bg-color: transparent;
+   --fc-neutral-bg-color: var(--muted);
+-  --fc-today-bg-color: oklch(0.84 0.155 86 / 10%);
++  --fc-today-bg-color: color-mix(in oklch, var(--primary) 10%, transparent);
+   --fc-button-bg-color: var(--secondary);
+   --fc-button-border-color: var(--border);
+   --fc-button-text-color: var(--foreground);
+@@ -601,8 +572,8 @@
+   color: #fef3c7 !important;
+ }
+ .project-calendar .fc-event-sel {
+-  background-color: oklch(0.83 0.13 82 / 26%) !important;
+-  border-color: oklch(0.83 0.13 82 / 58%) !important;
++  background-color: color-mix(in oklch, var(--primary) 26%, transparent) !important;
++  border-color: color-mix(in oklch, var(--primary) 58%, transparent) !important;
+ }
+ .light .project-calendar .fc-event-sel,
+ .light .project-calendar .fc-event-sel .fc-event-main,
+@@ -849,3 +820,17 @@ button, [role="button"], a { touch-action: manipulation; }
+     scroll-behavior: auto !important;
+   }
+ }
++
++/* ---- Apple-style system (from design.md) ---- */
++:root { --ease-ios: cubic-bezier(0.22, 1, 0.36, 1); }
++body { letter-spacing: -0.011em; }
++h1, h2, h3, .font-display { letter-spacing: -0.022em; font-weight: 600; }
++/* single press micro-interaction: scale .95 on every button */
++button:not(:disabled), [role="button"], a.btn {
++  transition: transform 0.18s var(--ease-ios), background-color 0.2s, color 0.2s, border-color 0.2s, opacity 0.2s;
++}
++button:not(:disabled):active, [role="button"]:active { transform: scale(0.96); }
++/* keyboard focus ring: 2px focus blue */
++:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
++/* frosted bars */
++.no-print.sticky, .no-print.fixed { backdrop-filter: saturate(180%) blur(20px); }
+-- 
+2.43.0
+
