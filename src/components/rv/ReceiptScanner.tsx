@@ -10,13 +10,16 @@ import {
 } from "react";
 import { toast } from "sonner";
 import {
+  AlertTriangle,
   ArrowDownLeft,
   ArrowUpRight,
+  Briefcase,
   Camera,
   Check,
   CheckCircle2,
   ChevronDown,
   ClipboardPaste,
+  Cpu,
   ImagePlus,
   Languages,
   Maximize2,
@@ -26,9 +29,10 @@ import {
   RotateCcw,
   RotateCw,
   ScanLine,
+  ShieldCheck,
   Sparkles,
   Trash2,
-  Zap,
+  User,
 } from "lucide-react";
 import { Btn, F, SlideDrawer, SlidingTabs } from "@/components/rv/ui";
 import {
@@ -39,27 +43,42 @@ import {
 import {
   QuickExpenseDrawer,
   QuickIncomeDrawer,
+  QuickStudioIncomeDrawer,
 } from "@/components/rv/QuickTxDrawer";
+import type { ScannedReceiptResult } from "@/lib/receipt-scanner";
 import {
   CARD_METHODS,
+  EXPENSE_CATEGORIES,
   PERSONAL_CATEGORIES,
   PERSONAL_INCOME_METHODS,
   PERSONAL_INCOME_SOURCES,
+  STUDIO_INCOME_SOURCES,
+  deletePayment,
   getDB,
+  invoiceView,
+  isInvoice,
   money,
+  recordPayment,
+  safeKhrRate,
   setDB,
   shortDate,
+  stampFxSnapshot,
   today,
   uid,
   useDB,
   type Account,
   type Currency,
+  type DB,
   type Expense,
+  type Payment,
   type PersonalIncome,
+  type StudioIncome,
 } from "@/lib/store";
 import {
   learnReceiptRule,
+  matchLearnedRule,
   parseReceiptText,
+  prepareReceiptUploadPayload,
   scanReceiptLocally,
   warmUpReceiptOcr,
   type ReceiptScanMode,
@@ -81,7 +100,7 @@ export function useReceiptScanner() {
 interface RecordedRecord {
   id: string;
   txType: "expense" | "income";
-  account: "Personal";
+  account: Account;
   amount: number;
   currency: Currency;
   date: string;
@@ -94,6 +113,18 @@ interface RecordedRecord {
   notes: string;
   receiptThumb: string;
   saved: boolean;
+  savedAs?: "expense" | "personalIncome" | "studioIncome" | "payment";
+  projectId?: string;
+  matchedInvoiceId?: string;
+  studioIncomeMode?: "invoice" | "unmatched";
+  subtotal?: number;
+  tax?: number;
+  change?: number;
+  depositedAmount?: number;
+  receivedAmount?: number;
+  ambiguous?: boolean;
+  ambiguityReason?: string;
+  engine: "gemini" | "local-ocr";
   matchedRule?: string | undefined;
   mathVerified?: boolean | undefined;
 }
@@ -105,69 +136,192 @@ function buildDescription(rec: RecordedRecord): string {
     : base || "Scanned transaction";
 }
 
-function persistRecordToStore(rec: RecordedRecord, previousId?: string) {
-  setDB((d) => {
-    const cleanExpenses = previousId
-      ? d.expenses.filter((e) => e.id !== previousId)
-      : d.expenses;
-    const cleanIncome = previousId
-      ? (d.personalIncome ?? []).filter((i) => i.id !== previousId)
-      : (d.personalIncome ?? []);
+function persistRecordToStore(
+  rec: RecordedRecord,
+  previousId?: string,
+): "expense" | "personalIncome" | "studioIncome" | "payment" {
+  let savedKind: "expense" | "personalIncome" | "studioIncome" | "payment" =
+    "expense";
 
-    if (rec.txType === "income") {
-      const inc: PersonalIncome = {
-        id: rec.id,
-        date: rec.date || today(),
-        source: PERSONAL_INCOME_SOURCES.includes(
-          rec.category as (typeof PERSONAL_INCOME_SOURCES)[number],
-        )
-          ? rec.category
-          : "Other",
-        accountMethod: rec.method || "Debit",
-        description: buildDescription(rec),
-        amount: Math.max(0, Number(rec.amount) || 0),
-        currency: rec.currency,
-      };
-      return {
-        ...d,
-        expenses: cleanExpenses,
-        personalIncome: [...cleanIncome, inc],
+  setDB((d) => {
+    const rate = safeKhrRate(d.settings.khrRate);
+    let next: DB = d;
+
+    if (previousId) {
+      if (next.payments.some((p) => p.id === previousId)) {
+        next = deletePayment(next, previousId);
+      }
+      next = {
+        ...next,
+        expenses: next.expenses.filter((e) => e.id !== previousId),
+        personalIncome: (next.personalIncome ?? []).filter(
+          (i) => i.id !== previousId,
+        ),
+        studioIncome: (next.studioIncome ?? []).filter(
+          (i) => i.id !== previousId,
+        ),
       };
     }
 
-    const exp: Expense = {
-      id: rec.id,
-      date: rec.date || today(),
-      projectId: "",
-      category: rec.category || "Other",
-      vendor: rec.method || "Debit",
-      description:
-        rec.merchantOrPayer &&
-        !rec.description
-          .toLowerCase()
-          .includes(rec.merchantOrPayer.toLowerCase())
-          ? `${rec.merchantOrPayer} — ${rec.description}`
-          : buildDescription(rec),
-      amount: Math.max(0, Number(rec.amount) || 0),
-      currency: rec.currency,
-      receipt: rec.receiptThumb,
-      account: "Personal",
-    };
+    if (rec.txType === "income") {
+      if (rec.account === "Studio") {
+        // Match against an open Studio invoice when explicitly chosen
+        const targetInv =
+          rec.studioIncomeMode === "invoice" && rec.matchedInvoiceId
+            ? next.invoices.find(
+                (i) => i.id === rec.matchedInvoiceId && isInvoice(i),
+              )
+            : undefined;
+
+        if (targetInv) {
+          savedKind = "payment";
+          const convertedAmt =
+            targetInv.currency === rec.currency
+              ? rec.amount
+              : targetInv.currency === "KHR"
+                ? Math.round(rec.amount * rate)
+                : Math.round((rec.amount / rate) * 100) / 100;
+          const payment: Payment = stampFxSnapshot(
+            {
+              id: rec.id,
+              invoiceId: targetInv.id,
+              date: rec.date || today(),
+              amount: Math.max(0, convertedAmt),
+              currency: targetInv.currency,
+              method: rec.method || "Bank transfer",
+              reference: rec.reference || buildDescription(rec),
+              exchangeRate: rate,
+            },
+            rate,
+          );
+          return recordPayment(next, payment);
+        }
+
+        // Unmatched Studio income -> never falls back to personalIncome
+        savedKind = "studioIncome";
+        const sinc: StudioIncome = stampFxSnapshot(
+          {
+            id: rec.id,
+            date: rec.date || today(),
+            source: STUDIO_INCOME_SOURCES.includes(
+              rec.category as (typeof STUDIO_INCOME_SOURCES)[number],
+            )
+              ? rec.category
+              : "Client Payment",
+            accountMethod: rec.method || "Bank Transfer",
+            description: buildDescription(rec),
+            amount: Math.max(0, Number(rec.amount) || 0),
+            currency: rec.currency,
+            reference: rec.reference || "",
+            receipt: rec.receiptThumb,
+          },
+          rate,
+        );
+        return {
+          ...next,
+          studioIncome: [...(next.studioIncome ?? []), sinc],
+        };
+      }
+
+      savedKind = "personalIncome";
+      const inc: PersonalIncome = stampFxSnapshot(
+        {
+          id: rec.id,
+          date: rec.date || today(),
+          source: PERSONAL_INCOME_SOURCES.includes(
+            rec.category as (typeof PERSONAL_INCOME_SOURCES)[number],
+          )
+            ? rec.category
+            : "Other",
+          accountMethod: rec.method || "Debit",
+          description: buildDescription(rec),
+          amount: Math.max(0, Number(rec.amount) || 0),
+          currency: rec.currency,
+        },
+        rate,
+      );
+      return {
+        ...next,
+        personalIncome: [...(next.personalIncome ?? []), inc],
+      };
+    }
+
+    savedKind = "expense";
+    const exp: Expense = stampFxSnapshot(
+      {
+        id: rec.id,
+        date: rec.date || today(),
+        projectId: rec.account === "Studio" ? rec.projectId || "" : "",
+        category: rec.category || "Other",
+        vendor: rec.method || "Debit",
+        description:
+          rec.merchantOrPayer &&
+          !rec.description
+            .toLowerCase()
+            .includes(rec.merchantOrPayer.toLowerCase())
+            ? `${rec.merchantOrPayer} — ${rec.description}`
+            : buildDescription(rec),
+        amount: Math.max(0, Number(rec.amount) || 0),
+        currency: rec.currency,
+        receipt: rec.receiptThumb,
+        account: rec.account,
+      },
+      rate,
+    );
 
     return {
-      ...d,
-      personalIncome: cleanIncome,
-      expenses: [...cleanExpenses, exp],
+      ...next,
+      expenses: [...next.expenses, exp],
+    };
+  });
+
+  return savedKind;
+}
+
+function deleteRecordFromStore(id: string) {
+  setDB((d) => {
+    let next = d;
+    if (next.payments.some((p) => p.id === id)) {
+      next = deletePayment(next, id);
+    }
+    return {
+      ...next,
+      expenses: next.expenses.filter((e) => e.id !== id),
+      personalIncome: (next.personalIncome ?? []).filter((i) => i.id !== id),
+      studioIncome: (next.studioIncome ?? []).filter((i) => i.id !== id),
     };
   });
 }
 
-function deleteRecordFromStore(id: string) {
-  setDB((d) => ({
-    ...d,
-    expenses: d.expenses.filter((e) => e.id !== id),
-    personalIncome: (d.personalIncome ?? []).filter((i) => i.id !== id),
-  }));
+function resolveCategoryForAccount(
+  txType: "expense" | "income",
+  account: Account,
+  rawCategory: string,
+): string {
+  if (txType === "income") {
+    if (account === "Studio") {
+      return STUDIO_INCOME_SOURCES.includes(
+        rawCategory as (typeof STUDIO_INCOME_SOURCES)[number],
+      )
+        ? rawCategory
+        : "Client Payment";
+    }
+    return PERSONAL_INCOME_SOURCES.includes(
+      rawCategory as (typeof PERSONAL_INCOME_SOURCES)[number],
+    )
+      ? rawCategory
+      : "Other";
+  }
+
+  if (account === "Studio") {
+    return EXPENSE_CATEGORIES.includes(
+      rawCategory as (typeof EXPENSE_CATEGORIES)[number],
+    )
+      ? rawCategory
+      : "Other";
+  }
+
+  return PERSONAL_CATEGORIES.includes(rawCategory) ? rawCategory : "Food";
 }
 
 const SCAN_MODES: {
@@ -182,8 +336,10 @@ const SCAN_MODES: {
 
 export function ReceiptScannerProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
+  const [defaultAccount, setDefaultAccount] = useState<Account>("Personal");
 
-  const openScanner = useCallback(() => {
+  const openScanner = useCallback((acct: Account = "Personal") => {
+    setDefaultAccount(acct);
     setOpen(true);
   }, []);
 
@@ -192,21 +348,27 @@ export function ReceiptScannerProvider({ children }: { children: ReactNode }) {
   return (
     <ScannerContext.Provider value={value}>
       {children}
-      <ReceiptScannerDrawer open={open} onClose={() => setOpen(false)} />
+      <ReceiptScannerDrawer
+        open={open}
+        defaultAccount={defaultAccount}
+        onClose={() => setOpen(false)}
+      />
     </ScannerContext.Provider>
   );
 }
 
 export function ReceiptScannerDrawer({
   open,
+  defaultAccount = "Personal",
   onClose,
 }: {
   open: boolean;
   defaultAccount?: Account;
   onClose: () => void;
 }) {
-  const learnedRules = useDB((d) => d.learnedReceiptRules ?? []);
-  const [autoRecord, setAutoRecord] = useState(true);
+  const db = useDB((d) => d);
+  const learnedRules = db.learnedReceiptRules ?? [];
+  const [activeAccount, setActiveAccount] = useState<Account>(defaultAccount);
   const [scanMode, setScanMode] = useState<ReceiptScanMode>("auto");
   const [scanDirection, setScanDirection] = useState<
     "auto" | "expense" | "income"
@@ -220,6 +382,7 @@ export function ReceiptScannerDrawer({
   const [previewUrl, setPreviewUrl] = useState<string>("");
   const [expandImage, setExpandImage] = useState(false);
   const [record, setRecord] = useState<RecordedRecord | null>(null);
+  const [ambiguityConfirmed, setAmbiguityConfirmed] = useState(false);
   const [editing, setEditing] = useState(false);
   const [lastFile, setLastFile] = useState<File | null>(null);
   const [rawText, setRawText] = useState("");
@@ -227,16 +390,36 @@ export function ReceiptScannerDrawer({
   const [showRules, setShowRules] = useState(false);
   const [scanMeta, setScanMeta] = useState<{
     angle: number;
-    lang: "eng+khm" | "eng";
+    lang: "eng+khm" | "eng" | "gemini";
     passes: 1 | 2;
     confidencePct: number;
   } | null>(null);
   const [manualDraft, setManualDraft] = useState<Expense | null>(null);
   const [manualIncomeDraft, setManualIncomeDraft] =
     useState<PersonalIncome | null>(null);
+  const [manualStudioIncomeDraft, setManualStudioIncomeDraft] =
+    useState<StudioIncome | null>(null);
 
   const cameraRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) {
+      setActiveAccount(defaultAccount);
+    }
+  }, [open, defaultAccount]);
+
+  const openInvoices = useMemo(() => {
+    return db.invoices
+      .filter((inv) => isInvoice(inv))
+      .map((inv) => {
+        const v = invoiceView(inv, db);
+        const client = db.clients.find((c) => c.id === inv.clientId);
+        return { inv, view: v, clientName: client?.name ?? "Client" };
+      })
+      .filter((row) => row.view.status !== "Draft" && row.view.balance > 0.01)
+      .sort((a, b) => a.inv.due.localeCompare(b.inv.due));
+  }, [db]);
 
   const resetScan = useCallback(() => {
     setScanning(false);
@@ -246,6 +429,7 @@ export function ReceiptScannerDrawer({
     setPreviewUrl("");
     setExpandImage(false);
     setRecord(null);
+    setAmbiguityConfirmed(false);
     setEditing(false);
     setLastFile(null);
     setRotationDeg(0);
@@ -260,25 +444,42 @@ export function ReceiptScannerDrawer({
   };
 
   const openManualExpense = () => {
+    const targetAcc = activeAccount;
     resetScan();
     onClose();
     setManualDraft({
       id: uid(),
       date: today(),
       projectId: "",
-      category: PERSONAL_CATEGORIES[0] ?? "Food",
+      category:
+        targetAcc === "Studio"
+          ? (EXPENSE_CATEGORIES[0] ?? "Software and subscriptions")
+          : (PERSONAL_CATEGORIES[0] ?? "Food"),
       vendor: "Debit",
       description: "",
       amount: 0,
       currency: "USD",
       receipt: "",
-      account: "Personal",
+      account: targetAcc,
     });
   };
 
   const openManualIncome = () => {
+    const targetAcc = activeAccount;
     resetScan();
     onClose();
+    if (targetAcc === "Studio") {
+      setManualStudioIncomeDraft({
+        id: uid(),
+        date: today(),
+        source: "Client Payment",
+        accountMethod: "Bank Transfer",
+        description: "",
+        amount: 0,
+        currency: "USD",
+      });
+      return;
+    }
     setManualIncomeDraft({
       id: uid(),
       date: today(),
@@ -308,17 +509,24 @@ export function ReceiptScannerDrawer({
       const nextRot = override?.rotation ?? rotationDeg;
       const nextMode = override?.mode ?? scanMode;
       const prevSavedId = record?.saved ? record.id : undefined;
+      if (prevSavedId) {
+        deleteRecordFromStore(prevSavedId);
+      }
 
       setLastFile(file);
       setScanning(true);
-      setScanPct(8);
+      setScanPct(10);
       setScanStatus("Preparing image…");
       setErrorMsg(null);
       setRecord(null);
+      setAmbiguityConfirmed(false);
       setEditing(false);
 
-      const quickUrl = URL.createObjectURL(file);
-      setPreviewUrl(quickUrl);
+      const quickUrl =
+        typeof URL.createObjectURL === "function"
+          ? URL.createObjectURL(file)
+          : "";
+      if (quickUrl) setPreviewUrl(quickUrl);
 
       try {
         const dbNow = getDB();
@@ -326,97 +534,185 @@ export function ReceiptScannerDrawer({
         const ownerNames = [s.ownerName, s.signatoryName, s.abaName].filter(
           (v) => Boolean(v && v.trim()),
         );
-        const {
-          result,
-          previewDataUrl,
-          thumbDataUrl,
-          rawText: detectedText,
-          detectedAngleDeg,
-          engineLang,
-          ocrConfidence,
-          passes,
-        } = await scanReceiptLocally(
-          file,
-          today(),
-          (pct, status) => {
-            setScanPct(pct);
-            setScanStatus(status);
-          },
-          {
-            rotationDeg: nextRot,
-            mode: nextMode,
-            context: {
-              ownerNames,
-              khrRate: s.khrRate,
-              learnedRules: dbNow.learnedReceiptRules ?? [],
-            },
-          },
-        );
 
-        setPreviewUrl(previewDataUrl);
-        setRawText(detectedText);
-        setScanMeta({
-          angle: detectedAngleDeg,
-          lang: engineLang,
-          passes,
-          confidencePct: ocrConfidence,
-        });
+        let finalResult:
+          | (ScannedReceiptResult & {
+              matchedRule?: string | undefined;
+              mathVerified?: boolean | undefined;
+            })
+          | null = null;
+        let thumbUrl = "";
+        let previewOut = quickUrl;
 
-        const resolvedType =
-          scanDirection === "auto" ? result.txType : scanDirection;
-        const resolvedCategory =
-          resolvedType === "income"
-            ? PERSONAL_INCOME_SOURCES.includes(
-                result.category as (typeof PERSONAL_INCOME_SOURCES)[number],
-              )
-              ? result.category
-              : (PERSONAL_INCOME_SOURCES[0] ?? "Salary")
-            : PERSONAL_CATEGORIES.includes(result.category)
-              ? result.category
-              : (PERSONAL_CATEGORIES[0] ?? "Food");
-
-        const nextRecord: RecordedRecord = {
-          id: prevSavedId ?? uid(),
-          txType: resolvedType,
-          account: "Personal",
-          amount: result.amount,
-          currency: result.currency,
-          date: result.date || today(),
-          merchantOrPayer: result.merchantOrPayer,
-          description: result.description,
-          method: result.method,
-          category: resolvedCategory,
-          reference: result.reference,
-          confidence: result.confidence,
-          notes: result.notes,
-          receiptThumb: thumbDataUrl,
-          saved: false,
-          matchedRule: result.matchedRule,
-          mathVerified: result.mathVerified,
-        };
-
-        if (autoRecord && nextRecord.amount > 0) {
-          nextRecord.saved = true;
-          persistRecordToStore(nextRecord, prevSavedId);
-          toast.success(
-            `Saved ${money(
-              nextRecord.txType === "income"
-                ? nextRecord.amount
-                : -nextRecord.amount,
-              nextRecord.currency,
-              true,
-            )} (${nextRecord.method})`,
+        // 1. Try Gemini Vision API first (unless Handwriting-only pass explicitly fails)
+        try {
+          setScanPct(28);
+          setScanStatus("Analyzing receipt with Gemini Vision…");
+          const uploadPayload = await prepareReceiptUploadPayload(
+            file,
+            nextRot,
           );
-        } else {
-          if (prevSavedId) {
-            deleteRecordFromStore(prevSavedId);
+          previewOut = uploadPayload.previewDataUrl;
+          thumbUrl = uploadPayload.thumbDataUrl;
+          setPreviewUrl(previewOut);
+
+          const res = await fetch("/api/scan-receipt", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              imageBase64: uploadPayload.imageBase64,
+              mimeType: uploadPayload.mimeType,
+              defaultAccount: activeAccount,
+              fallbackDate: today(),
+            }),
+          });
+          if (res.ok) {
+            const payload = (await res.json()) as {
+              ok?: boolean;
+              result?: ScannedReceiptResult;
+            };
+            if (payload.ok && payload.result) {
+              const matched = matchLearnedRule(
+                payload.result.merchantOrPayer,
+                `${payload.result.merchantOrPayer} ${payload.result.description}`,
+                dbNow.learnedReceiptRules ?? [],
+              );
+              finalResult = {
+                ...payload.result,
+                ...(matched
+                  ? {
+                      txType: matched.txType,
+                      category: matched.category,
+                      method: matched.method,
+                      matchedRule: matched.displayPattern,
+                    }
+                  : {}),
+                engine: "gemini",
+              };
+              setScanMeta({
+                angle: 0,
+                lang: "gemini",
+                passes: 1,
+                confidencePct: 0,
+              });
+              setRawText("");
+              setScanPct(100);
+              setScanStatus("Done");
+            }
           }
-          setEditing(true);
-          if (!(nextRecord.amount > 0)) {
-            setShowRawText(true);
-          }
+        } catch {
+          // Graceful automatic fallback to on-device OCR below
         }
 
+        // 2. Local Tesseract OCR fallback (offline / unconfigured key / transient error)
+        if (!finalResult) {
+          setScanPct(40);
+          setScanStatus("Running on-device OCR fallback…");
+          const localScan = await scanReceiptLocally(
+            file,
+            today(),
+            (pct, status) => {
+              setScanPct(pct);
+              setScanStatus(status);
+            },
+            {
+              rotationDeg: nextRot,
+              mode: nextMode,
+              context: {
+                ownerNames,
+                khrRate: s.khrRate,
+                learnedRules: dbNow.learnedReceiptRules ?? [],
+                defaultAccount: activeAccount,
+              },
+            },
+          );
+          finalResult = localScan.result;
+          previewOut = localScan.previewDataUrl;
+          thumbUrl = localScan.thumbDataUrl;
+          setPreviewUrl(previewOut);
+          setRawText(localScan.rawText);
+          setScanMeta({
+            angle: localScan.detectedAngleDeg,
+            lang: localScan.engineLang,
+            passes: localScan.passes,
+            confidencePct: localScan.ocrConfidence,
+          });
+        }
+
+        if (!finalResult) {
+          throw new Error("Could not read receipt text cleanly.");
+        }
+
+        const resolvedType =
+          scanDirection === "auto" ? finalResult.txType : scanDirection;
+        const resolvedAccount: Account = finalResult.account || activeAccount;
+        setActiveAccount(resolvedAccount);
+
+        const resolvedCategory = resolveCategoryForAccount(
+          resolvedType,
+          resolvedAccount,
+          finalResult.category,
+        );
+
+        const isAmbiguous =
+          Boolean(finalResult.ambiguous) || !(finalResult.amount > 0);
+
+        const nextRecord: RecordedRecord = {
+          id: uid(),
+          txType: resolvedType,
+          account: resolvedAccount,
+          amount: finalResult.amount,
+          currency: finalResult.currency,
+          date: finalResult.date || today(),
+          merchantOrPayer: finalResult.merchantOrPayer,
+          description: finalResult.description,
+          method: finalResult.method,
+          category: resolvedCategory,
+          reference: finalResult.reference,
+          confidence: finalResult.confidence,
+          notes: finalResult.notes,
+          receiptThumb: thumbUrl,
+          saved: false,
+          projectId: "",
+          matchedInvoiceId:
+            resolvedAccount === "Studio" &&
+            resolvedType === "income" &&
+            openInvoices.length === 1
+              ? openInvoices[0]!.inv.id
+              : "",
+          studioIncomeMode:
+            resolvedAccount === "Studio" &&
+            resolvedType === "income" &&
+            openInvoices.length === 1
+              ? "invoice"
+              : "unmatched",
+          ...(finalResult.subtotal !== undefined
+            ? { subtotal: finalResult.subtotal }
+            : {}),
+          ...(finalResult.tax !== undefined ? { tax: finalResult.tax } : {}),
+          ...(finalResult.change !== undefined
+            ? { change: finalResult.change }
+            : {}),
+          ...(finalResult.depositedAmount !== undefined
+            ? { depositedAmount: finalResult.depositedAmount }
+            : {}),
+          ...(finalResult.receivedAmount !== undefined
+            ? { receivedAmount: finalResult.receivedAmount }
+            : {}),
+          ...(isAmbiguous ? { ambiguous: true } : {}),
+          ...(finalResult.ambiguityReason
+            ? { ambiguityReason: finalResult.ambiguityReason }
+            : {}),
+          engine: finalResult.engine ?? "local-ocr",
+          matchedRule: finalResult.matchedRule,
+          mathVerified: finalResult.mathVerified,
+        };
+
+        // Never auto-save scanned transactions; always open review confirmation UI.
+        setEditing(true);
+        if (!(nextRecord.amount > 0) && rawText) {
+          setShowRawText(true);
+        }
         setRecord(nextRecord);
       } catch (err) {
         const msg =
@@ -425,11 +721,21 @@ export function ReceiptScannerDrawer({
             : "Could not read receipt text cleanly.";
         setErrorMsg(msg);
       } finally {
-        URL.revokeObjectURL(quickUrl);
+        if (quickUrl && typeof URL.revokeObjectURL === "function") {
+          URL.revokeObjectURL(quickUrl);
+        }
         setScanning(false);
       }
     },
-    [autoRecord, record, rotationDeg, scanDirection, scanMode],
+    [
+      activeAccount,
+      openInvoices,
+      rawText,
+      record,
+      rotationDeg,
+      scanDirection,
+      scanMode,
+    ],
   );
 
   // Pre-warm on-device AI worker quietly after drawer animation finishes
@@ -490,19 +796,29 @@ export function ReceiptScannerDrawer({
 
   const updateRecord = (patch: Partial<RecordedRecord>) => {
     if (!record) return;
-    const next: RecordedRecord = { ...record, ...patch, account: "Personal" };
-    if (next.txType === "income") {
-      if (
-        !PERSONAL_INCOME_SOURCES.includes(
-          next.category as (typeof PERSONAL_INCOME_SOURCES)[number],
-        )
-      ) {
-        next.category = "Other";
-      }
-    } else {
-      if (!PERSONAL_CATEGORIES.includes(next.category)) {
-        next.category = PERSONAL_CATEGORIES[0] ?? "Other";
-      }
+    const nextAccount = patch.account ?? record.account;
+    const nextType = patch.txType ?? record.txType;
+    const next: RecordedRecord = {
+      ...record,
+      ...patch,
+      account: nextAccount,
+      txType: nextType,
+    };
+
+    if (
+      patch.account !== undefined ||
+      patch.txType !== undefined ||
+      patch.category !== undefined
+    ) {
+      next.category = resolveCategoryForAccount(
+        next.txType,
+        next.account,
+        next.category,
+      );
+    }
+
+    if (patch.amount !== undefined && patch.amount > 0) {
+      setAmbiguityConfirmed(true);
     }
 
     const touchedLearning =
@@ -545,10 +861,12 @@ export function ReceiptScannerDrawer({
       ownerNames,
       khrRate: s.khrRate,
       learnedRules: dbNow.learnedReceiptRules ?? [],
+      defaultAccount: record.account,
     });
     const next: RecordedRecord = {
       ...record,
       txType: parsed.txType,
+      account: parsed.account,
       amount: parsed.amount,
       currency: parsed.currency,
       date: parsed.date || today(),
@@ -560,7 +878,12 @@ export function ReceiptScannerDrawer({
       confidence: parsed.confidence,
       matchedRule: parsed.matchedRule,
       mathVerified: parsed.mathVerified,
+      ...(parsed.ambiguous ? { ambiguous: true } : { ambiguous: false }),
+      ...(parsed.ambiguityReason
+        ? { ambiguityReason: parsed.ambiguityReason }
+        : {}),
     };
+    setAmbiguityConfirmed(false);
     if (next.saved) {
       persistRecordToStore(next, record.id);
     }
@@ -587,11 +910,30 @@ export function ReceiptScannerDrawer({
   const confirmManualSave = () => {
     if (!record) return;
     if (!(record.amount > 0)) {
-      toast.error("Enter an amount greater than 0.");
+      toast.error("Enter a confirmed amount greater than 0.");
       return;
     }
-    const savedRec: RecordedRecord = { ...record, saved: true };
-    persistRecordToStore(savedRec, record.saved ? record.id : undefined);
+    if (record.ambiguous && !ambiguityConfirmed) {
+      toast.error(
+        "Please verify the total amount against the receipt before saving.",
+      );
+      return;
+    }
+    if (
+      record.txType === "income" &&
+      record.account === "Studio" &&
+      record.studioIncomeMode === "invoice" &&
+      !record.matchedInvoiceId
+    ) {
+      toast.error("Select a Studio invoice or choose Unmatched Studio Income.");
+      return;
+    }
+
+    const savedAs = persistRecordToStore(
+      record,
+      record.saved ? record.id : undefined,
+    );
+    const savedRec: RecordedRecord = { ...record, saved: true, savedAs };
     setDB((d) => ({
       ...d,
       learnedReceiptRules: learnReceiptRule(d.learnedReceiptRules ?? [], {
@@ -603,7 +945,15 @@ export function ReceiptScannerDrawer({
     }));
     setRecord(savedRec);
     setEditing(false);
-    toast.success("Transaction saved.");
+    toast.success(
+      savedAs === "payment"
+        ? "Matched payment recorded to Studio invoice."
+        : savedAs === "studioIncome"
+          ? "Saved to Studio income ledger."
+          : savedAs === "personalIncome"
+            ? "Saved to Personal income."
+            : `Saved to ${savedRec.account} expenses.`,
+    );
   };
 
   const handleUndoDelete = () => {
@@ -625,39 +975,69 @@ export function ReceiptScannerDrawer({
     SCAN_MODES.find((m) => m.id === scanMode) ?? SCAN_MODES[0]!;
   const ActiveModeIcon = activeModeMeta.icon;
 
+  const activeCategoryChoices = record
+    ? record.txType === "income"
+      ? record.account === "Studio"
+        ? [...STUDIO_INCOME_SOURCES]
+        : [...PERSONAL_INCOME_SOURCES]
+      : record.account === "Studio"
+        ? [...EXPENSE_CATEGORIES]
+        : [...PERSONAL_CATEGORIES]
+    : [];
+
+  const needsAmbiguityCheck = Boolean(
+    record && !record.saved && (record.ambiguous || !(record.amount > 0)),
+  );
+  const canConfirmSave = Boolean(
+    record &&
+    record.amount > 0 &&
+    (!record.ambiguous || ambiguityConfirmed) &&
+    !(
+      record.txType === "income" &&
+      record.account === "Studio" &&
+      record.studioIncomeMode === "invoice" &&
+      !record.matchedInvoiceId
+    ),
+  );
+
   return (
     <>
       <SlideDrawer
         open={open}
         onClose={handleClose}
         title="Scan or Quick Log"
-        subtitle="Personal Money · AI OCR & Manual"
+        subtitle={`${activeAccount} Workspace · Review Before Saving`}
         widthClass="max-w-lg"
       >
         <div className="space-y-3.5">
-          {/* Controls Bar: Auto-save + OCR Focus + Scan As Direction */}
+          {/* Controls Bar: Account Switch + OCR Focus + Direction Bias */}
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setAutoRecord((a) => !a)}
-                aria-pressed={autoRecord}
-                className={cn(
-                  "inline-flex min-h-[40px] items-center gap-1.5 rounded-full border px-3.5 text-xs font-semibold transition-all active:scale-95",
-                  autoRecord
-                    ? "border-positive/45 bg-positive/15 text-positive"
-                    : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
-                )}
-              >
-                <Zap className="h-3.5 w-3.5" />
-                <span>{autoRecord ? "Auto-save" : "Review first"}</span>
-              </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <SlidingTabs
+                size="xs"
+                layoutGroup="scan-workspace-account"
+                value={activeAccount}
+                onChange={(nextAcc) => {
+                  setActiveAccount(nextAcc);
+                  if (record && !record.saved) {
+                    updateRecord({ account: nextAcc });
+                  }
+                }}
+                options={[
+                  { id: "Personal" as Account, label: "Personal", icon: User },
+                  {
+                    id: "Studio" as Account,
+                    label: "Studio",
+                    icon: Briefcase,
+                  },
+                ]}
+              />
 
               <button
                 type="button"
                 onClick={cycleScanMode}
                 title="Tap to cycle OCR focus: Auto, Khmer, Script"
-                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-full border border-border bg-muted/45 px-3.5 text-xs font-medium text-foreground transition-all hover:border-primary/45 active:scale-95"
+                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-border bg-muted/45 px-3 text-xs font-medium text-foreground transition-all hover:border-primary/45 active:scale-95"
               >
                 <ActiveModeIcon className="h-3.5 w-3.5 text-primary" />
                 <span>{activeModeMeta.label}</span>
@@ -675,6 +1055,14 @@ export function ReceiptScannerDrawer({
                 { id: "income", label: "Income" },
               ]}
             />
+          </div>
+
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-primary/25 bg-primary/8 px-3 py-2 text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+              <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+              Always confirms with you before saving
+            </span>
+            <span className="text-[0.68rem]">Gemini + On-device OCR</span>
           </div>
 
           {/* Hidden File Inputs */}
@@ -708,7 +1096,7 @@ export function ReceiptScannerDrawer({
             }}
           />
 
-          {/* Clean Capture Card + Prominent Manual Entry (Idle) */}
+          {/* Capture Card + Manual Entry (Idle) */}
           {!scanning && !record && (
             <>
               <div
@@ -737,10 +1125,10 @@ export function ReceiptScannerDrawer({
                   <ScanLine className="h-6 w-6" />
                 </div>
                 <h3 className="font-display text-base font-bold text-foreground">
-                  Snap or upload slip
+                  Snap or upload slip ({activeAccount})
                 </h3>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  Reads receipts, bank transfers &amp; income slips (KH + EN)
+                  Reads POS receipts, bank transfers &amp; Khmer/English slips
                 </p>
 
                 <div className="mt-4 grid grid-cols-2 gap-2.5">
@@ -830,7 +1218,9 @@ export function ReceiptScannerDrawer({
 
               {/* Large Thumb-Friendly Manual Entry Triggers */}
               <div className="space-y-2">
-                <p className="label-mono px-1">Or log manually</p>
+                <p className="label-mono px-1">
+                  Or log manually ({activeAccount})
+                </p>
                 <div className="grid grid-cols-2 gap-2.5">
                   <button
                     type="button"
@@ -845,7 +1235,7 @@ export function ReceiptScannerDrawer({
                         Manual Expense
                       </p>
                       <p className="truncate text-[0.7rem] text-muted-foreground">
-                        Spending &amp; bills
+                        {activeAccount} spending
                       </p>
                     </div>
                   </button>
@@ -863,7 +1253,9 @@ export function ReceiptScannerDrawer({
                         Manual Income
                       </p>
                       <p className="truncate text-[0.7rem] text-muted-foreground">
-                        Salary, draw &amp; pay
+                        {activeAccount === "Studio"
+                          ? "Studio receipt"
+                          : "Salary, draw & pay"}
                       </p>
                     </div>
                   </button>
@@ -936,7 +1328,7 @@ export function ReceiptScannerDrawer({
             </div>
           )}
 
-          {/* Scanned Result & Quick 1-Tap Adjustments */}
+          {/* Scanned Result & Explicit Confirmation Review */}
           {record && !scanning && (
             <div className="space-y-3">
               {previewUrl && (
@@ -987,6 +1379,40 @@ export function ReceiptScannerDrawer({
                 </div>
               )}
 
+              {/* Ambiguity / Missing Amount Gate */}
+              {needsAmbiguityCheck && (
+                <div className="space-y-2 rounded-2xl border border-amber-500/45 bg-amber-500/12 p-3 text-xs">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+                    <div className="space-y-1">
+                      <p className="font-semibold text-foreground">
+                        Manual verification required
+                      </p>
+                      <p className="text-muted-foreground">
+                        {record.ambiguityReason ||
+                          "The receipt amount is missing or unclear. Edit the amount and verify against the slip before saving."}
+                      </p>
+                    </div>
+                  </div>
+                  {record.amount > 0 && record.ambiguous && (
+                    <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-amber-500/30 bg-background/60 px-2.5 py-2 font-medium text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={ambiguityConfirmed}
+                        onChange={(e) =>
+                          setAmbiguityConfirmed(e.target.checked)
+                        }
+                        className="h-4 w-4 accent-primary"
+                      />
+                      <span>
+                        I verified the final total (
+                        {money(record.amount, record.currency)}) on the receipt
+                      </span>
+                    </label>
+                  )}
+                </div>
+              )}
+
               {/* Summary Card */}
               <div
                 className={cn(
@@ -1015,11 +1441,25 @@ export function ReceiptScannerDrawer({
                       )}
                     </span>
                     <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
-                        {record.txType === "income" ? "Income" : "Expense"} ·{" "}
-                        {record.saved ? "Saved" : "Review"}
-                        {record.confidence !== "high" ? " · Verify" : ""}
-                      </p>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+                          {record.account} ·{" "}
+                          {record.txType === "income" ? "Income" : "Expense"} ·{" "}
+                          {record.saved ? "Saved" : "Review"}
+                        </p>
+                        <span
+                          className={cn(
+                            "rounded-md px-1.5 py-0.5 text-[0.62rem] font-semibold",
+                            record.confidence === "high"
+                              ? "bg-positive/18 text-positive"
+                              : record.confidence === "medium"
+                                ? "bg-amber-500/18 text-amber-400"
+                                : "bg-destructive/18 text-destructive",
+                          )}
+                        >
+                          {record.confidence} conf.
+                        </span>
+                      </div>
                       <button
                         type="button"
                         onClick={() => setEditing((v) => !v)}
@@ -1046,19 +1486,81 @@ export function ReceiptScannerDrawer({
                       </button>
                     </div>
                   </div>
-                  {scanMeta && (
-                    <span className="font-num shrink-0 text-[0.68rem] font-medium text-muted-foreground">
-                      {scanMeta.lang === "eng+khm" ? "KH+EN" : "EN"} ·{" "}
-                      {scanMeta.passes}×
-                      {scanMeta.confidencePct > 0
-                        ? ` · ${scanMeta.confidencePct}%`
-                        : ""}
-                      {scanMeta.angle !== 0
-                        ? ` · ${scanMeta.angle > 0 ? "+" : ""}${scanMeta.angle.toFixed(0)}°`
-                        : ""}
+                  <div className="flex shrink-0 flex-col items-end gap-0.5 text-right">
+                    <span className="inline-flex items-center gap-1 rounded-md border border-border/70 bg-background/50 px-1.5 py-0.5 text-[0.64rem] font-semibold text-foreground">
+                      {record.engine === "gemini" ? (
+                        <>
+                          <Sparkles className="h-3 w-3 text-primary" />
+                          Gemini Vision
+                        </>
+                      ) : (
+                        <>
+                          <Cpu className="h-3 w-3 text-muted-foreground" />
+                          On-device OCR
+                        </>
+                      )}
                     </span>
-                  )}
+                    {scanMeta && record.engine === "local-ocr" && (
+                      <span className="font-num text-[0.65rem] font-medium text-muted-foreground">
+                        {scanMeta.lang === "eng+khm" ? "KH+EN" : "EN"} ·{" "}
+                        {scanMeta.passes}×
+                        {scanMeta.confidencePct > 0
+                          ? ` · ${scanMeta.confidencePct}%`
+                          : ""}
+                      </span>
+                    )}
+                  </div>
                 </div>
+
+                {/* Extracted Subtotal / Tax / Change / Deposited / Received breakdown */}
+                {(record.subtotal !== undefined ||
+                  record.tax !== undefined ||
+                  record.change !== undefined ||
+                  record.depositedAmount !== undefined ||
+                  record.receivedAmount !== undefined) && (
+                  <div className="mt-2 flex flex-wrap gap-1.5 border-t border-border/40 pt-2 text-[0.68rem]">
+                    {record.subtotal !== undefined && (
+                      <span className="font-num rounded-md bg-background/50 px-2 py-0.5 text-muted-foreground">
+                        Subtotal:{" "}
+                        <b className="text-foreground">
+                          {money(record.subtotal, record.currency)}
+                        </b>
+                      </span>
+                    )}
+                    {record.tax !== undefined && (
+                      <span className="font-num rounded-md bg-background/50 px-2 py-0.5 text-muted-foreground">
+                        Tax:{" "}
+                        <b className="text-foreground">
+                          {money(record.tax, record.currency)}
+                        </b>
+                      </span>
+                    )}
+                    {record.change !== undefined && (
+                      <span className="font-num rounded-md bg-background/50 px-2 py-0.5 text-muted-foreground">
+                        Change:{" "}
+                        <b className="text-foreground">
+                          {money(record.change, record.currency)}
+                        </b>
+                      </span>
+                    )}
+                    {record.depositedAmount !== undefined && (
+                      <span className="font-num rounded-md bg-background/50 px-2 py-0.5 text-muted-foreground">
+                        Deposited:{" "}
+                        <b className="text-foreground">
+                          {money(record.depositedAmount, record.currency)}
+                        </b>
+                      </span>
+                    )}
+                    {record.receivedAmount !== undefined && (
+                      <span className="font-num rounded-md bg-background/50 px-2 py-0.5 text-muted-foreground">
+                        Received:{" "}
+                        <b className="text-foreground">
+                          {money(record.receivedAmount, record.currency)}
+                        </b>
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                   <span className="inline-flex items-center gap-1 font-medium text-foreground">
@@ -1100,9 +1602,19 @@ export function ReceiptScannerDrawer({
                     : ""}
                 </p>
 
-                {/* 1-Tap Expense/Income + Debit/Credit + OCR link */}
+                {/* Account + Direction + Method + OCR inspector controls */}
                 <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-3">
                   <div className="flex flex-wrap items-center gap-1.5">
+                    <SlidingTabs
+                      size="xs"
+                      layoutGroup="scan-res-account"
+                      value={record.account}
+                      onChange={(v) => updateRecord({ account: v })}
+                      options={[
+                        { id: "Personal" as Account, label: "Personal" },
+                        { id: "Studio" as Account, label: "Studio" },
+                      ]}
+                    />
                     <SlidingTabs
                       size="xs"
                       layoutGroup="scan-res-type"
@@ -1113,7 +1625,7 @@ export function ReceiptScannerDrawer({
                         { id: "income", label: "In" },
                       ]}
                     />
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1">
                       {(record.txType === "income"
                         ? PERSONAL_INCOME_METHODS
                         : CARD_METHODS
@@ -1125,7 +1637,7 @@ export function ReceiptScannerDrawer({
                             type="button"
                             onClick={() => updateRecord({ method: m })}
                             className={cn(
-                              "min-h-[36px] rounded-full border px-3 text-xs font-semibold transition-colors",
+                              "min-h-[34px] rounded-full border px-2.5 text-xs font-semibold transition-colors",
                               active
                                 ? "border-primary bg-primary text-primary-foreground"
                                 : "border-border bg-card/60 text-muted-foreground hover:text-foreground",
@@ -1137,27 +1649,92 @@ export function ReceiptScannerDrawer({
                       })}
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowRawText((v) => !v)}
-                    className="inline-flex min-h-[36px] items-center gap-1 px-2 text-xs font-medium text-primary hover:underline"
-                  >
-                    <span>OCR</span>
-                    <ChevronDown
-                      className={cn(
-                        "h-3.5 w-3.5 transition-transform",
-                        showRawText && "rotate-180",
-                      )}
-                    />
-                  </button>
+                  {rawText && (
+                    <button
+                      type="button"
+                      onClick={() => setShowRawText((v) => !v)}
+                      className="inline-flex min-h-[34px] items-center gap-1 px-2 text-xs font-medium text-primary hover:underline"
+                    >
+                      <span>OCR</span>
+                      <ChevronDown
+                        className={cn(
+                          "h-3.5 w-3.5 transition-transform",
+                          showRawText && "rotate-180",
+                        )}
+                      />
+                    </button>
+                  )}
                 </div>
 
-                {/* 1-Tap Category Chips */}
+                {/* Studio Income Invoice Matcher vs Unmatched Studio Income */}
+                {record.account === "Studio" && record.txType === "income" && (
+                  <div className="mt-3 space-y-2 rounded-xl border border-primary/35 bg-background/55 p-3">
+                    <p className="label-mono">Studio income destination</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateRecord({
+                            studioIncomeMode: "invoice",
+                            matchedInvoiceId:
+                              record.matchedInvoiceId ||
+                              openInvoices[0]?.inv.id ||
+                              "",
+                          })
+                        }
+                        disabled={openInvoices.length === 0}
+                        className={cn(
+                          "rounded-xl border px-2.5 py-2 text-left text-xs font-semibold transition-colors disabled:opacity-45",
+                          record.studioIncomeMode === "invoice"
+                            ? "border-primary bg-primary/15 text-primary"
+                            : "border-border bg-card/50 text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        Match Invoice ({openInvoices.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          updateRecord({
+                            studioIncomeMode: "unmatched",
+                            matchedInvoiceId: "",
+                          })
+                        }
+                        className={cn(
+                          "rounded-xl border px-2.5 py-2 text-left text-xs font-semibold transition-colors",
+                          record.studioIncomeMode !== "invoice"
+                            ? "border-primary bg-primary/15 text-primary"
+                            : "border-border bg-card/50 text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        Unmatched Studio Income
+                      </button>
+                    </div>
+                    {record.studioIncomeMode === "invoice" &&
+                      openInvoices.length > 0 && (
+                        <select
+                          aria-label="Match Studio invoice"
+                          value={record.matchedInvoiceId || ""}
+                          onChange={(e) =>
+                            updateRecord({ matchedInvoiceId: e.target.value })
+                          }
+                          className="field h-10 text-xs"
+                        >
+                          <option value="">Choose unpaid invoice…</option>
+                          {openInvoices.map(({ inv, view, clientName }) => (
+                            <option key={inv.id} value={inv.id}>
+                              {inv.no} · {clientName} · Due{" "}
+                              {money(view.balance, inv.currency)}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                  </div>
+                )}
+
+                {/* 1-Tap Category / Source Chips */}
                 <div className="no-scrollbar mt-2.5 flex flex-nowrap items-center gap-1.5 overflow-x-auto pb-0.5">
-                  {(record.txType === "income"
-                    ? PERSONAL_INCOME_SOURCES
-                    : PERSONAL_CATEGORIES
-                  ).map((cat) => {
+                  {activeCategoryChoices.map((cat) => {
                     const Icon =
                       record.txType === "income"
                         ? incomeSourceIcon(cat)
@@ -1206,11 +1783,12 @@ export function ReceiptScannerDrawer({
                 </div>
               )}
 
-              {/* Compact Field Editor (when editing or before save) */}
+              {/* Full Editable Field Review */}
               {(editing || !record.saved) && (
                 <div className="grid grid-cols-2 gap-2.5 rounded-2xl border border-border bg-muted/35 p-3">
                   <F label="Amount" className="col-span-1">
                     <input
+                      aria-label="Receipt amount"
                       type="number"
                       step="any"
                       inputMode="decimal"
@@ -1242,6 +1820,7 @@ export function ReceiptScannerDrawer({
                   </F>
                   <F label="Date" className="col-span-1">
                     <input
+                      aria-label="Receipt date"
                       type="date"
                       className="field font-num"
                       value={record.date}
@@ -1250,6 +1829,7 @@ export function ReceiptScannerDrawer({
                   </F>
                   <F label="Merchant / Payer" className="col-span-1">
                     <input
+                      aria-label="Merchant or payer"
                       className="field"
                       value={record.merchantOrPayer}
                       onChange={(e) =>
@@ -1257,8 +1837,40 @@ export function ReceiptScannerDrawer({
                       }
                     />
                   </F>
+                  <F label="Reference / ID" className="col-span-1">
+                    <input
+                      aria-label="Transaction reference"
+                      className="field font-num"
+                      value={record.reference}
+                      onChange={(e) =>
+                        updateRecord({ reference: e.target.value })
+                      }
+                    />
+                  </F>
+                  {record.account === "Studio" &&
+                    record.txType === "expense" &&
+                    db.projects.length > 0 && (
+                      <F label="Project (optional)" className="col-span-1">
+                        <select
+                          aria-label="Studio project"
+                          className="field text-xs"
+                          value={record.projectId || ""}
+                          onChange={(e) =>
+                            updateRecord({ projectId: e.target.value })
+                          }
+                        >
+                          <option value="">General overhead</option>
+                          {db.projects.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.code} · {p.name}
+                            </option>
+                          ))}
+                        </select>
+                      </F>
+                    )}
                   <F label="Note" className="col-span-2">
                     <input
+                      aria-label="Transaction note"
                       className="field"
                       value={record.description}
                       onChange={(e) =>
@@ -1317,10 +1929,11 @@ export function ReceiptScannerDrawer({
                     <Btn
                       type="button"
                       variant="gold"
+                      disabled={!canConfirmSave}
                       onClick={confirmManualSave}
                     >
                       <CheckCircle2 className="h-4 w-4" />
-                      Save
+                      Confirm &amp; Save
                     </Btn>
                   </>
                 )}
@@ -1334,18 +1947,17 @@ export function ReceiptScannerDrawer({
         item={manualDraft}
         onClose={() => setManualDraft(null)}
         onSave={(v) => {
-          const savedItem: Expense = { ...v, account: "Personal" };
           setDB((d) => ({
             ...d,
-            expenses: [...d.expenses, savedItem],
+            expenses: [...d.expenses, v],
           }));
-          toast.success("Expense saved.", {
+          toast.success(`${v.account || "Personal"} expense saved.`, {
             action: {
               label: "Undo",
               onClick: () =>
                 setDB((d) => ({
                   ...d,
-                  expenses: d.expenses.filter((x) => x.id !== savedItem.id),
+                  expenses: d.expenses.filter((x) => x.id !== v.id),
                 })),
             },
           });
@@ -1360,13 +1972,36 @@ export function ReceiptScannerDrawer({
             ...d,
             personalIncome: [...(d.personalIncome ?? []), v],
           }));
-          toast.success("Income saved.", {
+          toast.success("Personal income saved.", {
             action: {
               label: "Undo",
               onClick: () =>
                 setDB((d) => ({
                   ...d,
                   personalIncome: (d.personalIncome ?? []).filter(
+                    (x) => x.id !== v.id,
+                  ),
+                })),
+            },
+          });
+        }}
+      />
+
+      <QuickStudioIncomeDrawer
+        item={manualStudioIncomeDraft}
+        onClose={() => setManualStudioIncomeDraft(null)}
+        onSave={(v) => {
+          setDB((d) => ({
+            ...d,
+            studioIncome: [...(d.studioIncome ?? []), v],
+          }));
+          toast.success("Studio income saved.", {
+            action: {
+              label: "Undo",
+              onClick: () =>
+                setDB((d) => ({
+                  ...d,
+                  studioIncome: (d.studioIncome ?? []).filter(
                     (x) => x.id !== v.id,
                   ),
                 })),

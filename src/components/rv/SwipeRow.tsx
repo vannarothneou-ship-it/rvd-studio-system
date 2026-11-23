@@ -57,12 +57,17 @@ export function SwipeRow({
     };
   }, []);
 
-  const delOpacity = useTransform(x, [-ACTION_W, -24, 0], [1, 0.6, 0]);
-  const delScale = useTransform(x, [-COMMIT_AT, -ACTION_W, 0], [1.25, 1, 0.7]);
-  const editOpacity = useTransform(x, [0, 24, ACTION_W], [0, 0.6, 1]);
+  const delOpacity = useTransform(x, [-ACTION_W, -20, 0], [1, 0.72, 0]);
+  const delScale = useTransform(x, [-COMMIT_AT, -ACTION_W, 0], [1.18, 1, 0.78]);
+  const editOpacity = useTransform(x, [0, 20, ACTION_W], [0, 0.72, 1]);
+  const editScale = useTransform(
+    x,
+    [0, ACTION_W, ACTION_W + 40],
+    [0.78, 1, 1.08],
+  );
 
   const settle = (to: number) =>
-    animate(x, to, { type: "spring", stiffness: 520, damping: 42 });
+    animate(x, to, { type: "spring", stiffness: 580, damping: 42, mass: 0.85 });
 
   const remove = () => {
     if (deletingRef.current) return;
@@ -71,7 +76,7 @@ export function SwipeRow({
     setGone(true);
     // let the collapse animation finish, then call the real delete
     window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => onDelete?.(), 220);
+    timerRef.current = window.setTimeout(() => onDelete?.(), 200);
   };
 
   const onDrag = () => {
@@ -87,12 +92,12 @@ export function SwipeRow({
     const cur = x.get();
     const fling = info.velocity.x;
     crossed.current = false;
-    if (onDelete && (cur < -COMMIT_AT || fling < -900)) {
-      animate(x, -480, { duration: 0.18 });
+    if (onDelete && (cur < -COMMIT_AT || fling < -850)) {
+      animate(x, -480, { duration: 0.16, ease: [0.32, 0.72, 0, 1] });
       remove();
-    } else if (onDelete && cur < -ACTION_W / 2) {
+    } else if (onDelete && (cur < -ACTION_W / 2 || fling < -320)) {
       settle(-ACTION_W);
-    } else if (onEdit && cur > ACTION_W / 2) {
+    } else if (onEdit && (cur > ACTION_W / 2 || fling > 320)) {
       settle(ACTION_W);
     } else {
       settle(0);
@@ -110,7 +115,7 @@ export function SwipeRow({
       animate={
         gone ? { height: 0, opacity: 0 } : { height: "auto", opacity: 1 }
       }
-      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: 0.18, ease: [0.32, 0.72, 0, 1] }}
       className={cn("relative overflow-hidden rounded-xl", className)}
     >
       {/* Edit action (revealed by swiping right) */}
@@ -123,9 +128,17 @@ export function SwipeRow({
             settle(0);
             onEdit();
           }}
-          className="absolute inset-y-0 left-0 grid place-items-center bg-primary text-primary-foreground"
+          className="absolute inset-y-0 left-0 flex flex-col items-center justify-center gap-0.5 bg-primary text-primary-foreground"
         >
-          <Pencil className="h-5 w-5" />
+          <motion.span
+            style={{ scale: editScale }}
+            className="flex flex-col items-center gap-0.5"
+          >
+            <Pencil className="h-4 w-4" />
+            <span className="text-[0.62rem] font-semibold tracking-tight">
+              Edit
+            </span>
+          </motion.span>
         </motion.button>
       ) : null}
 
@@ -136,10 +149,16 @@ export function SwipeRow({
           aria-label="Delete"
           style={{ opacity: delOpacity }}
           onClick={remove}
-          className="absolute inset-y-0 right-0 flex w-full items-center justify-end bg-destructive pr-7 text-destructive-foreground"
+          className="absolute inset-y-0 right-0 flex w-full items-center justify-end bg-destructive pr-5 text-destructive-foreground"
         >
-          <motion.span style={{ scale: delScale }}>
-            <Trash2 className="h-5 w-5" />
+          <motion.span
+            style={{ scale: delScale }}
+            className="flex w-12 flex-col items-center gap-0.5"
+          >
+            <Trash2 className="h-4 w-4" />
+            <span className="text-[0.62rem] font-semibold tracking-tight">
+              Delete
+            </span>
           </motion.span>
         </motion.button>
       ) : null}
@@ -148,8 +167,10 @@ export function SwipeRow({
         drag="x"
         dragDirectionLock
         dragConstraints={{ left: 0, right: 0 }}
-        dragElastic={{ left: 0.55, right: onEdit ? 0.4 : 0 }}
+        dragElastic={{ left: 0.52, right: onEdit ? 0.38 : 0 }}
         style={{ x, touchAction: "pan-y" }}
+        whileTap={{ scale: 0.988 }}
+        transition={{ type: "spring", stiffness: 600, damping: 38 }}
         onDrag={onDrag}
         onDragEnd={onDragEnd}
         onClickCapture={(e) => {

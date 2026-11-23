@@ -27,15 +27,45 @@ export async function saveMediaBlob(
   dataUrl: string,
 ): Promise<void> {
   const db = await openMediaDB();
-  if (!db) return;
-  return new Promise((resolve) => {
+  if (!db) {
+    throw new Error("Browser IndexedDB storage is unavailable on this device.");
+  }
+  return new Promise((resolve, reject) => {
     try {
       const tx = db.transaction(STORE_NAME, "readwrite");
       tx.objectStore(STORE_NAME).put(dataUrl, id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
-    } catch {
-      resolve();
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        const err = tx.error;
+        db.close();
+        const isQuota =
+          err?.name === "QuotaExceededError" ||
+          /quota/i.test(err?.message ?? "");
+        reject(
+          new Error(
+            isQuota
+              ? "Device media storage quota exceeded. Export a backup or remove unused attachments."
+              : err?.message || "Failed to save attachment to IndexedDB.",
+          ),
+        );
+      };
+      tx.onabort = () => {
+        const err = tx.error;
+        db.close();
+        reject(
+          new Error(err?.message || "Attachment save aborted by browser."),
+        );
+      };
+    } catch (err) {
+      db.close();
+      reject(
+        err instanceof Error
+          ? err
+          : new Error("Failed to write attachment to IndexedDB."),
+      );
     }
   });
 }
@@ -50,7 +80,11 @@ export async function loadMediaBlob(id: string): Promise<string | null> {
       req.onsuccess = () =>
         resolve(typeof req.result === "string" ? req.result : null);
       req.onerror = () => resolve(null);
+      tx.oncomplete = () => db.close();
+      tx.onerror = () => db.close();
+      tx.onabort = () => db.close();
     } catch {
+      db.close();
       resolve(null);
     }
   });
@@ -61,7 +95,11 @@ export async function exportMediaBlobs(
 ): Promise<Record<string, string>> {
   const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
   const db = await openMediaDB();
-  if (!db || uniqueIds.length === 0) return {};
+  if (!db) return {};
+  if (uniqueIds.length === 0) {
+    db.close();
+    return {};
+  }
   try {
     const entries = await Promise.all(
       uniqueIds.map(
@@ -134,12 +172,134 @@ export async function deleteMediaBlob(id: string): Promise<void> {
     try {
       const tx = db.transaction(STORE_NAME, "readwrite");
       tx.objectStore(STORE_NAME).delete(id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve();
+      };
+      tx.onabort = () => {
+        db.close();
+        resolve();
+      };
     } catch {
+      db.close();
       resolve();
     }
   });
+}
+
+export async function listMediaBlobIds(): Promise<string[]> {
+  const db = await openMediaDB();
+  if (!db) return [];
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE_NAME, "readonly");
+      const req = tx.objectStore(STORE_NAME).getAllKeys();
+      req.onsuccess = () =>
+        resolve(
+          Array.isArray(req.result)
+            ? req.result.map((k) => String(k)).filter(Boolean)
+            : [],
+        );
+      req.onerror = () => resolve([]);
+      tx.oncomplete = () => db.close();
+      tx.onerror = () => db.close();
+      tx.onabort = () => db.close();
+    } catch {
+      db.close();
+      resolve([]);
+    }
+  });
+}
+
+export async function purgeOrphanedMediaBlobs(
+  referencedIds: Set<string>,
+): Promise<number> {
+  const existing = await listMediaBlobIds();
+  const orphans = existing.filter((id) => !referencedIds.has(id));
+  if (orphans.length === 0) return 0;
+  const db = await openMediaDB();
+  if (!db) return 0;
+  return new Promise((resolve) => {
+    try {
+      const tx = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      for (const id of orphans) store.delete(id);
+      tx.oncomplete = () => {
+        db.close();
+        resolve(orphans.length);
+      };
+      tx.onerror = () => {
+        db.close();
+        resolve(0);
+      };
+      tx.onabort = () => {
+        db.close();
+        resolve(0);
+      };
+    } catch {
+      db.close();
+      resolve(0);
+    }
+  });
+}
+
+export interface StorageHealthReport {
+  localStorageBytes: number;
+  idbTotalBlobs: number;
+  idbOrphanBlobs: number;
+  browserUsageBytes: number | null;
+  browserQuotaBytes: number | null;
+}
+
+export async function getStorageHealth(
+  referencedIds: Set<string>,
+): Promise<StorageHealthReport> {
+  let localStorageBytes = 0;
+  try {
+    if (typeof localStorage !== "undefined") {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (!k) continue;
+        const v = localStorage.getItem(k) ?? "";
+        localStorageBytes += (k.length + v.length) * 2;
+      }
+    }
+  } catch {
+    localStorageBytes = 0;
+  }
+
+  const existingIds = await listMediaBlobIds();
+  const idbOrphanBlobs = existingIds.filter(
+    (id) => !referencedIds.has(id),
+  ).length;
+
+  let browserUsageBytes: number | null = null;
+  let browserQuotaBytes: number | null = null;
+  try {
+    if (
+      typeof navigator !== "undefined" &&
+      navigator.storage &&
+      typeof navigator.storage.estimate === "function"
+    ) {
+      const est = await navigator.storage.estimate();
+      if (typeof est.usage === "number") browserUsageBytes = est.usage;
+      if (typeof est.quota === "number") browserQuotaBytes = est.quota;
+    }
+  } catch {
+    /* ignore unsupported storage.estimate */
+  }
+
+  return {
+    localStorageBytes,
+    idbTotalBlobs: existingIds.length,
+    idbOrphanBlobs,
+    browserUsageBytes,
+    browserQuotaBytes,
+  };
 }
 
 async function readFileAsDataUrl(file: File): Promise<string> {

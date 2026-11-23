@@ -545,6 +545,7 @@ function Invoices() {
         pageKey="invoices"
         widgets={widgets}
         editing={editingLayout}
+        onToggleEditing={() => setEditingLayout((e) => !e)}
         onDoneEditing={() => setEditingLayout(false)}
       />
     </>

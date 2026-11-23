@@ -4,8 +4,9 @@ import {
   expenseAccount,
   isInvoice,
   previousMonth,
+  recordToUSD,
+  safeKhrRate,
   shortDate,
-  toUSD,
   today,
   type Account,
   type DB,
@@ -252,7 +253,7 @@ export function buildMoneyFlowData(
   const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
     ? anchorMonth
     : today().slice(0, 7);
-  const r = db.settings.khrRate || 4100;
+  const r = safeKhrRate(db.settings.khrRate);
   const anchorDay = resolveFlowAnchorDay(db, ym);
 
   let inCurrent: (date: string) => boolean;
@@ -302,17 +303,18 @@ export function buildMoneyFlowData(
     );
     for (const p of db.payments) {
       if (!invIds.has(p.invoiceId) || !inCurrent(p.date)) continue;
-      addSource("Client work", toUSD(p.amount, p.currency, r));
+      addSource("Client work", recordToUSD(p, r));
+    }
+    for (const sinc of db.studioIncome ?? []) {
+      if (!inCurrent(sinc.date)) continue;
+      addSource(sinc.source || "Studio income", recordToUSD(sinc, r));
     }
   }
 
   if (accountScope === "all" || accountScope === "Personal") {
     for (const inc of db.personalIncome ?? []) {
       if (!inCurrent(inc.date)) continue;
-      addSource(
-        inc.source || "Personal income",
-        toUSD(inc.amount, inc.currency, r),
-      );
+      addSource(inc.source || "Personal income", recordToUSD(inc, r));
     }
   }
 
@@ -384,7 +386,7 @@ export function buildMoneyFlowData(
   for (const e of db.expenses) {
     const acc = expenseAccount(e);
     if (accountScope !== "all" && acc !== accountScope) continue;
-    const usd = toUSD(e.amount, e.currency, r);
+    const usd = recordToUSD(e, r);
     if (usd <= 0) continue;
     if (inCurrent(e.date)) {
       ensureCat(acc, e.category).amount += usd;
@@ -622,32 +624,24 @@ export function buildMoneyFlowData(
     );
     for (const p of db.payments) {
       if (!invIds.has(p.invoiceId) || !inCurrent(p.date)) continue;
-      addTimelinePoint(
-        keyForDate(p.date),
-        "income",
-        toUSD(p.amount, p.currency, r),
-      );
+      addTimelinePoint(keyForDate(p.date), "income", recordToUSD(p, r));
+    }
+    for (const sinc of db.studioIncome ?? []) {
+      if (!inCurrent(sinc.date)) continue;
+      addTimelinePoint(keyForDate(sinc.date), "income", recordToUSD(sinc, r));
     }
   }
   if (accountScope === "all" || accountScope === "Personal") {
     for (const inc of db.personalIncome ?? []) {
       if (!inCurrent(inc.date)) continue;
-      addTimelinePoint(
-        keyForDate(inc.date),
-        "income",
-        toUSD(inc.amount, inc.currency, r),
-      );
+      addTimelinePoint(keyForDate(inc.date), "income", recordToUSD(inc, r));
     }
   }
   for (const e of db.expenses) {
     const acc = expenseAccount(e);
     if (accountScope !== "all" && acc !== accountScope) continue;
     if (!inCurrent(e.date)) continue;
-    addTimelinePoint(
-      keyForDate(e.date),
-      "spend",
-      toUSD(e.amount, e.currency, r),
-    );
+    addTimelinePoint(keyForDate(e.date), "spend", recordToUSD(e, r));
   }
 
   const timelinePoints: MoneyFlowTimelinePoint[] = slotKeys.map((k) => {
@@ -713,7 +707,7 @@ export function buildCategoryTimeline(
   range: CategoryTimelineRange,
   anchorMonth = today().slice(0, 7),
 ): CategoryTimelineResult {
-  const r = db.settings.khrRate || 4100;
+  const r = safeKhrRate(db.settings.khrRate);
   const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
     ? anchorMonth
     : today().slice(0, 7);
@@ -731,18 +725,15 @@ export function buildCategoryTimeline(
     const prevSet = new Set(getTrailingDays(prevEnd, 7));
 
     const items = allCategoryExpenses.filter((e) => curSet.has(e.date));
-    const totalUSD = items.reduce(
-      (s, e) => s + toUSD(e.amount, e.currency, r),
-      0,
-    );
+    const totalUSD = items.reduce((s, e) => s + recordToUSD(e, r), 0);
     const prevTotalUSD = allCategoryExpenses
       .filter((e) => prevSet.has(e.date))
-      .reduce((s, e) => s + toUSD(e.amount, e.currency, r), 0);
+      .reduce((s, e) => s + recordToUSD(e, r), 0);
 
     const byDay = new Map<string, { amount: number; count: number }>();
     for (const e of items) {
       const prev = byDay.get(e.date) ?? { amount: 0, count: 0 };
-      prev.amount += toUSD(e.amount, e.currency, r);
+      prev.amount += recordToUSD(e, r);
       prev.count += 1;
       byDay.set(e.date, prev);
     }
@@ -786,20 +777,17 @@ export function buildCategoryTimeline(
   if (range === "1m") {
     const prevYm = previousMonth(ym);
     const items = allCategoryExpenses.filter((e) => e.date.startsWith(ym));
-    const totalUSD = items.reduce(
-      (s, e) => s + toUSD(e.amount, e.currency, r),
-      0,
-    );
+    const totalUSD = items.reduce((s, e) => s + recordToUSD(e, r), 0);
     const prevTotalUSD = allCategoryExpenses
       .filter((e) => e.date.startsWith(prevYm))
-      .reduce((s, e) => s + toUSD(e.amount, e.currency, r), 0);
+      .reduce((s, e) => s + recordToUSD(e, r), 0);
 
     const [y, m] = ym.split("-").map(Number);
     const daysInMonth = y && m ? new Date(Date.UTC(y, m, 0)).getUTCDate() : 30;
     const byDay = new Map<string, { amount: number; count: number }>();
     for (const e of items) {
       const prev = byDay.get(e.date) ?? { amount: 0, count: 0 };
-      prev.amount += toUSD(e.amount, e.currency, r);
+      prev.amount += recordToUSD(e, r);
       prev.count += 1;
       byDay.set(e.date, prev);
     }
@@ -865,12 +853,12 @@ export function buildCategoryTimeline(
     for (const e of allCategoryExpenses) {
       const m = e.date.slice(0, 7);
       const prev = byMonth.get(m) ?? { amount: 0, count: 0 };
-      prev.amount += toUSD(e.amount, e.currency, r);
+      prev.amount += recordToUSD(e, r);
       prev.count += 1;
       byMonth.set(m, prev);
     }
     const totalUSD = allCategoryExpenses.reduce(
-      (s, e) => s + toUSD(e.amount, e.currency, r),
+      (s, e) => s + recordToUSD(e, r),
       0,
     );
     const points: CategoryTimelinePoint[] = months.map((m) => {
@@ -921,19 +909,16 @@ export function buildCategoryTimeline(
   const items = allCategoryExpenses.filter((e) =>
     curSet.has(e.date.slice(0, 7)),
   );
-  const totalUSD = items.reduce(
-    (s, e) => s + toUSD(e.amount, e.currency, r),
-    0,
-  );
+  const totalUSD = items.reduce((s, e) => s + recordToUSD(e, r), 0);
   const prevTotalUSD = allCategoryExpenses
     .filter((e) => prevSet.has(e.date.slice(0, 7)))
-    .reduce((s, e) => s + toUSD(e.amount, e.currency, r), 0);
+    .reduce((s, e) => s + recordToUSD(e, r), 0);
 
   const byMonth = new Map<string, { amount: number; count: number }>();
   for (const e of items) {
     const m = e.date.slice(0, 7);
     const prev = byMonth.get(m) ?? { amount: 0, count: 0 };
-    prev.amount += toUSD(e.amount, e.currency, r);
+    prev.amount += recordToUSD(e, r);
     prev.count += 1;
     byMonth.set(m, prev);
   }

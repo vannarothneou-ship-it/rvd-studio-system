@@ -17,6 +17,8 @@ import {
   PERSONAL_CATEGORIES,
   PERSONAL_INCOME_SOURCES,
   previousMonth,
+  recordToUSD,
+  safeKhrRate,
   toUSD,
   today,
   uid,
@@ -232,7 +234,7 @@ export function computeCentralIntelligence(
   db: DB,
   refDate: string = today(),
 ): CentralIntelligenceSnapshot {
-  const rate = db.settings.khrRate || 4100;
+  const rate = safeKhrRate(db.settings.khrRate);
   const month = refDate.slice(0, 7);
   const m1 = previousMonth(month);
   const m2 = previousMonth(m1);
@@ -252,15 +254,23 @@ export function computeCentralIntelligence(
   const invIds = new Set(db.invoices.filter(isInvoice).map((i) => i.id));
   for (const p of db.payments) {
     if (!invIds.has(p.invoiceId)) continue;
-    const usd = toUSD(p.amount, p.currency, rate);
+    const usd = recordToUSD(p, rate);
     studioInAll += usd;
     const ym = p.date.slice(0, 7);
     if (trailing3Months.has(ym)) trailing3In += usd;
     if (ym === month) thisMonthIn += usd;
   }
 
+  for (const sinc of db.studioIncome ?? []) {
+    const usd = recordToUSD(sinc, rate);
+    studioInAll += usd;
+    const ym = sinc.date.slice(0, 7);
+    if (trailing3Months.has(ym)) trailing3In += usd;
+    if (ym === month) thisMonthIn += usd;
+  }
+
   for (const inc of db.personalIncome ?? []) {
-    const usd = toUSD(inc.amount, inc.currency, rate);
+    const usd = recordToUSD(inc, rate);
     personalInAll += usd;
     const ym = inc.date.slice(0, 7);
     if (trailing3Months.has(ym)) trailing3In += usd;
@@ -271,7 +281,7 @@ export function computeCentralIntelligence(
   const personal3MoByCat = new Map<string, number>();
 
   for (const e of db.expenses) {
-    const usd = toUSD(e.amount, e.currency, rate);
+    const usd = recordToUSD(e, rate);
     const acc = expenseAccount(e);
     const ym = e.date.slice(0, 7);
     if (acc === "Studio") {
@@ -355,7 +365,7 @@ export function computeCentralIntelligence(
         unbilledQuotedUSD += toUSD(
           invoiceTotals(inv).total,
           inv.currency,
-          rate,
+          safeKhrRate(inv.exchangeRate ?? rate),
         );
       }
     }
@@ -1227,7 +1237,7 @@ export function askCentralDB(
   routeHint?: { label: string; to: string };
 } {
   const q = question.trim().toLowerCase();
-  const rate = db.settings.khrRate || 4100;
+  const rate = safeKhrRate(db.settings.khrRate);
   const month = snapshot.month;
 
   if (!q) {
@@ -1361,7 +1371,7 @@ export function askCentralDB(
     for (const e of db.expenses) {
       if (expenseAccount(e) !== "Personal" || !e.date.startsWith(month))
         continue;
-      const usd = toUSD(e.amount, e.currency, rate);
+      const usd = recordToUSD(e, rate);
       const kind = cardKind(e.vendor);
       if (kind === "Credit") credit += usd;
       else debit += usd;

@@ -60,6 +60,7 @@ import {
   autoBuildCaseStudy,
   caseStudyKey,
   designOutputSummary,
+  getDB,
   nextWorkStage,
   normalizeWorkStage,
   saveCaseStudy,
@@ -513,6 +514,18 @@ function WorkPage() {
       ...d,
       workTasks: (d.workTasks ?? []).filter((x) => x.id !== removed.id),
     }));
+    if (removed.media?.length && typeof window !== "undefined") {
+      window.setTimeout(() => {
+        const stillExists = (getDB().workTasks ?? []).some(
+          (x) => x.id === removed.id,
+        );
+        if (!stillExists) {
+          for (const m of removed.media) {
+            void deleteMediaBlob(m.id);
+          }
+        }
+      }, 7000);
+    }
     toast(`Removed ${removed.title || removed.code}`, {
       action: {
         label: "Undo",

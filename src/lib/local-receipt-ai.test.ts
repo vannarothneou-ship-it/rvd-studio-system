@@ -438,4 +438,52 @@ ol  SJ023994 444 | 015 999 233   អេសុលដា ស`;
     expect(noisyRes.amount).toBe(1.61);
     expect(noisyRes.currency).toBe("USD");
   });
+
+  it("distinguishes subtotal, tax, and cash change from the final grand total", () => {
+    const posSlip = `
+      KOI The BKK1
+      Subtotal: $9.00
+      VAT 10%: $0.90
+      Grand Total: $9.90
+      Cash Tendered: $20.00
+      Change: $10.10
+      2026-11-21
+    `;
+    const res = parseReceiptText(posSlip, "2026-11-22");
+    expect(res.amount).toBe(9.9);
+    expect(res.subtotal).toBe(9);
+    expect(res.tax).toBe(0.9);
+    expect(res.change).toBe(10.1);
+    expect(res.currency).toBe("USD");
+  });
+
+  it("flags partial or cut-off total digits as ambiguous instead of blindly trusting broken values", () => {
+    const cutoff = `
+      Cafe Amazon
+      Total: $12.
+      2026-11-21
+    `;
+    const res = parseReceiptText(cutoff, "2026-11-22");
+    expect(res.ambiguous).toBe(true);
+    expect(res.confidence).toBe("low");
+    expect(res.ambiguityReason).toBeTruthy();
+  });
+
+  it("propagates defaultAccount='Studio' and keeps Studio incoming payments routed to Studio", () => {
+    const studioSlip = `
+      ABA BANK
+      Transfer Received
+      +$850.00
+      From: Connexion Phnom Penh
+      Invoice RVIN-261101 Retainer
+      Date: 2026-11-21
+    `;
+    const res = parseReceiptText(studioSlip, "2026-11-22", {
+      defaultAccount: "Studio",
+    });
+    expect(res.txType).toBe("income");
+    expect(res.account).toBe("Studio");
+    expect(res.amount).toBe(850);
+    expect(["Client Payment", "Retainer"]).toContain(res.category);
+  });
 });

@@ -59,7 +59,12 @@ import { workProjectMeta } from "@/components/rv/workProjectColors";
 import {
   QuickExpenseDrawer,
   QuickIncomeDrawer,
+  QuickStudioIncomeDrawer,
 } from "@/components/rv/QuickTxDrawer";
+import {
+  EditableBentoGrid,
+  type BentoWidgetDef,
+} from "@/components/rv/BentoGrid";
 import { SwipeRow } from "@/components/rv/SwipeRow";
 import { useReceiptScanner } from "@/components/rv/ReceiptScanner";
 import {
@@ -75,9 +80,10 @@ import {
   normalizeWorkStage,
   periodBreakdownBars,
   personalSeries,
+  recordToUSD,
+  safeKhrRate,
   setDB,
   shortDate,
-  toUSD,
   today,
   uid,
   useDB,
@@ -87,6 +93,7 @@ import {
   type Expense,
   type PersonalIncome,
   type ProjectHealthStatus,
+  type StudioIncome,
   type WorkTask,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -149,9 +156,12 @@ function CommandDashboard() {
     "all",
   );
   const [healthExpanded, setHealthExpanded] = useState(false);
+  const [editingLayout, setEditingLayout] = useState(false);
 
   const [expenseDraft, setExpenseDraft] = useState<Expense | null>(null);
   const [incomeDraft, setIncomeDraft] = useState<PersonalIncome | null>(null);
+  const [studioIncomeDraft, setStudioIncomeDraft] =
+    useState<StudioIncome | null>(null);
   const [workTaskDraft, setWorkTaskDraft] = useState<WorkTask | null>(null);
   const [inspectedCategory, setInspectedCategory] = useState<{
     account: Account;
@@ -189,7 +199,7 @@ function CommandDashboard() {
     return Array.from(new Set([...base, ...extra]));
   }, [db.settings.workProjects, db.workTasks]);
 
-  const r = db.settings.khrRate || 4100;
+  const r = safeKhrRate(db.settings.khrRate);
 
   const studioActiveProjects = useMemo(
     () =>
@@ -264,6 +274,7 @@ function CommandDashboard() {
       direction?: "in" | "out";
       expense?: Expense;
       income?: PersonalIncome;
+      studioIncome?: StudioIncome;
       workTask?: WorkTask;
       invoiceId?: string;
     };
@@ -279,9 +290,22 @@ function CommandDashboard() {
         scope: "Studio",
         title: `${client?.name ?? "Client"} · ${inv?.no ?? "Payment"}`,
         sub: `${p.method}${p.reference ? ` · ${p.reference}` : ""}`,
-        amount: toUSD(p.amount, p.currency, r),
+        amount: recordToUSD(p, r),
         direction: "in",
         invoiceId: p.invoiceId,
+      });
+    }
+
+    for (const si of db.studioIncome ?? []) {
+      items.push({
+        id: `sinc-${si.id}`,
+        date: si.date,
+        scope: "Studio",
+        title: si.description || si.source,
+        sub: `${si.source} · ${si.method || si.accountMethod}`,
+        amount: recordToUSD(si, r),
+        direction: "in",
+        studioIncome: si,
       });
     }
 
@@ -292,7 +316,7 @@ function CommandDashboard() {
         scope: "Personal",
         title: inc.description || inc.source,
         sub: `${inc.source} · ${inc.accountMethod}`,
-        amount: toUSD(inc.amount, inc.currency, r),
+        amount: recordToUSD(inc, r),
         direction: "in",
         income: inc,
       });
@@ -306,7 +330,7 @@ function CommandDashboard() {
         scope: acc,
         title: e.description || e.vendor || e.category,
         sub: `${e.category}${e.vendor ? ` · ${e.vendor}` : ""}`,
-        amount: -toUSD(e.amount, e.currency, r),
+        amount: -recordToUSD(e, r),
         direction: "out",
         expense: e,
       });
@@ -328,6 +352,7 @@ function CommandDashboard() {
     return items.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 40);
   }, [
     db.payments,
+    db.studioIncome,
     db.invoices,
     db.clients,
     db.personalIncome,
@@ -396,23 +421,30 @@ function CommandDashboard() {
     [output.items],
   );
 
-  const cashTotals = {
-    inVal: personalTrend.reduce((s, p) => s + p.personalIn, 0),
-    outVal: personalTrend.reduce((s, p) => s + p.personalOut, 0),
-    netVal: personalTrend.reduce((s, p) => s + p.net, 0),
-  };
+  const cashTotals = useMemo(
+    () => ({
+      inVal: personalTrend.reduce((s, p) => s + p.personalIn, 0),
+      outVal: personalTrend.reduce((s, p) => s + p.personalOut, 0),
+      netVal: personalTrend.reduce((s, p) => s + p.net, 0),
+    }),
+    [personalTrend],
+  );
 
   const isGrouped = cashLens === "category" || cashLens === "method";
-  const chartRows = isGrouped
-    ? breakdownBars
-    : personalTrend.map((pt) => ({
-        label: pt.label,
-        fullDate: pt.fullDate,
-        primary: cashLens === "net" ? pt.net : pt.personalIn,
-        secondary: pt.personalOut,
-        inCount: pt.inCount,
-        count: pt.count,
-      }));
+  const chartRows = useMemo(
+    () =>
+      isGrouped
+        ? breakdownBars
+        : personalTrend.map((pt) => ({
+            label: pt.label,
+            fullDate: pt.fullDate,
+            primary: cashLens === "net" ? pt.net : pt.personalIn,
+            secondary: pt.personalOut,
+            inCount: pt.inCount,
+            count: pt.count,
+          })),
+    [isGrouped, breakdownBars, personalTrend, cashLens],
+  );
 
   const primaryLabel =
     cashLens === "category"
@@ -424,15 +456,22 @@ function CommandDashboard() {
           : "Personal income";
   const secondaryLabel = isGrouped ? "Income" : "Personal out";
 
-  const filteredFeed =
-    feedScope === "all"
-      ? unifiedFeed
-      : unifiedFeed.filter((it) => it.scope === feedScope);
-  const visibleFeed = filteredFeed.slice(0, feedExpanded ? 24 : 8);
+  const filteredFeed = useMemo(
+    () =>
+      feedScope === "all"
+        ? unifiedFeed
+        : unifiedFeed.filter((it) => it.scope === feedScope),
+    [unifiedFeed, feedScope],
+  );
+  const visibleFeed = useMemo(
+    () => filteredFeed.slice(0, feedExpanded ? 24 : 8),
+    [filteredFeed, feedExpanded],
+  );
 
   const openFeedItem = (item: (typeof unifiedFeed)[number]) => {
     if (item.expense) setExpenseDraft(item.expense);
     else if (item.income) setIncomeDraft(item.income);
+    else if (item.studioIncome) setStudioIncomeDraft(item.studioIncome);
     else if (item.workTask) setWorkTaskDraft(item.workTask);
     else if (item.invoiceId) {
       navigate({
@@ -471,6 +510,22 @@ function CommandDashboard() {
             setDB((d) => ({
               ...d,
               personalIncome: [removed, ...(d.personalIncome ?? [])],
+            })),
+        },
+      });
+    } else if (item.studioIncome) {
+      const removed = item.studioIncome;
+      setDB((d) => ({
+        ...d,
+        studioIncome: (d.studioIncome ?? []).filter((x) => x.id !== removed.id),
+      }));
+      toast("Studio income deleted", {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            setDB((d) => ({
+              ...d,
+              studioIncome: [removed, ...(d.studioIncome ?? [])],
             })),
         },
       });
@@ -564,7 +619,7 @@ function CommandDashboard() {
             <button
               type="button"
               onClick={() => openScanner("Personal")}
-              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-lg border border-primary/45 bg-primary/15 px-2 py-2.5 text-[0.72rem] font-semibold text-primary transition-colors hover:bg-primary/25 active:scale-95"
+              className="ios-tap flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border border-primary/45 bg-primary/15 px-2 py-2.5 text-[0.72rem] font-semibold text-primary transition-colors hover:bg-primary/25"
             >
               <ScanLine className="h-4 w-4 shrink-0" />
               <span className="whitespace-nowrap">Scan</span>
@@ -572,7 +627,7 @@ function CommandDashboard() {
             <button
               type="button"
               onClick={openNewExpense}
-              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-lg border border-border bg-secondary px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
+              className="ios-tap flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border border-border bg-secondary px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent"
             >
               <ArrowUpRight className="h-4 w-4 shrink-0 text-destructive" />
               <span className="whitespace-nowrap">Expense</span>
@@ -580,7 +635,7 @@ function CommandDashboard() {
             <button
               type="button"
               onClick={openNewIncome}
-              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-lg border border-border bg-secondary px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
+              className="ios-tap flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border border-border bg-secondary px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent"
             >
               <ArrowDownLeft className="h-4 w-4 shrink-0 text-positive" />
               <span className="whitespace-nowrap">Income</span>
@@ -588,7 +643,7 @@ function CommandDashboard() {
             <Link
               to="/invoices/$id"
               params={{ id: "new" }}
-              className="flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-lg border border-border bg-secondary px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent active:scale-95"
+              className="ios-tap flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-xl border border-border bg-secondary px-2 py-2.5 text-[0.72rem] font-semibold text-foreground transition-colors hover:border-primary/40 hover:bg-accent"
             >
               <FileText className="h-4 w-4 shrink-0 text-primary" />
               <span className="whitespace-nowrap">Invoice</span>
@@ -597,716 +652,815 @@ function CommandDashboard() {
         </div>
       </Glass>
 
-      {/* Things 3 / Linear style Unified Today Action Queue */}
-      <TodayFocusCard
-        db={db}
-        hideBalances={hideBalances}
-        onOpenWorkTask={(task) => setWorkTaskDraft(task)}
-        className="mb-4"
-      />
-
-      {/* Symmetrical Middle Command Cards: Studio · Personal Money · Work & Portfolio */}
-      <div className="mb-4 grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
-        {/* 1. Studio Card */}
-        <Glass className="flex flex-col justify-between gap-4">
-          <div className="flex flex-col gap-3.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-primary/35 bg-primary/15 text-primary">
-                  <Briefcase className="h-4 w-4" />
-                </span>
-                <div className="min-w-0">
-                  <h2 className="truncate font-display text-lg font-bold leading-tight">
-                    Studio
-                  </h2>
-                  <p className="hidden text-[0.7rem] text-muted-foreground sm:block">
-                    Clients, invoices &amp; projects
-                  </p>
-                </div>
-              </div>
-              <Link
-                to="/studio"
-                className="inline-flex min-h-[36px] shrink-0 items-center gap-1 text-xs font-semibold text-primary hover:underline"
-              >
-                Open <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
-              <Stat
-                icon={ArrowDownLeft}
-                label="In"
-                value={mask(compactMoney(bal.studioInAll))}
-                fullValue={hideBalances ? undefined : money(bal.studioInAll)}
-                tone="pos"
+      {(() => {
+        const homeWidgets: BentoWidgetDef[] = [
+          {
+            id: "todayFocus",
+            title: "Today's focus & actions",
+            defaultSpan: 12,
+            render: () => (
+              <TodayFocusCard
+                db={db}
+                hideBalances={hideBalances}
+                onOpenWorkTask={(task) => setWorkTaskDraft(task)}
               />
-              <Stat
-                icon={ArrowUpRight}
-                label="Out"
-                value={mask(compactMoney(bal.studioOutAll))}
-                fullValue={hideBalances ? undefined : money(bal.studioOutAll)}
-              />
-              <Stat
-                icon={FileText}
-                label="A/R"
-                value={mask(compactMoney(bal.openAR))}
-                fullValue={hideBalances ? undefined : money(bal.openAR)}
-              />
-              <Stat
-                icon={FolderKanban}
-                label="Active"
-                value={String(studioActiveProjects)}
-              />
-            </div>
-          </div>
-
-          <div className="mt-auto flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-2">
-              <Link
-                to="/invoices/$id"
-                params={{ id: "new" }}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
-              >
-                <Plus className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">Invoice</span>
-              </Link>
-              <Link
-                to="/clients"
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent active:scale-95"
-              >
-                <Users className="h-3.5 w-3.5 shrink-0 text-primary" />
-                <span className="truncate">Clients</span>
-              </Link>
-            </div>
-
-            <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
-              <span className="font-num truncate">
-                Net {mask(compactMoney(bal.studioMonthNet, "USD", true))}
-              </span>
-              <Link
-                to="/projects"
-                className="shrink-0 font-medium text-primary hover:underline"
-              >
-                Projects →
-              </Link>
-            </div>
-          </div>
-        </Glass>
-        {/* 1. Personal Money Card */}
-        <Glass className="flex flex-col justify-between gap-4">
-          <div className="flex flex-col gap-3.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-positive/35 bg-positive/15 text-positive">
-                  <Wallet className="h-4 w-4" />
-                </span>
-                <div className="min-w-0">
-                  <h2 className="truncate font-display text-lg font-bold leading-tight">
-                    Personal Money
-                  </h2>
-                  <p className="hidden text-[0.7rem] text-muted-foreground sm:block">
-                    Debit, Credit &amp; daily spending
-                  </p>
-                </div>
-              </div>
-              <Link
-                to="/personal"
-                className="inline-flex min-h-[36px] shrink-0 items-center gap-1 text-xs font-semibold text-primary hover:underline"
-              >
-                Open <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
-              <Stat
-                icon={Wallet}
-                label="Wallet"
-                value={mask(compactMoney(bal.personalBalance))}
-                fullValue={
-                  hideBalances ? undefined : money(bal.personalBalance)
-                }
-                tone={bal.personalBalance >= 0 ? "pos" : "neg"}
-              />
-              <Stat
-                icon={ArrowDownLeft}
-                label="In (Mo)"
-                value={mask(compactMoney(bal.personalInMonth))}
-                fullValue={
-                  hideBalances ? undefined : money(bal.personalInMonth)
-                }
-                tone={bal.personalInMonth > 0 ? "pos" : undefined}
-              />
-              <Stat
-                icon={ArrowUpRight}
-                label="Out (Mo)"
-                value={mask(compactMoney(bal.personalOutMonth))}
-                fullValue={
-                  hideBalances ? undefined : money(bal.personalOutMonth)
-                }
-                tone="neg"
-              />
-              <Stat
-                icon={PiggyBank}
-                label="Goals"
-                value={mask(compactMoney(bal.personalGoalsSaved))}
-                fullValue={
-                  hideBalances ? undefined : money(bal.personalGoalsSaved)
-                }
-              />
-            </div>
-          </div>
-
-          <div className="mt-auto flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={openNewExpense}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
-              >
-                <Plus className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">Expense</span>
-              </button>
-              <button
-                type="button"
-                onClick={openNewIncome}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent active:scale-95"
-              >
-                <ArrowDownLeft className="h-3.5 w-3.5 shrink-0 text-positive" />
-                <span className="truncate">Income</span>
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
-              <span className="font-num truncate">
-                Net {mask(compactMoney(bal.personalMonthNet, "USD", true))}
-              </span>
-              <Link
-                to="/personal"
-                className="shrink-0 font-medium text-primary hover:underline"
-              >
-                Cards &amp; Budget →
-              </Link>
-            </div>
-          </div>
-        </Glass>
-
-        {/* 2. Work & Portfolio Card */}
-        <Glass className="flex flex-col justify-between gap-4" delay={60}>
-          <div className="flex flex-col gap-3.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-primary/35 bg-primary/15 text-primary">
-                  <Layers3 className="h-4 w-4" />
-                </span>
-                <div className="min-w-0">
-                  <h2 className="truncate font-display text-lg font-bold leading-tight">
-                    Work &amp; Portfolio
-                  </h2>
-                  <p className="hidden text-[0.7rem] text-muted-foreground sm:block">
-                    Tasks, calendar &amp; artwork archive
-                  </p>
-                </div>
-              </div>
-              <Link
-                to="/work"
-                className="inline-flex min-h-[36px] shrink-0 items-center gap-1 text-xs font-semibold text-primary hover:underline"
-              >
-                Open <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
-              <Stat
-                icon={CheckCircle2}
-                label="Done"
-                value={String(output.workCompleted)}
-                tone="pos"
-              />
-              <Stat
-                icon={Clock}
-                label="Active"
-                value={String(output.workActive)}
-              />
-              <Stat
-                icon={Sparkles}
-                label="Art"
-                value={String(output.totalArtworks)}
-              />
-              <Stat
-                icon={ImageIcon}
-                label="Files"
-                value={String(output.mediaCount)}
-              />
-            </div>
-          </div>
-
-          <div className="mt-auto flex flex-col gap-3">
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => openNewWorkTask(false)}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
-              >
-                <Plus className="h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">Work Task</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => openNewWorkTask(true)}
-                className="inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent active:scale-95"
-              >
-                <ImageIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
-                <span className="truncate">Portfolio</span>
-              </button>
-            </div>
-
-            <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
-              <span className="font-num truncate">
-                {projectNames.slice(0, 3).join(" · ")}
-              </span>
-              <Link
-                to="/work"
-                className="shrink-0 font-medium text-primary hover:underline"
-              >
-                Calendar &amp; Summary →
-              </Link>
-            </div>
-          </div>
-        </Glass>
-      </div>
-
-      {/* Project Health Status Overview (Deadline-driven) */}
-      <Glass className="mb-4">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2.5">
-          <div className="flex min-w-0 items-center gap-2.5">
-            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-primary">
-              <FolderKanban className="h-4 w-4" />
-            </span>
-            <div className="min-w-0">
-              <h2 className="truncate font-display text-base font-bold leading-tight">
-                Project Health
-              </h2>
-              <p className="truncate text-[0.7rem] text-muted-foreground">
-                Status derived from active project deadlines
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-end gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                setHealthFilter("all");
-                setHealthExpanded(false);
-              }}
-              className={cn(
-                "font-num inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-                healthFilter === "all"
-                  ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <span>All</span>
-              <span>{healthCounts.all}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setHealthFilter("healthy");
-                setHealthExpanded(false);
-              }}
-              className={cn(
-                "font-num inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-                healthFilter === "healthy"
-                  ? "border-positive/55 bg-positive/20 text-positive"
-                  : "border-border bg-secondary text-muted-foreground hover:border-positive/40 hover:text-positive",
-              )}
-            >
-              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-positive" />
-              <span>Healthy</span>
-              <span>{healthCounts.healthy}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setHealthFilter("at-risk");
-                setHealthExpanded(false);
-              }}
-              className={cn(
-                "font-num inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-                healthFilter === "at-risk"
-                  ? "border-warning/55 bg-warning/20 text-warning"
-                  : "border-border bg-secondary text-muted-foreground hover:border-warning/40 hover:text-warning",
-              )}
-            >
-              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" />
-              <span>At risk</span>
-              <span>{healthCounts["at-risk"]}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setHealthFilter("delayed");
-                setHealthExpanded(false);
-              }}
-              className={cn(
-                "font-num inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
-                healthFilter === "delayed"
-                  ? "border-destructive/55 bg-destructive/20 text-destructive"
-                  : "border-border bg-secondary text-muted-foreground hover:border-destructive/40 hover:text-destructive",
-              )}
-            >
-              <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
-              <span>Delayed</span>
-              <span>{healthCounts.delayed}</span>
-            </button>
-            <Link
-              to="/projects"
-              className="ml-1 inline-flex min-h-[36px] items-center gap-1 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs font-semibold text-primary hover:bg-accent"
-            >
-              Projects <ArrowRight className="h-3 w-3" />
-            </Link>
-          </div>
-        </div>
-
-        {visibleHealthRows.length === 0 ? (
-          <p className="rounded-lg border border-border bg-muted/40 py-6 text-center text-xs text-muted-foreground">
-            No projects in{" "}
-            {healthFilter === "all" ? "your pipeline" : healthFilter}.
-          </p>
-        ) : (
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {visibleHealthRows.map(({ project, clientName, health }) => (
-              <Link
-                key={project.id}
-                to="/projects"
-                className="flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 p-3 transition-colors hover:border-primary/50 hover:bg-muted/70"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-num shrink-0 text-[0.68rem] text-muted-foreground">
-                      {project.code}
-                    </span>
-                    <p className="truncate text-xs font-semibold text-foreground sm:text-sm">
-                      {project.name || "Untitled project"}
-                    </p>
-                  </div>
-                  <p className="mt-0.5 truncate text-[0.7rem] text-muted-foreground">
-                    {clientName} ·{" "}
-                    {project.due
-                      ? `Due ${shortDate(project.due)}`
-                      : "No due date"}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  <Pill s={health.label} />
-                  <span
-                    className={cn(
-                      "font-num text-[0.68rem] font-medium",
-                      health.status === "delayed"
-                        ? "text-destructive"
-                        : health.status === "at-risk"
-                          ? "text-warning"
-                          : "text-muted-foreground",
-                    )}
-                  >
-                    {health.reason}
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-
-        {filteredHealthRows.length > 6 && (
-          <div className="mt-3 flex justify-end border-t border-border/60 pt-2.5">
-            <button
-              type="button"
-              onClick={() => setHealthExpanded((v) => !v)}
-              className="text-xs font-medium text-primary hover:underline"
-            >
-              {healthExpanded
-                ? "Show fewer projects"
-                : `Show all ${filteredHealthRows.length} projects`}
-            </button>
-          </div>
-        )}
-      </Glass>
-      <CentralAiBrief
-        db={db}
-        hideBalances={hideBalances}
-        onInspectCategory={(cat) =>
-          setInspectedCategory({ account: "Personal", category: cat })
-        }
-        className="mb-4"
-      />
-
-      {/* Unified Schedule & Holidays Calendar (Work + Studio + KH Holidays + ថ្ងៃសីល) */}
-      <DashboardCalendarCard db={db} className="mb-4" />
-
-      {/* Money Flow Sankey ("The River") */}
-      <MoneyFlowSankeyCard
-        db={db}
-        accountScope="all"
-        anchorMonth={month}
-        hideBalances={hideBalances}
-        onSelectCategory={(account, category) =>
-          setInspectedCategory({ account, category })
-        }
-        onQuickLog={(kind) =>
-          kind === "income" ? openNewIncome() : openNewExpense()
-        }
-        layoutIdPrefix="dash-money-flow"
-        className="mb-4"
-      />
-
-      {/* Interactive Cash Flow + Recent Activity */}
-      <div
-        id="dashboard-cashflow"
-        className="mb-4 grid scroll-mt-20 grid-cols-1 items-stretch gap-4 lg:grid-cols-12"
-      >
-        <Glass className="flex flex-col justify-between lg:col-span-7">
-          <div>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-medium">
-                {cashLens === "net"
-                  ? "Net Flow"
-                  : cashLens === "category"
-                    ? "By Category"
-                    : cashLens === "method"
-                      ? "By Card"
-                      : "Cash Flow"}
-              </h2>
-              <div className="flex shrink-0 items-center gap-1.5">
-                <SlidingTabs
-                  iconOnly
-                  size="xs"
-                  layoutGroup="dash-cf-lens"
-                  value={cashLens}
-                  onChange={setCashLens}
-                  options={CHART_LENS_OPTIONS}
-                />
-                <ChartModeCycleButton mode={cashMode} onChange={setCashMode} />
-              </div>
-            </div>
-
-            <div className="mb-3 flex items-center justify-end gap-2">
-              <SlidingTabs
-                size="xs"
-                tone="invert"
-                layoutGroup="dash-cf-range"
-                value={cashRange}
-                onChange={setCashRange}
-                options={CASH_RANGES}
-              />
-            </div>
-
-            <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
-              <Stat
-                icon={ArrowDownLeft}
-                label="In"
-                value={mask(compactMoney(cashTotals.inVal))}
-                tone="pos"
-              />
-              <Stat
-                icon={ArrowUpRight}
-                label="Out"
-                value={mask(compactMoney(cashTotals.outVal))}
-                tone="neg"
-              />
-              <Stat
-                icon={Activity}
-                label="Net"
-                value={mask(compactMoney(cashTotals.netVal, "USD", true))}
-                tone={cashTotals.netVal >= 0 ? "pos" : "neg"}
-              />
-            </div>
-          </div>
-
-          <TrendChartCanvas
-            mode={cashMode}
-            data={chartRows}
-            primaryKey="primary"
-            primaryName={primaryLabel}
-            secondaryKey="secondary"
-            secondaryName={secondaryLabel}
-            gradientId={`dash-cf-${cashLens}`}
-            isNetMetric={cashLens === "net"}
-            hideSecondary={cashLens !== "flow"}
-          />
-        </Glass>
-
-        <Glass className="flex flex-col justify-between lg:col-span-5">
-          <div>
-            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <h2 className="font-medium">Recent Activity</h2>
-              <SlidingTabs
-                stretch
-                size="xs"
-                layoutGroup="dash-feed-scope"
-                className="w-full sm:w-auto"
-                value={feedScope}
-                onChange={(next) => {
-                  setFeedScope(next);
-                  setFeedExpanded(false);
-                }}
-                options={[
-                  { id: "all", label: "All" },
-                  { id: "Studio", label: "Studio" },
-                  { id: "Personal", label: "Personal" },
-                  { id: "Work", label: "Work" },
-                ]}
-              />
-            </div>
-
-            {visibleFeed.length === 0 ? (
-              <p className="py-8 text-center text-xs text-muted-foreground">
-                No activity logged under {feedScope} yet.
-              </p>
-            ) : (
-              <ul className="divide-y divide-border/70">
-                {visibleFeed.map((item) => {
-                  const Icon = item.expense
-                    ? expenseItemIcon(item.expense)
-                    : item.income
-                      ? incomeSourceIcon(item.income.source)
-                      : item.invoiceId
-                        ? Briefcase
-                        : CheckCircle2;
-
-                  return (
-                    <li key={item.id}>
-                      <SwipeRow
-                        onEdit={
-                          item.expense || item.income || item.workTask
-                            ? () => openFeedItem(item)
-                            : undefined
-                        }
-                        onDelete={
-                          item.invoiceId
-                            ? undefined
-                            : () => deleteFeedItem(item)
-                        }
+            ),
+          },
+          {
+            id: "workspaceCards",
+            title: "Workspaces · Studio, Money & Work",
+            defaultSpan: 12,
+            render: () => (
+              <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-3">
+                {/* 1. Studio Card */}
+                <Glass className="flex flex-col justify-between gap-4">
+                  <div className="flex flex-col gap-3.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-primary/35 bg-primary/15 text-primary">
+                          <Briefcase className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <h2 className="truncate font-display text-lg font-bold leading-tight">
+                            Studio
+                          </h2>
+                          <p className="hidden text-[0.7rem] text-muted-foreground sm:block">
+                            Clients, invoices &amp; projects
+                          </p>
+                        </div>
+                      </div>
+                      <Link
+                        to="/studio"
+                        className="ios-tap inline-flex min-h-[36px] shrink-0 items-center gap-1 text-xs font-semibold text-primary hover:underline"
                       >
-                        <button
-                          type="button"
-                          onClick={() => openFeedItem(item)}
-                          className="flex w-full items-center justify-between gap-2.5 rounded-xl px-1.5 py-2.5 text-left transition-colors hover:bg-muted/60"
-                        >
-                          <div className="flex min-w-0 items-center gap-2.5">
-                            <span
-                              className={cn(
-                                "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-muted/80",
-                                item.direction === "in" && "text-positive",
-                                item.direction === "out" && "text-destructive",
-                                !item.direction && "text-primary",
-                              )}
+                        Open <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
+                      <Stat
+                        icon={ArrowDownLeft}
+                        label="In"
+                        value={mask(compactMoney(bal.studioInAll))}
+                        fullValue={
+                          hideBalances ? undefined : money(bal.studioInAll)
+                        }
+                        tone="pos"
+                      />
+                      <Stat
+                        icon={ArrowUpRight}
+                        label="Out"
+                        value={mask(compactMoney(bal.studioOutAll))}
+                        fullValue={
+                          hideBalances ? undefined : money(bal.studioOutAll)
+                        }
+                      />
+                      <Stat
+                        icon={FileText}
+                        label="A/R"
+                        value={mask(compactMoney(bal.openAR))}
+                        fullValue={hideBalances ? undefined : money(bal.openAR)}
+                      />
+                      <Stat
+                        icon={FolderKanban}
+                        label="Active"
+                        value={String(studioActiveProjects)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-auto flex flex-col gap-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <Link
+                        to="/invoices/$id"
+                        params={{ id: "new" }}
+                        className="ios-tap inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                      >
+                        <Plus className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">Invoice</span>
+                      </Link>
+                      <Link
+                        to="/clients"
+                        className="ios-tap inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent"
+                      >
+                        <Users className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span className="truncate">Clients</span>
+                      </Link>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+                      <span className="font-num truncate">
+                        Net{" "}
+                        {mask(compactMoney(bal.studioMonthNet, "USD", true))}
+                      </span>
+                      <Link
+                        to="/projects"
+                        className="shrink-0 font-medium text-primary hover:underline"
+                      >
+                        Projects →
+                      </Link>
+                    </div>
+                  </div>
+                </Glass>
+
+                {/* 2. Personal Money Card */}
+                <Glass className="flex flex-col justify-between gap-4">
+                  <div className="flex flex-col gap-3.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-positive/35 bg-positive/15 text-positive">
+                          <Wallet className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <h2 className="truncate font-display text-lg font-bold leading-tight">
+                            Personal Money
+                          </h2>
+                          <p className="hidden text-[0.7rem] text-muted-foreground sm:block">
+                            Debit, Credit &amp; daily spending
+                          </p>
+                        </div>
+                      </div>
+                      <Link
+                        to="/personal"
+                        className="ios-tap inline-flex min-h-[36px] shrink-0 items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                      >
+                        Open <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
+                      <Stat
+                        icon={Wallet}
+                        label="Wallet"
+                        value={mask(compactMoney(bal.personalBalance))}
+                        fullValue={
+                          hideBalances ? undefined : money(bal.personalBalance)
+                        }
+                        tone={bal.personalBalance >= 0 ? "pos" : "neg"}
+                      />
+                      <Stat
+                        icon={ArrowDownLeft}
+                        label="In (Mo)"
+                        value={mask(compactMoney(bal.personalInMonth))}
+                        fullValue={
+                          hideBalances ? undefined : money(bal.personalInMonth)
+                        }
+                        tone={bal.personalInMonth > 0 ? "pos" : undefined}
+                      />
+                      <Stat
+                        icon={ArrowUpRight}
+                        label="Out (Mo)"
+                        value={mask(compactMoney(bal.personalOutMonth))}
+                        fullValue={
+                          hideBalances ? undefined : money(bal.personalOutMonth)
+                        }
+                        tone="neg"
+                      />
+                      <Stat
+                        icon={PiggyBank}
+                        label="Goals"
+                        value={mask(compactMoney(bal.personalGoalsSaved))}
+                        fullValue={
+                          hideBalances
+                            ? undefined
+                            : money(bal.personalGoalsSaved)
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-auto flex flex-col gap-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={openNewExpense}
+                        className="ios-tap inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                      >
+                        <Plus className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">Expense</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={openNewIncome}
+                        className="ios-tap inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent"
+                      >
+                        <ArrowDownLeft className="h-3.5 w-3.5 shrink-0 text-positive" />
+                        <span className="truncate">Income</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+                      <span className="font-num truncate">
+                        Net{" "}
+                        {mask(compactMoney(bal.personalMonthNet, "USD", true))}
+                      </span>
+                      <Link
+                        to="/personal"
+                        className="shrink-0 font-medium text-primary hover:underline"
+                      >
+                        Cards &amp; Budget →
+                      </Link>
+                    </div>
+                  </div>
+                </Glass>
+
+                {/* 3. Work & Portfolio Card */}
+                <Glass
+                  className="flex flex-col justify-between gap-4"
+                  delay={60}
+                >
+                  <div className="flex flex-col gap-3.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-primary/35 bg-primary/15 text-primary">
+                          <Layers3 className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <h2 className="truncate font-display text-lg font-bold leading-tight">
+                            Work &amp; Portfolio
+                          </h2>
+                          <p className="hidden text-[0.7rem] text-muted-foreground sm:block">
+                            Tasks, calendar &amp; artwork archive
+                          </p>
+                        </div>
+                      </div>
+                      <Link
+                        to="/work"
+                        className="ios-tap inline-flex min-h-[36px] shrink-0 items-center gap-1 text-xs font-semibold text-primary hover:underline"
+                      >
+                        Open <ArrowRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
+                      <Stat
+                        icon={CheckCircle2}
+                        label="Done"
+                        value={String(output.workCompleted)}
+                        tone="pos"
+                      />
+                      <Stat
+                        icon={Clock}
+                        label="Active"
+                        value={String(output.workActive)}
+                      />
+                      <Stat
+                        icon={Sparkles}
+                        label="Art"
+                        value={String(output.totalArtworks)}
+                      />
+                      <Stat
+                        icon={ImageIcon}
+                        label="Files"
+                        value={String(output.mediaCount)}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="mt-auto flex flex-col gap-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openNewWorkTask(false)}
+                        className="ios-tap inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-primary/40 bg-primary/15 px-3 text-xs font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                      >
+                        <Plus className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">Work Task</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => openNewWorkTask(true)}
+                        className="ios-tap inline-flex h-11 items-center justify-center gap-1.5 rounded-lg border border-border bg-secondary px-3 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent"
+                      >
+                        <ImageIcon className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        <span className="truncate">Portfolio</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
+                      <span className="font-num truncate">
+                        {projectNames.slice(0, 3).join(" · ")}
+                      </span>
+                      <Link
+                        to="/work"
+                        className="shrink-0 font-medium text-primary hover:underline"
+                      >
+                        Calendar &amp; Summary →
+                      </Link>
+                    </div>
+                  </div>
+                </Glass>
+              </div>
+            ),
+          },
+          {
+            id: "cashFlow",
+            title: "Cash Flow",
+            defaultSpan: 7,
+            render: () => (
+              <div id="dashboard-cashflow" className="h-full scroll-mt-20">
+                <Glass className="flex h-full flex-col justify-between">
+                  <div>
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-primary">
+                          <Activity className="h-4 w-4" />
+                        </span>
+                        <h2 className="truncate font-display text-base font-bold leading-tight">
+                          {cashLens === "net"
+                            ? "Net Flow"
+                            : cashLens === "category"
+                              ? "By Category"
+                              : cashLens === "method"
+                                ? "By Card"
+                                : "Cash Flow"}
+                        </h2>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <SlidingTabs
+                          iconOnly
+                          size="xs"
+                          layoutGroup="dash-cf-lens"
+                          value={cashLens}
+                          onChange={setCashLens}
+                          options={CHART_LENS_OPTIONS}
+                        />
+                        <ChartModeCycleButton
+                          mode={cashMode}
+                          onChange={setCashMode}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="mb-3 flex items-center justify-end gap-2">
+                      <SlidingTabs
+                        size="xs"
+                        tone="invert"
+                        layoutGroup="dash-cf-range"
+                        value={cashRange}
+                        onChange={setCashRange}
+                        options={CASH_RANGES}
+                      />
+                    </div>
+
+                    <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
+                      <Stat
+                        icon={ArrowDownLeft}
+                        label="In"
+                        value={mask(compactMoney(cashTotals.inVal))}
+                        tone="pos"
+                      />
+                      <Stat
+                        icon={ArrowUpRight}
+                        label="Out"
+                        value={mask(compactMoney(cashTotals.outVal))}
+                        tone="neg"
+                      />
+                      <Stat
+                        icon={Activity}
+                        label="Net"
+                        value={mask(
+                          compactMoney(cashTotals.netVal, "USD", true),
+                        )}
+                        tone={cashTotals.netVal >= 0 ? "pos" : "neg"}
+                      />
+                    </div>
+                  </div>
+
+                  <TrendChartCanvas
+                    mode={cashMode}
+                    data={chartRows}
+                    primaryKey="primary"
+                    primaryName={primaryLabel}
+                    secondaryKey="secondary"
+                    secondaryName={secondaryLabel}
+                    gradientId={`dash-cf-${cashLens}`}
+                    isNetMetric={cashLens === "net"}
+                    hideSecondary={cashLens !== "flow"}
+                  />
+                </Glass>
+              </div>
+            ),
+          },
+          {
+            id: "recentActivity",
+            title: "Recent Activity",
+            defaultSpan: 5,
+            render: () => (
+              <Glass className="flex h-full flex-col justify-between">
+                <div>
+                  <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-primary">
+                        <Clock className="h-4 w-4" />
+                      </span>
+                      <h2 className="truncate font-display text-base font-bold leading-tight">
+                        Recent Activity
+                      </h2>
+                    </div>
+                    <SlidingTabs
+                      stretch
+                      size="xs"
+                      layoutGroup="dash-feed-scope"
+                      className="w-full sm:w-auto"
+                      value={feedScope}
+                      onChange={(next) => {
+                        setFeedScope(next);
+                        setFeedExpanded(false);
+                      }}
+                      options={[
+                        { id: "all", label: "All" },
+                        { id: "Studio", label: "Studio" },
+                        { id: "Personal", label: "Personal" },
+                        { id: "Work", label: "Work" },
+                      ]}
+                    />
+                  </div>
+
+                  {visibleFeed.length === 0 ? (
+                    <p className="py-8 text-center text-xs text-muted-foreground">
+                      No activity logged under {feedScope} yet.
+                    </p>
+                  ) : (
+                    <ul className="divide-y divide-border/70">
+                      {visibleFeed.map((item) => {
+                        const Icon = item.expense
+                          ? expenseItemIcon(item.expense)
+                          : item.income
+                            ? incomeSourceIcon(item.income.source)
+                            : item.studioIncome
+                              ? Briefcase
+                              : item.invoiceId
+                                ? Briefcase
+                                : CheckCircle2;
+
+                        return (
+                          <li key={item.id}>
+                            <SwipeRow
+                              onEdit={
+                                item.expense ||
+                                item.income ||
+                                item.studioIncome ||
+                                item.workTask
+                                  ? () => openFeedItem(item)
+                                  : undefined
+                              }
+                              onDelete={
+                                item.invoiceId
+                                  ? undefined
+                                  : () => deleteFeedItem(item)
+                              }
                             >
-                              <Icon className="h-4 w-4" />
-                            </span>
-                            <div className="min-w-0">
+                              <button
+                                type="button"
+                                onClick={() => openFeedItem(item)}
+                                className="flex w-full items-center justify-between gap-2.5 rounded-xl px-1.5 py-2.5 text-left transition-colors hover:bg-muted/60"
+                              >
+                                <div className="flex min-w-0 items-center gap-2.5">
+                                  <span
+                                    className={cn(
+                                      "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-muted/80",
+                                      item.direction === "in" &&
+                                        "text-positive",
+                                      item.direction === "out" &&
+                                        "text-destructive",
+                                      !item.direction && "text-primary",
+                                    )}
+                                  >
+                                    <Icon className="h-4 w-4" />
+                                  </span>
+                                  <div className="min-w-0">
+                                    <p className="truncate text-xs font-semibold text-foreground sm:text-sm">
+                                      {item.title}
+                                    </p>
+                                    <p className="truncate text-[0.7rem] text-muted-foreground">
+                                      <span className="font-medium text-primary/90">
+                                        {item.scope}
+                                      </span>{" "}
+                                      · {item.sub} · {shortDate(item.date)}
+                                    </p>
+                                  </div>
+                                </div>
+                                {item.amount !== undefined ? (
+                                  <span
+                                    className={cn(
+                                      "font-num shrink-0 text-xs font-bold sm:text-sm",
+                                      item.direction === "in"
+                                        ? "text-positive"
+                                        : "text-destructive",
+                                    )}
+                                  >
+                                    {hideBalances
+                                      ? "••••"
+                                      : money(item.amount, "USD", true)}
+                                  </span>
+                                ) : item.badge ? (
+                                  <Pill s={item.badge} />
+                                ) : null}
+                              </button>
+                            </SwipeRow>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+
+                {filteredFeed.length > 8 && (
+                  <div className="mt-3 flex justify-center border-t border-border/60 pt-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setFeedExpanded((v) => !v)}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      {feedExpanded
+                        ? "Show less"
+                        : `Show more (${filteredFeed.length - 8} more)`}
+                    </button>
+                  </div>
+                )}
+              </Glass>
+            ),
+          },
+          {
+            id: "moneyFlow",
+            title: "Money Flow River",
+            defaultSpan: 12,
+            render: () => (
+              <MoneyFlowSankeyCard
+                db={db}
+                accountScope="all"
+                anchorMonth={month}
+                hideBalances={hideBalances}
+                onSelectCategory={(account, category) =>
+                  setInspectedCategory({ account, category })
+                }
+                onQuickLog={(kind) =>
+                  kind === "income" ? openNewIncome() : openNewExpense()
+                }
+                layoutIdPrefix="dash-money-flow"
+              />
+            ),
+          },
+          {
+            id: "aiBrief",
+            title: "Central AI Brief",
+            defaultSpan: 12,
+            render: () => (
+              <CentralAiBrief
+                db={db}
+                hideBalances={hideBalances}
+                onInspectCategory={(cat) =>
+                  setInspectedCategory({ account: "Personal", category: cat })
+                }
+              />
+            ),
+          },
+          {
+            id: "projectHealth",
+            title: "Project Health",
+            defaultSpan: 12,
+            render: () => (
+              <Glass className="h-full">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2.5">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-primary">
+                      <FolderKanban className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <h2 className="truncate font-display text-base font-bold leading-tight">
+                        Project Health
+                      </h2>
+                      <p className="truncate text-[0.7rem] text-muted-foreground">
+                        Status derived from active project deadlines
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-end gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHealthFilter("all");
+                        setHealthExpanded(false);
+                      }}
+                      className={cn(
+                        "font-num inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                        healthFilter === "all"
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <span>All</span>
+                      <span>{healthCounts.all}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHealthFilter("healthy");
+                        setHealthExpanded(false);
+                      }}
+                      className={cn(
+                        "font-num inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                        healthFilter === "healthy"
+                          ? "border-positive/55 bg-positive/20 text-positive"
+                          : "border-border bg-secondary text-muted-foreground hover:border-positive/40 hover:text-positive",
+                      )}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-positive" />
+                      <span>Healthy</span>
+                      <span>{healthCounts.healthy}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHealthFilter("at-risk");
+                        setHealthExpanded(false);
+                      }}
+                      className={cn(
+                        "font-num inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                        healthFilter === "at-risk"
+                          ? "border-warning/55 bg-warning/20 text-warning"
+                          : "border-border bg-secondary text-muted-foreground hover:border-warning/40 hover:text-warning",
+                      )}
+                    >
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" />
+                      <span>At risk</span>
+                      <span>{healthCounts["at-risk"]}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHealthFilter("delayed");
+                        setHealthExpanded(false);
+                      }}
+                      className={cn(
+                        "font-num inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                        healthFilter === "delayed"
+                          ? "border-destructive/55 bg-destructive/20 text-destructive"
+                          : "border-border bg-secondary text-muted-foreground hover:border-destructive/40 hover:text-destructive",
+                      )}
+                    >
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+                      <span>Delayed</span>
+                      <span>{healthCounts.delayed}</span>
+                    </button>
+                    <Link
+                      to="/projects"
+                      className="ios-tap ml-1 inline-flex min-h-[36px] items-center gap-1 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs font-semibold text-primary hover:bg-accent"
+                    >
+                      Projects <ArrowRight className="h-3 w-3" />
+                    </Link>
+                  </div>
+                </div>
+
+                {visibleHealthRows.length === 0 ? (
+                  <p className="rounded-lg border border-border bg-muted/40 py-6 text-center text-xs text-muted-foreground">
+                    No projects in{" "}
+                    {healthFilter === "all" ? "your pipeline" : healthFilter}.
+                  </p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                    {visibleHealthRows.map(
+                      ({ project, clientName, health }) => (
+                        <Link
+                          key={project.id}
+                          to="/projects"
+                          className="ios-card-tap flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 p-3 hover:border-primary/50 hover:bg-muted/70"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-num shrink-0 text-[0.68rem] text-muted-foreground">
+                                {project.code}
+                              </span>
                               <p className="truncate text-xs font-semibold text-foreground sm:text-sm">
-                                {item.title}
-                              </p>
-                              <p className="truncate text-[0.7rem] text-muted-foreground">
-                                <span className="font-medium text-primary/90">
-                                  {item.scope}
-                                </span>{" "}
-                                · {item.sub} · {shortDate(item.date)}
+                                {project.name || "Untitled project"}
                               </p>
                             </div>
+                            <p className="mt-0.5 truncate text-[0.7rem] text-muted-foreground">
+                              {clientName} ·{" "}
+                              {project.due
+                                ? `Due ${shortDate(project.due)}`
+                                : "No due date"}
+                            </p>
                           </div>
-                          {item.amount !== undefined ? (
+                          <div className="flex shrink-0 flex-col items-end gap-1">
+                            <Pill s={health.label} />
                             <span
                               className={cn(
-                                "font-num shrink-0 text-xs font-bold sm:text-sm",
-                                item.direction === "in"
-                                  ? "text-positive"
-                                  : "text-destructive",
+                                "font-num text-[0.68rem] font-medium",
+                                health.status === "delayed"
+                                  ? "text-destructive"
+                                  : health.status === "at-risk"
+                                    ? "text-warning"
+                                    : "text-muted-foreground",
                               )}
                             >
-                              {hideBalances
-                                ? "••••"
-                                : money(item.amount, "USD", true)}
+                              {health.reason}
                             </span>
-                          ) : item.badge ? (
-                            <Pill s={item.badge} />
-                          ) : null}
-                        </button>
-                      </SwipeRow>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-
-          {filteredFeed.length > 8 && (
-            <div className="mt-3 flex justify-center border-t border-border/60 pt-2.5">
-              <button
-                type="button"
-                onClick={() => setFeedExpanded((v) => !v)}
-                className="text-xs font-medium text-primary hover:underline"
-              >
-                {feedExpanded
-                  ? "Show less"
-                  : `Show more (${filteredFeed.length - 8} more)`}
-              </button>
-            </div>
-          )}
-        </Glass>
-      </div>
-
-      {/* Recent Portfolio Visuals Preview Strip */}
-      {showcaseWithMedia.length > 0 && (
-        <Glass className="mb-4">
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-primary" />
-              <h2 className="font-medium">Portfolio Showcase</h2>
-              <span className="font-num text-xs text-muted-foreground">
-                · {output.mediaCount} mockups
-              </span>
-            </div>
-            <Link
-              to="/work"
-              className="text-xs font-semibold text-primary hover:underline"
-            >
-              Open Portfolio →
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {showcaseWithMedia.map((it) => {
-              const img = it.media.find((m) => m.kind === "image" && m.dataUrl);
-              return (
-                <Link
-                  key={it.id}
-                  to="/work"
-                  className="group overflow-hidden rounded-xl border border-border/80 bg-muted/35 transition-all hover:-translate-y-0.5 hover:border-primary/45"
-                >
-                  <div className="aspect-[16/10] bg-muted/70 p-2 light:bg-[#efece6]">
-                    {img?.dataUrl && (
-                      <img
-                        src={img.dataUrl}
-                        alt={it.title}
-                        className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-[1.03]"
-                      />
+                          </div>
+                        </Link>
+                      ),
                     )}
                   </div>
-                  <div className="p-2.5">
-                    <p className="truncate text-xs font-semibold text-foreground">
-                      {it.title}
-                    </p>
-                    <p className="truncate text-[0.68rem] text-muted-foreground">
-                      {it.projectGroup} · {it.designType}
-                    </p>
+                )}
+
+                {filteredHealthRows.length > 6 && (
+                  <div className="mt-3 flex justify-end border-t border-border/60 pt-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setHealthExpanded((v) => !v)}
+                      className="text-xs font-medium text-primary hover:underline"
+                    >
+                      {healthExpanded
+                        ? "Show fewer projects"
+                        : `Show all ${filteredHealthRows.length} projects`}
+                    </button>
                   </div>
-                </Link>
-              );
-            })}
-          </div>
-        </Glass>
-      )}
+                )}
+              </Glass>
+            ),
+          },
+          {
+            id: "calendar",
+            title: "Schedule & Holidays Calendar",
+            defaultSpan: 12,
+            render: () => <DashboardCalendarCard db={db} />,
+          },
+          ...(showcaseWithMedia.length > 0
+            ? [
+                {
+                  id: "portfolioShowcase",
+                  title: "Portfolio Showcase",
+                  defaultSpan: 12 as const,
+                  render: () => (
+                    <Glass className="h-full">
+                      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="h-4 w-4 text-primary" />
+                          <h2 className="font-display text-base font-bold">
+                            Portfolio Showcase
+                          </h2>
+                          <span className="font-num text-xs text-muted-foreground">
+                            · {output.mediaCount} mockups
+                          </span>
+                        </div>
+                        <Link
+                          to="/work"
+                          className="text-xs font-semibold text-primary hover:underline"
+                        >
+                          Open Portfolio →
+                        </Link>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                        {showcaseWithMedia.map((it) => {
+                          const img = it.media.find(
+                            (m) => m.kind === "image" && m.dataUrl,
+                          );
+                          return (
+                            <Link
+                              key={it.id}
+                              to="/work"
+                              className="ios-card-tap group overflow-hidden rounded-xl border border-border/80 bg-muted/35 hover:border-primary/45"
+                            >
+                              <div className="aspect-[16/10] bg-muted/70 p-2 light:bg-[#efece6]">
+                                {img?.dataUrl && (
+                                  <img
+                                    src={img.dataUrl}
+                                    alt={it.title}
+                                    className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-[1.03]"
+                                  />
+                                )}
+                              </div>
+                              <div className="p-2.5">
+                                <p className="truncate text-xs font-semibold text-foreground">
+                                  {it.title}
+                                </p>
+                                <p className="truncate text-[0.68rem] text-muted-foreground">
+                                  {it.projectGroup} · {it.designType}
+                                </p>
+                              </div>
+                            </Link>
+                          );
+                        })}
+                      </div>
+                    </Glass>
+                  ),
+                },
+              ]
+            : []),
+        ];
+
+        return (
+          <EditableBentoGrid
+            pageKey="home-dashboard"
+            widgets={homeWidgets}
+            editing={editingLayout}
+            onToggleEditing={() => setEditingLayout((v) => !v)}
+            onDoneEditing={() => setEditingLayout(false)}
+          />
+        );
+      })()}
 
       {/* Category Inspector Drawer with Interactive Timeline */}
       <CategoryInspectorDrawer
@@ -1383,6 +1537,33 @@ function CommandDashboard() {
                   ),
                 }));
                 toast.message("Income entry deleted.");
+              }
+            : undefined
+        }
+      />
+
+      {/* Unmatched Studio Income Drawer */}
+      <QuickStudioIncomeDrawer
+        item={studioIncomeDraft}
+        onClose={() => setStudioIncomeDraft(null)}
+        onSave={(v) => {
+          setDB((d) => ({
+            ...d,
+            studioIncome: upsert(d.studioIncome ?? [], v),
+          }));
+          toast.success("Studio income recorded.");
+        }}
+        onDelete={
+          studioIncomeDraft &&
+          (db.studioIncome ?? []).some((i) => i.id === studioIncomeDraft.id)
+            ? (v) => {
+                setDB((d) => ({
+                  ...d,
+                  studioIncome: (d.studioIncome ?? []).filter(
+                    (x) => x.id !== v.id,
+                  ),
+                }));
+                toast.message("Studio income entry deleted.");
               }
             : undefined
         }

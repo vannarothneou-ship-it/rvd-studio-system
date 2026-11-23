@@ -192,7 +192,7 @@ function Services() {
             }
           }}
           className={cn(
-            "glass rise group flex cursor-pointer flex-col p-5 text-left transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/60",
+            "glass rise ios-card-tap group flex cursor-pointer flex-col p-5 text-left transition-colors duration-200 hover:border-primary/60",
             active && "border-primary ring-2 ring-primary/35",
           )}
         >
@@ -256,7 +256,7 @@ function Services() {
               params={{ id: "new" }}
               search={{ service: s.id, kind: "Quotation" }}
               onClick={(e) => e.stopPropagation()}
-              className="btn-gold min-h-[34px] shrink-0 whitespace-nowrap px-3 py-1 text-xs"
+              className="ios-tap inline-flex min-h-[34px] shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground shadow-xs hover:bg-[var(--primary-hover,var(--primary))]"
             >
               + Quote
             </Link>
@@ -501,6 +501,7 @@ function Services() {
         pageKey="services"
         widgets={bentoWidgets}
         editing={editingLayout}
+        onToggleEditing={() => setEditingLayout((e) => !e)}
         onDoneEditing={() => setEditingLayout(false)}
       />
 

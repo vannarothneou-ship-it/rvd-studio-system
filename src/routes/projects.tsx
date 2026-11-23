@@ -89,9 +89,10 @@ import {
   isInvoice,
   money,
   parseTimelineDays,
+  recordToUSD,
+  safeKhrRate,
   setDB,
   shortDate,
-  toUSD,
   today,
   uid,
   updateProject,
@@ -497,7 +498,7 @@ function Page() {
       db.expenses
         .filter((e) => e.projectId === p.id)
         .reduce(
-          (a, e) => a + toUSD(e.amount, e.currency, db.settings.khrRate),
+          (a, e) => a + recordToUSD(e, safeKhrRate(db.settings.khrRate)),
           0,
         ),
     [db.expenses, db.settings.khrRate],
@@ -508,10 +509,7 @@ function Page() {
       const docs = db.invoices.filter((i) => i.projectId === p.id);
       const bills = docs.filter(isInvoice).map((i) => invoiceView(i, db));
       const billed = bills.reduce((a, x) => a + x.totalUSD, 0);
-      const paid = bills.reduce(
-        (a, x) => a + toUSD(x.paid, "USD", db.settings.khrRate),
-        0,
-      );
+      const paid = bills.reduce((a, x) => a + x.paidUSD, 0);
       return { docs, billed, paid };
     },
     [db],
@@ -1714,6 +1712,7 @@ function Page() {
         pageKey="projects"
         widgets={widgets}
         editing={editingLayout}
+        onToggleEditing={() => setEditingLayout((e) => !e)}
         onDoneEditing={() => setEditingLayout(false)}
       />
 

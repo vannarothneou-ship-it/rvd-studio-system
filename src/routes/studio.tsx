@@ -48,6 +48,7 @@ import {
 } from "@/components/rv/BentoGrid";
 import { WorkspaceBalanceCard } from "@/components/rv/WorkspaceBalanceCard";
 import { useReceiptScanner } from "@/components/rv/ReceiptScanner";
+import { QuickStudioIncomeDrawer } from "@/components/rv/QuickTxDrawer";
 import {
   EXPENSE_CATEGORIES,
   PROJECT_STATUSES,
@@ -65,9 +66,12 @@ import {
   money,
   needsFollowUp,
   recordPayment,
+  recordToUSD,
+  safeKhrRate,
   setDB,
   shortDate,
-  toUSD,
+  stampFxSnapshot,
+  studioFinancialSummary,
   today,
   uid,
   useDB,
@@ -75,6 +79,7 @@ import {
   type DB,
   type Expense,
   type Goal,
+  type StudioIncome,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -175,6 +180,8 @@ function StudioDashboard() {
     null,
   );
   const [expenseDraft, setExpenseDraft] = useState<Expense | null>(null);
+  const [studioIncomeDraft, setStudioIncomeDraft] =
+    useState<StudioIncome | null>(null);
   const [goalDraft, setGoalDraft] = useState<Goal | null>(null);
   const [editingLayout, setEditingLayout] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("overview");
@@ -232,9 +239,10 @@ function StudioDashboard() {
   );
   const cashIn = useMemo(() => s.reduce((a, x) => a + x.inn, 0), [s]);
   const cashOut = useMemo(() => s.reduce((a, x) => a + x.out, 0), [s]);
-  const r = db.settings.khrRate;
+  const r = safeKhrRate(db.settings.khrRate);
   const thisMonth = today().slice(0, 7);
   const year = today().slice(0, 4);
+  const studioSummaryAll = useMemo(() => studioFinancialSummary(db, ""), [db]);
 
   const openNewStudioExpense = (category?: string) => {
     setExpenseDraft({
@@ -251,6 +259,20 @@ function StudioDashboard() {
       currency: "USD",
       receipt: "",
       account: "Studio",
+    });
+  };
+
+  const openNewStudioIncome = () => {
+    setStudioIncomeDraft({
+      id: uid(),
+      date: today(),
+      source: "Retainer",
+      accountMethod: "Bank Transfer",
+      method: "Bank Transfer",
+      description: "",
+      amount: 0,
+      currency: "USD",
+      reference: "",
     });
   };
 
@@ -286,58 +308,88 @@ function StudioDashboard() {
     },
   ];
 
-  const studioCatsMonth = categoryTotals(db, "Studio", thisMonth);
-  const studioCatsAll = categoryTotals(db, "Studio", "");
+  const studioCatsMonth = useMemo(
+    () => categoryTotals(db, "Studio", thisMonth),
+    [db, thisMonth],
+  );
+  const studioCatsAll = useMemo(() => categoryTotals(db, "Studio", ""), [db]);
   const studioCats =
     studioCatsMonth.length > 0 ? studioCatsMonth : studioCatsAll;
   const studioCatsScopeLabel =
     studioCatsMonth.length > 0 ? "this month" : "all time";
-  const studioYearExpenses = expenseTotal(db, "Studio", year);
+  const studioYearExpenses = useMemo(
+    () => expenseTotal(db, "Studio", year),
+    [db, year],
+  );
 
-  const recentStudioExpenses = [...db.expenses]
-    .filter((e) => expenseAccount(e) === "Studio")
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 4);
+  const recentStudioExpenses = useMemo(
+    () =>
+      [...db.expenses]
+        .filter((e) => expenseAccount(e) === "Studio")
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 4),
+    [db.expenses],
+  );
 
-  const activity = [
-    ...db.payments.map((p) => {
-      const inv = db.invoices.find((i) => i.id === p.invoiceId);
-      const c = db.clients.find((c) => c.id === inv?.clientId);
-      return {
-        date: p.date,
-        title: `${c?.name ?? "Client"} · ${p.reference || "payment"}`,
-        sub: `Client payment · ${p.method}`,
-        amt: toUSD(p.amount, p.currency, r),
-        kind: "in" as const,
-        expense: null as DB["expenses"][number] | null,
-        invoiceId: p.invoiceId,
-      };
-    }),
-    ...db.expenses
-      .filter((e) => expenseAccount(e) === "Studio")
-      .map((e) => ({
-        date: e.date,
-        title: e.description || e.vendor,
-        sub: `Studio cost · ${e.category}`,
-        amt: -toUSD(e.amount, e.currency, r),
-        kind: "out" as const,
-        expense: e,
-        invoiceId: null as string | null,
-      })),
-    ...db.invoices.filter(isInvoice).map((i) => ({
-      date: i.issue,
-      title: `Invoice ${i.no}`,
-      sub: `Issued · ${db.clients.find((c) => c.id === i.clientId)?.name ?? ""}`,
-      amt: invoiceView(i, db).totalUSD,
-      kind: "inv" as const,
-      expense: null as DB["expenses"][number] | null,
-      invoiceId: i.id,
-    })),
-  ]
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .slice(0, 7);
+  const activity = useMemo(
+    () =>
+      [
+        ...db.payments.map((p) => {
+          const inv = db.invoices.find((i) => i.id === p.invoiceId);
+          const c = db.clients.find((c) => c.id === inv?.clientId);
+          return {
+            date: p.date,
+            title: `${c?.name ?? "Client"} · ${p.reference || "payment"}`,
+            sub: `Client payment · ${p.method}`,
+            amt: recordToUSD(p, r),
+            kind: "in" as const,
+            expense: null as DB["expenses"][number] | null,
+            studioIncome: null as StudioIncome | null,
+            invoiceId: p.invoiceId,
+          };
+        }),
+        ...(db.studioIncome ?? []).map((si) => ({
+          date: si.date,
+          title: si.description || si.source,
+          sub: `Studio income · ${si.method || si.accountMethod}`,
+          amt: recordToUSD(si, r),
+          kind: "in" as const,
+          expense: null as DB["expenses"][number] | null,
+          studioIncome: si,
+          invoiceId: null as string | null,
+        })),
+        ...db.expenses
+          .filter((e) => expenseAccount(e) === "Studio")
+          .map((e) => ({
+            date: e.date,
+            title: e.description || e.vendor,
+            sub: `Studio cost · ${e.category}`,
+            amt: -recordToUSD(e, r),
+            kind: "out" as const,
+            expense: e,
+            studioIncome: null as StudioIncome | null,
+            invoiceId: null as string | null,
+          })),
+        ...db.invoices.filter(isInvoice).map((i) => ({
+          date: i.issue,
+          title: `Invoice ${i.no}`,
+          sub: `Issued · ${db.clients.find((c) => c.id === i.clientId)?.name ?? ""}`,
+          amt: invoiceView(i, db).totalUSD,
+          kind: "inv" as const,
+          expense: null as DB["expenses"][number] | null,
+          studioIncome: null as StudioIncome | null,
+          invoiceId: i.id,
+        })),
+      ]
+        .sort((a, b) => b.date.localeCompare(a.date))
+        .slice(0, 7),
+    [db, r],
+  );
 
-  const studioGoals = db.goals.filter((g) => goalAccount(g) === "Studio");
+  const studioGoals = useMemo(
+    () => db.goals.filter((g) => goalAccount(g) === "Studio"),
+    [db.goals],
+  );
   const goalValue = useCallback(
     (g: DB["goals"][number]) =>
       g.kind === "cash"
@@ -372,103 +424,132 @@ function StudioDashboard() {
     [],
   );
 
-  const inProductionCount = db.projects.filter(
-    (p) => p.status === "In production",
-  ).length;
-  const readyToClose = db.projects.filter(
-    (p) =>
-      p.status === "Delivered" &&
-      (() => {
-        const inv = views.filter(
-          (x) => isInvoice(x.i) && x.i.projectId === p.id,
-        );
-        return inv.length > 0 && inv.every((x) => x.v.status === "Paid");
-      })(),
-  ).length;
+  const inProductionCount = useMemo(
+    () => db.projects.filter((p) => p.status === "In production").length,
+    [db.projects],
+  );
+  const readyToClose = useMemo(
+    () =>
+      db.projects.filter(
+        (p) =>
+          p.status === "Delivered" &&
+          (() => {
+            const inv = views.filter(
+              (x) => isInvoice(x.i) && x.i.projectId === p.id,
+            );
+            return inv.length > 0 && inv.every((x) => x.v.status === "Paid");
+          })(),
+      ).length,
+    [db.projects, views],
+  );
 
-  const openInvoicesList = views
-    .filter(
-      (x) => isInvoice(x.i) && x.v.balanceUSD > 0 && x.v.status !== "Draft",
-    )
-    .sort((a, b) => a.i.due.localeCompare(b.i.due))
-    .slice(0, 6);
+  const openInvoicesList = useMemo(
+    () =>
+      views
+        .filter(
+          (x) => isInvoice(x.i) && x.v.balanceUSD > 0 && x.v.status !== "Draft",
+        )
+        .sort((a, b) => a.i.due.localeCompare(b.i.due))
+        .slice(0, 6),
+    [views],
+  );
 
-  const topClientsList = [...db.clients]
-    .map((c) => {
-      const billed = views
-        .filter((x) => x.i.clientId === c.id)
-        .reduce((a, x) => a + x.v.totalUSD, 0);
-      return { c, billed };
-    })
-    .filter((x) => x.billed > 0)
-    .sort((a, b) => b.billed - a.billed)
-    .slice(0, 6);
+  const topClientsList = useMemo(
+    () =>
+      [...db.clients]
+        .map((c) => {
+          const billed = views
+            .filter((x) => x.i.clientId === c.id)
+            .reduce((a, x) => a + x.v.totalUSD, 0);
+          return { c, billed };
+        })
+        .filter((x) => x.billed > 0)
+        .sort((a, b) => b.billed - a.billed)
+        .slice(0, 6),
+    [db.clients, views],
+  );
 
   const allWidgets = useMemo<Record<string, BentoWidgetDef>>(
     () => ({
       followUps: {
         id: "followUps",
         title: "Client follow-ups",
-        defaultSpan: 12,
+        defaultSpan: 6,
         render: () => (
-          <Glass className="h-full">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-display text-lg font-bold">
-                Client follow-ups{" "}
-                <span className="text-primary">{followUps.length}</span>
-              </h2>
-              <Link to="/invoices" className="text-sm text-primary">
-                Documents →
-              </Link>
+          <Glass className="flex h-full flex-col justify-between">
+            <div>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-primary">
+                    <FileText className="h-4 w-4" />
+                  </span>
+                  <h2 className="truncate font-display text-base font-bold">
+                    Client follow-ups{" "}
+                    <span className="font-num text-primary">
+                      {followUps.length}
+                    </span>
+                  </h2>
+                </div>
+                <Link
+                  to="/invoices"
+                  className="shrink-0 text-xs font-medium text-primary hover:underline"
+                >
+                  Documents →
+                </Link>
+              </div>
+              <div className="mb-3 grid grid-cols-2 gap-2.5 rounded-xl border border-border/70 bg-muted/40 p-3 text-xs text-muted-foreground">
+                <div>
+                  <span className="font-num block text-base font-bold text-foreground">
+                    {
+                      db.invoices.filter(
+                        (i) =>
+                          documentKind(i) === "Quotation" &&
+                          i.sent &&
+                          (!i.response || i.response === "Pending"),
+                      ).length
+                    }
+                  </span>
+                  <span>Quotations awaiting reply</span>
+                </div>
+                <div>
+                  <span className="font-num block text-base font-bold text-foreground">
+                    {
+                      db.invoices.filter(
+                        (i) =>
+                          documentKind(i) === "Agreement" &&
+                          i.response !== "Accepted",
+                      ).length
+                    }
+                  </span>
+                  <span>Agreements unsigned</span>
+                </div>
+              </div>
+              {followUps.length ? (
+                <ul className="divide-y divide-border">
+                  {followUps.slice(0, 5).map((i) => (
+                    <li key={i.id}>
+                      <Link
+                        to="/invoices/$id"
+                        params={{ id: i.id }}
+                        className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-xs transition-colors hover:text-primary"
+                      >
+                        <span className="truncate font-medium">
+                          {db.clients.find((c) => c.id === i.clientId)?.name} ·{" "}
+                          {i.no}
+                        </span>
+                        <span className="font-num shrink-0 text-primary">
+                          Follow up · {shortDate(i.followUp ?? "")} →
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="py-3 text-xs text-muted-foreground">
+                  No quotation follow-ups due.
+                </p>
+              )}
             </div>
-            <div className="mb-3 flex flex-wrap gap-4 text-sm text-muted-foreground">
-              <span>
-                {
-                  db.invoices.filter(
-                    (i) =>
-                      documentKind(i) === "Quotation" &&
-                      i.sent &&
-                      (!i.response || i.response === "Pending"),
-                  ).length
-                }{" "}
-                quotations awaiting response
-              </span>
-              <span>
-                {
-                  db.invoices.filter(
-                    (i) =>
-                      documentKind(i) === "Agreement" &&
-                      i.response !== "Accepted",
-                  ).length
-                }{" "}
-                agreements awaiting signature
-              </span>
-            </div>
-            {followUps.length ? (
-              <ul className="divide-y divide-border">
-                {followUps.slice(0, 5).map((i) => (
-                  <li key={i.id}>
-                    <Link
-                      to="/invoices/$id"
-                      params={{ id: i.id }}
-                      className="flex flex-wrap items-center justify-between gap-2 py-2.5 text-sm"
-                    >
-                      <span>
-                        {db.clients.find((c) => c.id === i.clientId)?.name} ·{" "}
-                        {i.no}
-                      </span>
-                      <span className="text-primary">
-                        Follow up · {shortDate(i.followUp ?? "")} →
-                      </span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No quotation follow-ups due.
-              </p>
-            )}
           </Glass>
         ),
       },
@@ -479,9 +560,19 @@ function StudioDashboard() {
         render: () => (
           <Glass className="flex h-full flex-col justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">
-                Studio net cash profit, {rangeMeta.desc}
-              </p>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-primary">
+                  <Briefcase className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="truncate font-display text-base font-bold leading-tight">
+                    Studio Net Profit
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    {rangeMeta.desc}
+                  </p>
+                </div>
+              </div>
               <p
                 className={cn(
                   "font-num mt-2 text-3xl font-extrabold sm:text-4xl",
@@ -499,26 +590,60 @@ function StudioDashboard() {
                 valueLabel="Studio cumulative net"
               />
             </div>
-            <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
-              <Link to="/invoices">
+            <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3 sm:grid-cols-3">
+              <Link to="/invoices" className="ios-tap">
                 <Stat
-                  label="Outstanding"
+                  label="Open A/R"
                   value={compactMoney(outstanding)}
                   fullValue={money(outstanding)}
                 />
               </Link>
-              <Link to="/invoices">
-                <Stat
-                  label="Overdue"
-                  value={compactMoney(overdue)}
-                  fullValue={money(overdue)}
-                  tone={overdue > 0 ? "neg" : undefined}
-                />
-              </Link>
-              <Link to="/projects">
+              <Stat
+                label="Invoiced (All)"
+                value={compactMoney(studioSummaryAll.revenueInvoicedUSD)}
+                fullValue={money(studioSummaryAll.revenueInvoicedUSD)}
+              />
+              <Stat
+                label="Est. Project Profit"
+                value={compactMoney(
+                  studioSummaryAll.estimatedProjectProfitUSD,
+                  "USD",
+                  true,
+                )}
+                fullValue={money(
+                  studioSummaryAll.estimatedProjectProfitUSD,
+                  "USD",
+                  true,
+                )}
+                tone={
+                  studioSummaryAll.estimatedProjectProfitUSD >= 0
+                    ? "pos"
+                    : "neg"
+                }
+              />
+              <Stat
+                label="Project Costs"
+                value={compactMoney(studioSummaryAll.directProjectCostsUSD)}
+                fullValue={money(studioSummaryAll.directProjectCostsUSD)}
+              />
+              <Stat
+                label="Operating Overhead"
+                value={compactMoney(studioSummaryAll.operatingExpensesUSD)}
+                fullValue={money(studioSummaryAll.operatingExpensesUSD)}
+              />
+              <Link to="/projects" className="ios-tap">
                 <Stat label="In production" value={String(inProductionCount)} />
               </Link>
             </div>
+            {studioSummaryAll.planningReservePct > 0 && (
+              <p className="mt-2 text-[0.7rem] text-muted-foreground">
+                Planning reserve ({studioSummaryAll.planningReservePct}% est.):{" "}
+                <span className="font-num font-semibold text-foreground">
+                  {money(studioSummaryAll.planningReserveUSD)}
+                </span>{" "}
+                (cash-flow buffer only, not tax liability)
+              </p>
+            )}
           </Glass>
         ),
       },
@@ -527,48 +652,57 @@ function StudioDashboard() {
         title: "Cash Flow",
         defaultSpan: 7,
         render: () => (
-          <Glass delay={80} className="h-full">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="font-medium">Cash Flow</h2>
-              <ChartModeCycleButton
-                mode={cashChartMode}
-                onChange={setCashChartMode}
-              />
-            </div>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <SlidingTabs
-                size="xs"
-                tone="invert"
-                layoutGroup="ov-cash-range"
-                value={range}
-                onChange={setRange}
-                options={RANGE_OPTIONS.map((o) => ({
-                  id: o.id,
-                  label: o.label,
-                }))}
-              />
-            </div>
-            <div className="mb-3 grid grid-cols-3 gap-3 rounded-2xl bg-muted/35 p-3">
-              <Stat
-                icon={ArrowDownLeft}
-                label="In"
-                value={compactMoney(cashIn)}
-                fullValue={money(cashIn)}
-                tone="pos"
-              />
-              <Stat
-                icon={ArrowUpRight}
-                label="Out"
-                value={compactMoney(cashOut)}
-                fullValue={money(cashOut)}
-              />
-              <Stat
-                icon={Activity}
-                label="Net"
-                value={compactMoney(cashIn - cashOut, "USD", true)}
-                fullValue={money(cashIn - cashOut, "USD", true)}
-                tone={cashIn - cashOut >= 0 ? "pos" : "neg"}
-              />
+          <Glass delay={80} className="flex h-full flex-col justify-between">
+            <div>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-primary">
+                    <Activity className="h-4 w-4" />
+                  </span>
+                  <h2 className="truncate font-display text-base font-bold leading-tight">
+                    Cash Flow
+                  </h2>
+                </div>
+                <ChartModeCycleButton
+                  mode={cashChartMode}
+                  onChange={setCashChartMode}
+                />
+              </div>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <SlidingTabs
+                  size="xs"
+                  tone="invert"
+                  layoutGroup="ov-cash-range"
+                  value={range}
+                  onChange={setRange}
+                  options={RANGE_OPTIONS.map((o) => ({
+                    id: o.id,
+                    label: o.label,
+                  }))}
+                />
+              </div>
+              <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
+                <Stat
+                  icon={ArrowDownLeft}
+                  label="In"
+                  value={compactMoney(cashIn)}
+                  fullValue={money(cashIn)}
+                  tone="pos"
+                />
+                <Stat
+                  icon={ArrowUpRight}
+                  label="Out"
+                  value={compactMoney(cashOut)}
+                  fullValue={money(cashOut)}
+                />
+                <Stat
+                  icon={Activity}
+                  label="Net"
+                  value={compactMoney(cashIn - cashOut, "USD", true)}
+                  fullValue={money(cashIn - cashOut, "USD", true)}
+                  tone={cashIn - cashOut >= 0 ? "pos" : "neg"}
+                />
+              </div>
             </div>
             <TrendChartCanvas
               mode={cashChartMode}
@@ -701,7 +835,7 @@ function StudioDashboard() {
                           </span>
                         </div>
                         <span className="font-num shrink-0 text-destructive">
-                          {money(-toUSD(e.amount, e.currency, r))}
+                          {money(-recordToUSD(e, r))}
                         </span>
                       </button>
                     </li>
@@ -779,17 +913,29 @@ function StudioDashboard() {
       recentActivity: {
         id: "recentActivity",
         title: "Recent studio activity",
-        defaultSpan: 12,
+        defaultSpan: 6,
         render: () => (
           <Glass delay={200} className="h-full">
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="font-medium">Recent studio activity</h2>
-              <Link
-                to="/finance"
-                className="text-sm text-muted-foreground hover:text-foreground"
-              >
-                Studio finance →
-              </Link>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h2 className="font-display text-base font-bold">
+                Recent studio activity
+              </h2>
+              <div className="flex items-center gap-2">
+                <Btn
+                  type="button"
+                  onClick={openNewStudioIncome}
+                  className="px-2.5 py-1 text-xs whitespace-nowrap shrink-0"
+                >
+                  <Plus className="h-3 w-3 text-positive" />
+                  Income
+                </Btn>
+                <Link
+                  to="/finance"
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  Studio finance →
+                </Link>
+              </div>
             </div>
             <ul className="divide-y divide-border">
               {activity.map((a, k) => {
@@ -814,7 +960,27 @@ function StudioDashboard() {
                       )}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium">{a.title}</p>
+                      {a.studioIncome ? (
+                        <button
+                          type="button"
+                          onClick={() => setStudioIncomeDraft(a.studioIncome)}
+                          className="block w-full truncate text-left text-sm font-medium hover:text-primary"
+                        >
+                          {a.title}
+                        </button>
+                      ) : a.expense ? (
+                        <button
+                          type="button"
+                          onClick={() => setExpenseDraft(a.expense)}
+                          className="block w-full truncate text-left text-sm font-medium hover:text-primary"
+                        >
+                          {a.title}
+                        </button>
+                      ) : (
+                        <p className="truncate text-sm font-medium">
+                          {a.title}
+                        </p>
+                      )}
                       <p className="truncate text-xs text-muted-foreground">
                         {a.sub} · {shortDate(a.date)}
                       </p>
@@ -847,11 +1013,13 @@ function StudioDashboard() {
             <div className="mb-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <FolderKanban className="h-4 w-4 text-primary" />
-                <h2 className="font-medium">Project pipeline</h2>
+                <h2 className="font-display text-base font-bold">
+                  Project pipeline
+                </h2>
               </div>
               <Link
                 to="/projects"
-                className="text-sm text-muted-foreground hover:text-foreground"
+                className="text-xs font-medium text-primary hover:underline"
               >
                 Open board →
               </Link>
@@ -861,7 +1029,7 @@ function StudioDashboard() {
                 <Link
                   key={st}
                   to="/projects"
-                  className="rounded-2xl border border-border bg-muted p-4 transition-transform hover:-translate-y-0.5"
+                  className="ios-card-tap rounded-2xl border border-border bg-muted p-4"
                 >
                   <p className="label-mono">{st}</p>
                   <p className="font-num text-3xl font-extrabold">
@@ -871,7 +1039,7 @@ function StudioDashboard() {
               ))}
               <Link
                 to="/projects"
-                className="rounded-2xl border border-primary/50 bg-primary/15 p-4 text-primary transition-transform hover:-translate-y-0.5"
+                className="ios-card-tap rounded-2xl border border-primary/50 bg-primary/15 p-4 text-primary"
               >
                 <p className="label-mono text-primary">Ready to close</p>
                 <p className="font-num text-3xl font-extrabold">
@@ -1004,7 +1172,7 @@ function StudioDashboard() {
       netRange,
       spark,
       outstanding,
-      overdue,
+      studioSummaryAll,
       inProductionCount,
       range,
       cashChartMode,
@@ -1030,16 +1198,16 @@ function StudioDashboard() {
   );
 
   const studioDashboardList: BentoWidgetDef[] = [
-    allWidgets["followUps"]!,
     allWidgets["netProfit"]!,
     allWidgets["cashFlowChart"]!,
-    allWidgets["projectPipeline"]!,
     allWidgets["invoicesSummary"]!,
-    allWidgets["topClients"]!,
+    allWidgets["followUps"]!,
+    allWidgets["projectPipeline"]!,
     allWidgets["categoryMixPie"]!,
     allWidgets["periodPulse"]!,
     allWidgets["studioExpenses"]!,
     allWidgets["goalsRings"]!,
+    allWidgets["topClients"]!,
     allWidgets["recentActivity"]!,
   ];
 
@@ -1073,7 +1241,7 @@ function StudioDashboard() {
             <Link
               to="/invoices/$id"
               params={{ id: "new" }}
-              className="btn-gold whitespace-nowrap shrink-0"
+              className="ios-tap inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-xs hover:bg-[var(--primary-hover,var(--primary))] sm:min-h-[38px]"
             >
               <Plus className="h-4 w-4" />
               New invoice
@@ -1155,6 +1323,7 @@ function StudioDashboard() {
         pageKey={pageKey}
         widgets={currentWidgets}
         editing={editingLayout}
+        onToggleEditing={() => setEditingLayout((e) => !e)}
         onDoneEditing={() => setEditingLayout(false)}
       />
 
@@ -1179,7 +1348,15 @@ function StudioDashboard() {
         onSave={(v) =>
           setDB((d) => ({
             ...d,
-            expenses: upsert(d.expenses, { ...v, account: "Studio" }),
+            expenses: upsert(
+              d.expenses,
+              stampFxSnapshot(
+                { ...v, account: "Studio" },
+                safeKhrRate(d.settings.khrRate),
+                expenseDraft?.currency === v.currency &&
+                  expenseDraft?.amount === v.amount,
+              ),
+            ),
           }))
         }
         onDelete={
@@ -1189,6 +1366,32 @@ function StudioDashboard() {
                   ...d,
                   expenses: d.expenses.filter((x) => x.id !== v.id),
                 }))
+            : undefined
+        }
+      />
+
+      <QuickStudioIncomeDrawer
+        item={studioIncomeDraft}
+        onClose={() => setStudioIncomeDraft(null)}
+        onSave={(v) => {
+          setDB((d) => ({
+            ...d,
+            studioIncome: upsert(d.studioIncome ?? [], v),
+          }));
+          toast.success("Studio income saved.");
+        }}
+        onDelete={
+          studioIncomeDraft &&
+          (db.studioIncome ?? []).some((x) => x.id === studioIncomeDraft.id)
+            ? (v) => {
+                setDB((d) => ({
+                  ...d,
+                  studioIncome: (d.studioIncome ?? []).filter(
+                    (x) => x.id !== v.id,
+                  ),
+                }));
+                toast.message("Studio income deleted.");
+              }
             : undefined
         }
       />

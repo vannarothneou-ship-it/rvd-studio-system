@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { agreementPages } from "@/components/rv/AgreementDoc";
-import { packBentoItems } from "@/components/rv/BentoGrid";
+import { moveBentoItem, packBentoItems } from "@/components/rv/BentoGrid";
 import {
   insertCaseStudyBlockAt,
   reorderCaseStudyBlocks,
@@ -26,9 +26,11 @@ import {
   expenseAccount,
   expenseCategoriesFor,
   expenseTotal,
+  flushDB,
   formatMonthLong,
   formatMonthShort,
   getDB,
+  getPersistStatus,
   getProjectHealth,
   goalAccount,
   groupLedgerRowsByMonth,
@@ -36,6 +38,7 @@ import {
   invoiceTotals,
   invoiceView,
   isInvoice,
+  migrateAndValidateDB,
   needsFollowUp,
   nextInvoiceNo,
   nextWorkStage,
@@ -44,19 +47,25 @@ import {
   parseTimelineDays,
   periodBreakdownBars,
   projectDeleteBlocker,
+  recordToUSD,
+  safeKhrRate,
   serviceDeleteBlocker,
   personalCategoryTotals,
   personalIncomeSourceTotals,
   personalIncomeTotal,
   personalSeries,
   recordPayment,
+  resetDB,
   revenueByPillar,
   saveCaseStudy,
   saveDocument,
   serviceItem,
   setCategoryLimit,
   setDB,
+  stampFxSnapshot,
+  studioFinancialSummary,
   workspaceBalances,
+  type Expense,
   type Invoice,
 } from "./store";
 
@@ -959,5 +968,263 @@ describe("monthly ledger filtering, grouping, and responsive bento mdSpan", () =
       ["pairB", 1],
       ["solo", 2],
     ]);
+  });
+
+  it("moves bento cards step-by-step while skipping hidden slots and honoring bounds", () => {
+    const base = [
+      { id: "a", span: 6 as const },
+      { id: "hiddenMid", span: 6 as const, hidden: true },
+      { id: "b", span: 6 as const },
+      { id: "c", span: 12 as const },
+    ];
+
+    const movedDown = moveBentoItem(base, "a", 1);
+    expect(movedDown.map((x) => x.id)).toEqual(["b", "hiddenMid", "a", "c"]);
+
+    const movedUp = moveBentoItem(movedDown, "a", -1);
+    expect(movedUp.map((x) => x.id)).toEqual(["a", "hiddenMid", "b", "c"]);
+
+    expect(moveBentoItem(base, "a", -1)).toBe(base);
+    expect(moveBentoItem(base, "c", 1)).toBe(base);
+  });
+});
+
+describe("Phase 1 FX immutability, financial separation, migration & persistence safety", () => {
+  it("preserves historical KHR->USD equivalents even after changing settings.khrRate", () => {
+    const exp: Expense = stampFxSnapshot(
+      {
+        id: "fx-exp-1",
+        date: "2026-10-05",
+        projectId: "",
+        category: "Food",
+        vendor: "Debit",
+        description: "Lunch",
+        amount: 41_000,
+        currency: "KHR",
+        receipt: "",
+        account: "Personal" as const,
+      },
+      4100,
+    );
+    expect(exp.exchangeRate).toBe(4100);
+    expect(exp.usdAmount).toBe(10);
+
+    // Later settings.khrRate changes to 5000 — historical expense stays $10.00
+    expect(recordToUSD(exp, 5000)).toBe(10);
+
+    // KHR invoice + KHR payment compute paidUSD accurately instead of inflating 4,100x
+    const db = getDB();
+    const khrInv: Invoice = inv({
+      id: "inv-khr-1",
+      no: "RVIN-KHR-01",
+      issue: "2026-10-01",
+      due: "2026-10-20",
+      currency: "KHR",
+      exchangeRate: 4100,
+      sent: true,
+      items: [
+        {
+          id: "it-1",
+          description: "Logo",
+          scope: "",
+          timeline: "",
+          qty: 1,
+          price: 4_100_000,
+        },
+      ],
+    });
+    const withInv = {
+      ...db,
+      settings: { ...db.settings, khrRate: 4100 },
+      invoices: [...db.invoices, khrInv],
+    };
+    const afterPay = recordPayment(withInv, {
+      id: "pay-khr-1",
+      invoiceId: "inv-khr-1",
+      date: "2026-10-10",
+      amount: 2_050_000,
+      currency: "KHR",
+      method: "KHQR",
+      reference: "QR1",
+    });
+    const afterRateEdit = {
+      ...afterPay,
+      settings: { ...afterPay.settings, khrRate: 5000 },
+    };
+    const view = invoiceView(khrInv, afterRateEdit);
+    expect(view.totalUSD).toBeCloseTo(1000, 2);
+    expect(view.paidUSD).toBeCloseTo(500, 2);
+    expect(view.balanceUSD).toBeCloseTo(500, 2);
+  });
+
+  it("separates cash received, invoiced revenue, open A/R, project vs operating costs, profit, and optional reserve estimate", () => {
+    const base = getDB();
+    const cleanDb = {
+      ...base,
+      settings: {
+        ...base.settings,
+        khrRate: 4100,
+        planningReservePct: 10,
+      },
+      invoices: [
+        inv({
+          id: "i-sep-1",
+          no: "RVIN-SEP-1",
+          issue: "2026-11-01",
+          due: "2026-11-30",
+          sent: true,
+          items: [
+            {
+              id: "1",
+              description: "Branding",
+              scope: "",
+              timeline: "",
+              qty: 1,
+              price: 1000,
+            },
+          ],
+        }),
+        inv({
+          id: "i-sep-draft",
+          no: "RVIN-SEP-DRAFT",
+          issue: "2026-11-02",
+          due: "2026-11-30",
+          sent: false,
+          items: [
+            {
+              id: "2",
+              description: "Draft work",
+              scope: "",
+              timeline: "",
+              qty: 1,
+              price: 900,
+            },
+          ],
+        }),
+      ],
+      payments: [
+        {
+          id: "p-sep-1",
+          invoiceId: "i-sep-1",
+          date: "2026-11-05",
+          amount: 400,
+          currency: "USD" as const,
+          exchangeRate: 4100,
+          usdAmount: 400,
+          method: "Bank transfer",
+          reference: "REF1",
+        },
+      ],
+      studioIncome: [
+        {
+          id: "si-sep-1",
+          date: "2026-11-06",
+          source: "Retainer",
+          accountMethod: "Bank Transfer",
+          method: "Bank Transfer",
+          description: "Monthly retainer",
+          amount: 200,
+          currency: "USD" as const,
+          exchangeRate: 4100,
+          usdAmount: 200,
+        },
+      ],
+      expenses: [
+        {
+          id: "e-direct",
+          date: "2026-11-07",
+          projectId: "proj-1",
+          category: "Printing and production",
+          vendor: "Print shop",
+          description: "Client proofs",
+          amount: 150,
+          currency: "USD" as const,
+          exchangeRate: 4100,
+          usdAmount: 150,
+          receipt: "",
+          account: "Studio" as const,
+        },
+        {
+          id: "e-op",
+          date: "2026-11-08",
+          projectId: "",
+          category: "Software and subscriptions",
+          vendor: "Adobe",
+          description: "Creative Cloud",
+          amount: 50,
+          currency: "USD" as const,
+          exchangeRate: 4100,
+          usdAmount: 50,
+          receipt: "",
+          account: "Studio" as const,
+        },
+      ],
+    };
+
+    const sum = studioFinancialSummary(cleanDb, "2026-11");
+    expect(sum.invoicePaymentsUSD).toBe(400);
+    expect(sum.unmatchedStudioIncomeUSD).toBe(200);
+    expect(sum.cashReceivedUSD).toBe(600);
+    expect(sum.revenueInvoicedUSD).toBe(1000); // excludes Draft invoice
+    expect(sum.outstandingReceivablesUSD).toBe(600);
+    expect(sum.directProjectCostsUSD).toBe(150);
+    expect(sum.operatingExpensesUSD).toBe(50);
+    expect(sum.estimatedProjectProfitUSD).toBe(850); // 1000 invoiced - 150 direct project costs
+    expect(sum.netCashFlowUSD).toBe(400); // 600 cash received - 200 studio expenses
+    expect(sum.planningReservePct).toBe(10);
+    expect(sum.planningReserveUSD).toBe(40); // 10% of 400 positive net cash flow
+  });
+
+  it("migrates legacy DB data, stamps missing FX snapshots, and repairs invalid settings", () => {
+    const legacyPayload = {
+      clients: [{ id: "c1", name: "Legacy Co" }],
+      expenses: [
+        {
+          id: "e1",
+          date: "2026-09-01",
+          projectId: "",
+          category: "Food",
+          vendor: "Debit",
+          description: "Noodles",
+          amount: 8200,
+          currency: "KHR",
+          receipt: "",
+        },
+      ],
+      settings: {
+        khrRate: -100,
+        planningReservePct: 99,
+      },
+    };
+    const migrated = migrateAndValidateDB(legacyPayload);
+    expect(migrated.schemaVersion).toBe(4);
+    expect(migrated.clients).toHaveLength(1);
+    expect(safeKhrRate(migrated.settings.khrRate)).toBe(4100);
+    expect(migrated.settings.khrRate).toBe(4100);
+    expect(migrated.settings.planningReservePct).toBe(50);
+    expect(migrated.studioIncome).toEqual([]);
+    expect(migrated.expenses[0]!.exchangeRate).toBe(4100);
+    expect(migrated.expenses[0]!.usdAmount).toBe(2);
+  });
+
+  it("reports persistence failure cleanly via getPersistStatus instead of silently dropping errors", () => {
+    const origSetItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = () => {
+      const err = new Error("Quota exceeded");
+      err.name = "QuotaExceededError";
+      throw err;
+    };
+    try {
+      setDB((d) => ({ ...d, settings: { ...d.settings, ownerName: "Test" } }));
+      const ok = flushDB();
+      expect(ok).toBe(false);
+      const status = getPersistStatus();
+      expect(status.dirty).toBe(true);
+      expect(status.quotaExceeded).toBe(true);
+      expect(status.lastError).toMatch(/quota/i);
+    } finally {
+      Storage.prototype.setItem = origSetItem;
+      resetDB();
+    }
   });
 });

@@ -41,8 +41,9 @@ import {
   compactMoney,
   expenseAccount,
   money,
+  recordToUSD,
   revenueByPillar,
-  toUSD,
+  safeKhrRate,
   today,
   type Account,
   type DB,
@@ -693,7 +694,7 @@ export function BreakdownPieCard({
   const effectiveGroup: PieGroupBy = canGroupMethod ? groupBy : "category";
 
   const slices = useMemo(() => {
-    const r = db.settings.khrRate;
+    const r = safeKhrRate(db.settings.khrRate);
     const matchesPeriod = (dt: string) => {
       if (dateSet) return dateSet.has(dt);
       if (monthSet) return monthSet.has(dt.slice(0, 7));
@@ -718,7 +719,7 @@ export function BreakdownPieCard({
           if (!matchesPeriod(inc.date)) continue;
           const k = inc.accountMethod?.trim() || "Bank";
           const cur = mMap.get(k) ?? { usd: 0, count: 0 };
-          cur.usd += toUSD(inc.amount, inc.currency, r);
+          cur.usd += recordToUSD(inc, r);
           cur.count += 1;
           mMap.set(k, cur);
         }
@@ -752,7 +753,7 @@ export function BreakdownPieCard({
         if (!matchesPeriod(e.date)) continue;
         const k = e.vendor?.trim() || "Other";
         const cur = mMap.get(k) ?? { usd: 0, count: 0 };
-        cur.usd += toUSD(e.amount, e.currency, r);
+        cur.usd += recordToUSD(e, r);
         cur.count += 1;
         mMap.set(k, cur);
       }
@@ -1197,7 +1198,7 @@ export function CardSpendingChartCard({
   const insights = useMemo(() => {
     const pointKeys = new Set(agg.points.map((p) => p.key));
     const anchorDay = agg.points[0]?.key.slice(0, 10) ?? "";
-    const r = db.settings.khrRate;
+    const r = safeKhrRate(db.settings.khrRate);
     const catByCard = {
       debit: new Map<string, number>(),
       credit: new Map<string, number>(),
@@ -1214,7 +1215,7 @@ export function CardSpendingChartCard({
       if (!match) continue;
       const ck = cardKind(e.vendor);
       if (ck === "Other") continue;
-      const usd = toUSD(e.amount, e.currency, r);
+      const usd = recordToUSD(e, r);
       const map = ck === "Debit" ? catByCard.debit : catByCard.credit;
       map.set(e.category, (map.get(e.category) ?? 0) + usd);
     }

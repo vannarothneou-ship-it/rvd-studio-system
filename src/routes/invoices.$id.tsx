@@ -48,6 +48,7 @@ import {
   nextInvoiceNo,
   reconcileProjects,
   recordPayment,
+  safeKhrRate,
   saveDocument,
   serviceItem,
   setDB,
@@ -121,7 +122,7 @@ function makeNew(search: {
   );
   const item = svc
     ? {
-        ...serviceItem(svc, "USD", db.settings.khrRate),
+        ...serviceItem(svc, "USD", safeKhrRate(db.settings.khrRate)),
         price: proj?.quote || svc.rate,
       }
     : blankItem();
@@ -466,14 +467,18 @@ function Editor() {
                 onChange={(x) => {
                   const currency = x as "USD" | "KHR";
                   if (currency === draft.currency) return;
+                  const rate = safeKhrRate(
+                    draft.exchangeRate ?? db.settings.khrRate,
+                  );
                   up({
                     currency,
+                    exchangeRate: rate,
                     items: draft.items.map((it) => ({
                       ...it,
                       price:
                         currency === "KHR"
-                          ? it.price * db.settings.khrRate
-                          : it.price / db.settings.khrRate,
+                          ? Math.round(it.price * rate)
+                          : Math.round((it.price / rate) * 100) / 100,
                     })),
                   });
                 }}
@@ -528,16 +533,19 @@ function Editor() {
                               ...serviceItem(
                                 s,
                                 draft.currency,
-                                db.settings.khrRate,
+                                safeKhrRate(db.settings.khrRate),
                               ),
                               price: p?.quote
                                 ? draft.currency === "KHR"
-                                  ? p.quote * db.settings.khrRate
+                                  ? Math.round(
+                                      p.quote *
+                                        safeKhrRate(db.settings.khrRate),
+                                    )
                                   : p.quote
                                 : serviceItem(
                                     s,
                                     draft.currency,
-                                    db.settings.khrRate,
+                                    safeKhrRate(db.settings.khrRate),
                                   ).price,
                             },
                           ],
@@ -826,7 +834,13 @@ function Editor() {
                             ...draft.items.filter(
                               (x) => x.description || x.price,
                             ),
-                            serviceItem(s, draft.currency, db.settings.khrRate),
+                            serviceItem(
+                              s,
+                              draft.currency,
+                              safeKhrRate(
+                                draft.exchangeRate ?? db.settings.khrRate,
+                              ),
+                            ),
                           ],
                         });
                     }}
@@ -1081,7 +1095,8 @@ function Editor() {
               </div>
               {draft.currency === "KHR" && (
                 <p className="text-right text-xs text-muted-foreground">
-                  Rate 1 USD = {db.settings.khrRate} KHR
+                  Rate 1 USD ={" "}
+                  {safeKhrRate(draft.exchangeRate ?? db.settings.khrRate)} KHR
                 </p>
               )}
             </div>
@@ -1676,11 +1691,14 @@ function PaymentModal({
     if (open)
       setF({
         date: today(),
-        amount: Math.round(balance * 100) / 100,
+        amount:
+          inv.currency === "KHR"
+            ? Math.round(balance)
+            : Math.round(balance * 100) / 100,
         method: "KHQR",
         reference: "",
       });
-  }, [open, balance]);
+  }, [open, balance, inv.currency]);
   return (
     <Modal open={open} onClose={onClose} title="Record payment">
       <div className="grid gap-3 sm:grid-cols-2">
@@ -1695,7 +1713,7 @@ function PaymentModal({
         <F label={`Amount (${inv.currency})`}>
           <input
             type="number"
-            step="0.01"
+            step={inv.currency === "KHR" ? "100" : "0.01"}
             className="field"
             value={f.amount}
             onChange={(e) => setF({ ...f, amount: Number(e.target.value) })}
@@ -1720,7 +1738,13 @@ function PaymentModal({
       <div className="mt-3 flex gap-2">
         <Btn
           onClick={() =>
-            setF({ ...f, amount: Math.round((balance / 2) * 100) / 100 })
+            setF({
+              ...f,
+              amount:
+                inv.currency === "KHR"
+                  ? Math.round(balance / 2)
+                  : Math.round((balance / 2) * 100) / 100,
+            })
           }
           className="text-xs"
         >
@@ -1745,6 +1769,9 @@ function PaymentModal({
                 id: uid(),
                 invoiceId: inv.id,
                 currency: inv.currency,
+                exchangeRate: safeKhrRate(
+                  inv.exchangeRate ?? d.settings.khrRate,
+                ),
                 ...f,
               }),
             );

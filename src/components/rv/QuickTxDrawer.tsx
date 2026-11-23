@@ -9,15 +9,20 @@ import {
 } from "@/components/rv/FinanceVisuals";
 import {
   CARD_METHODS,
+  EXPENSE_CATEGORIES,
   PERSONAL_CATEGORIES,
   PERSONAL_INCOME_METHODS,
   PERSONAL_INCOME_SOURCES,
+  STUDIO_INCOME_SOURCES,
   expenseAccount,
+  expenseCategoriesFor,
   getDB,
+  stampFxSnapshot,
   today,
   type Currency,
   type Expense,
   type PersonalIncome,
+  type StudioIncome,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -29,6 +34,13 @@ const SHORT_CATEGORY_LABELS: Record<string, string> = {
   "Prius 2012": "Prius",
   "Studio Draw": "Draw",
   "Gift & Refund": "Refund",
+  "Software and subscriptions": "Software",
+  "Fonts and licenses": "Fonts",
+  "Printing and production": "Printing",
+  "Fabrication and vendors": "Vendors",
+  "Office and utilities": "Office",
+  "Client Payment": "Client Pay",
+  "Design Fee": "Design",
 };
 
 function shortLabel(name: string): string {
@@ -60,43 +72,72 @@ export function QuickExpenseDrawer({
   }, [item]);
 
   const itemId = item?.id ?? "";
+  const itemAcc = item ? expenseAccount(item) : "Personal";
   const quickPicks = useMemo(() => {
     if (!itemId) return [];
-    const defaults = [
-      {
-        label: "Coffee",
-        category: "Food",
-        amount: 2.5,
-        currency: "USD" as Currency,
-      },
-      {
-        label: "Lunch",
-        category: "Food",
-        amount: 5,
-        currency: "USD" as Currency,
-      },
-      {
-        label: "Fuel",
-        category: "Prius 2012",
-        amount: 20,
-        currency: "USD" as Currency,
-      },
-      {
-        label: "Grab",
-        category: "Transportation",
-        amount: 3,
-        currency: "USD" as Currency,
-      },
-      {
-        label: "Market",
-        category: "Food",
-        amount: 15,
-        currency: "USD" as Currency,
-      },
-    ];
+    const defaults =
+      itemAcc === "Studio"
+        ? [
+            {
+              label: "Adobe CC",
+              category: "Software and subscriptions",
+              amount: 35,
+              currency: "USD" as Currency,
+            },
+            {
+              label: "Print proof",
+              category: "Printing and production",
+              amount: 15,
+              currency: "USD" as Currency,
+            },
+            {
+              label: "Delivery",
+              category: "Transport",
+              amount: 3,
+              currency: "USD" as Currency,
+            },
+            {
+              label: "Font license",
+              category: "Fonts and licenses",
+              amount: 25,
+              currency: "USD" as Currency,
+            },
+          ]
+        : [
+            {
+              label: "Coffee",
+              category: "Food",
+              amount: 2.5,
+              currency: "USD" as Currency,
+            },
+            {
+              label: "Lunch",
+              category: "Food",
+              amount: 5,
+              currency: "USD" as Currency,
+            },
+            {
+              label: "Fuel",
+              category: "Prius 2012",
+              amount: 20,
+              currency: "USD" as Currency,
+            },
+            {
+              label: "Grab",
+              category: "Transportation",
+              amount: 3,
+              currency: "USD" as Currency,
+            },
+            {
+              label: "Market",
+              category: "Food",
+              amount: 15,
+              currency: "USD" as Currency,
+            },
+          ];
     const recent = getDB()
       .expenses.filter(
-        (e) => expenseAccount(e) === "Personal" && e.description.trim(),
+        (e) => expenseAccount(e) === itemAcc && e.description.trim(),
       )
       .slice(-40)
       .reverse();
@@ -114,7 +155,9 @@ export function QuickExpenseDrawer({
       seen.add(key);
       picks.push({
         label: clean,
-        category: e.category || "Food",
+        category:
+          e.category ||
+          (itemAcc === "Studio" ? EXPENSE_CATEGORIES[0]! : "Food"),
         amount: e.amount,
         currency: e.currency,
       });
@@ -128,11 +171,14 @@ export function QuickExpenseDrawer({
       }
     }
     return picks;
-  }, [itemId]);
+  }, [itemId, itemAcc]);
 
   if (!item || !draft) return null;
 
   const isExisting = Boolean(onDelete);
+  const draftAccount = expenseAccount(draft);
+  const categoryList = expenseCategoriesFor(draftAccount);
+  const projects = draftAccount === "Studio" ? getDB().projects : [];
   const presets = draft.currency === "KHR" ? KHR_PRESETS : USD_PRESETS;
 
   const commit = (e: React.FormEvent) => {
@@ -142,16 +188,25 @@ export function QuickExpenseDrawer({
       toast.error("Enter an amount greater than 0.");
       return;
     }
-    onSave({
-      ...draft,
-      account: draft.account ?? "Personal",
-      amount:
-        draft.currency === "KHR"
-          ? Math.round(numericAmt)
-          : Math.round(numericAmt * 100) / 100,
-      vendor: draft.vendor || "Debit",
-      date: draft.date || today(),
-    });
+    const dbNow = getDB();
+    const normalizedAmount =
+      draft.currency === "KHR"
+        ? Math.round(numericAmt)
+        : Math.round(numericAmt * 100) / 100;
+    const preserveRate =
+      item.currency === draft.currency && item.amount === normalizedAmount;
+    const stamped = stampFxSnapshot(
+      {
+        ...draft,
+        account: draftAccount,
+        amount: normalizedAmount,
+        vendor: draft.vendor || "Debit",
+        date: draft.date || today(),
+      },
+      dbNow.settings.khrRate,
+      preserveRate,
+    );
+    onSave(stamped);
     onClose();
   };
 
@@ -160,7 +215,9 @@ export function QuickExpenseDrawer({
       open
       onClose={onClose}
       title={isExisting ? "Edit Expense" : "Add Expense"}
-      subtitle="Personal Money"
+      subtitle={
+        draftAccount === "Studio" ? "Studio Business" : "Personal Money"
+      }
       side="right"
       widthClass="max-w-md"
     >
@@ -268,7 +325,7 @@ export function QuickExpenseDrawer({
         <div>
           <span className="label-mono mb-2 block">Category</span>
           <div className="grid grid-cols-3 gap-2">
-            {PERSONAL_CATEGORIES.map((cat) => {
+            {categoryList.map((cat) => {
               const active = draft.category === cat;
               const Icon = categoryIcon(cat);
               return (
@@ -297,6 +354,28 @@ export function QuickExpenseDrawer({
             })}
           </div>
         </div>
+
+        {draftAccount === "Studio" && projects.length > 0 && (
+          <div>
+            <span className="label-mono mb-1.5 block">
+              Project cost link (optional)
+            </span>
+            <select
+              value={draft.projectId || ""}
+              onChange={(e) =>
+                setDraft({ ...draft, projectId: e.target.value })
+              }
+              className="field h-11 rounded-2xl text-sm"
+            >
+              <option value="">General Studio Overhead</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.code} · {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* 1-Tap Daily Quick-Picks when adding new expense */}
         {!isExisting && quickPicks.length > 0 && (
@@ -485,15 +564,24 @@ export function QuickIncomeDrawer({
       toast.error("Enter an amount greater than 0.");
       return;
     }
-    onSave({
-      ...draft,
-      amount:
-        draft.currency === "KHR"
-          ? Math.round(numericAmt)
-          : Math.round(numericAmt * 100) / 100,
-      accountMethod: draft.accountMethod || "Debit",
-      date: draft.date || today(),
-    });
+    const dbNow = getDB();
+    const normalizedAmount =
+      draft.currency === "KHR"
+        ? Math.round(numericAmt)
+        : Math.round(numericAmt * 100) / 100;
+    const preserveRate =
+      item.currency === draft.currency && item.amount === normalizedAmount;
+    const stamped = stampFxSnapshot(
+      {
+        ...draft,
+        amount: normalizedAmount,
+        accountMethod: draft.accountMethod || "Debit",
+        date: draft.date || today(),
+      },
+      dbNow.settings.khrRate,
+      preserveRate,
+    );
+    onSave(stamped);
     onClose();
   };
 
@@ -699,6 +787,254 @@ export function QuickIncomeDrawer({
             >
               <Check className="h-4.5 w-4.5" />
               Save Income
+            </button>
+          </div>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={() => {
+                if (!confirmDelete) {
+                  setConfirmDelete(true);
+                  return;
+                }
+                onDelete(draft);
+                onClose();
+              }}
+              className={cn(
+                "inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-2xl border text-xs font-semibold transition-colors",
+                confirmDelete
+                  ? "border-destructive bg-destructive text-destructive-foreground"
+                  : "border-destructive/35 text-destructive hover:bg-destructive/10",
+              )}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {confirmDelete ? "Tap again to delete" : "Delete Income"}
+            </button>
+          )}
+        </div>
+      </form>
+    </SlideDrawer>
+  );
+}
+
+export function QuickStudioIncomeDrawer({
+  item,
+  onClose,
+  onSave,
+  onDelete,
+}: {
+  item: StudioIncome | null;
+  onClose: () => void;
+  onSave: (v: StudioIncome) => void;
+  onDelete?: ((v: StudioIncome) => void) | undefined;
+}) {
+  const [draft, setDraft] = useState<StudioIncome | null>(item);
+  const [amtText, setAmtText] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  useEffect(() => {
+    setDraft(item);
+    setAmtText(item && item.amount > 0 ? String(item.amount) : "");
+    setConfirmDelete(false);
+  }, [item]);
+
+  if (!item || !draft) return null;
+
+  const isExisting = Boolean(onDelete);
+  const presets =
+    draft.currency === "KHR" ? [100000, 400000, 1000000] : [50, 150, 300, 500];
+
+  const commit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const numericAmt = Number(amtText.replace(/,/g, "")) || draft.amount || 0;
+    if (!(numericAmt > 0)) {
+      toast.error("Enter an amount greater than 0.");
+      return;
+    }
+    const dbNow = getDB();
+    const normalizedAmount =
+      draft.currency === "KHR"
+        ? Math.round(numericAmt)
+        : Math.round(numericAmt * 100) / 100;
+    const preserveRate =
+      item.currency === draft.currency && item.amount === normalizedAmount;
+    const stamped = stampFxSnapshot(
+      {
+        ...draft,
+        amount: normalizedAmount,
+        accountMethod: draft.accountMethod || draft.method || "Bank Transfer",
+        date: draft.date || today(),
+      },
+      dbNow.settings.khrRate,
+      preserveRate,
+    );
+    onSave(stamped);
+    onClose();
+  };
+
+  return (
+    <SlideDrawer
+      open
+      onClose={onClose}
+      title={isExisting ? "Edit Studio Income" : "Log Studio Income"}
+      subtitle="Studio Business (Unmatched Invoice)"
+      side="right"
+      widthClass="max-w-md"
+    >
+      <form onSubmit={commit} className="flex flex-col gap-3.5">
+        <div className="rounded-2xl border border-positive/35 bg-gradient-to-br from-positive/12 via-muted/45 to-muted/25 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <span className="label-mono">Amount Received</span>
+            <div className="inline-flex rounded-full border border-border bg-background/60 p-0.5">
+              {(["USD", "KHR"] as const).map((cur) => (
+                <button
+                  key={cur}
+                  type="button"
+                  onClick={() =>
+                    setDraft({ ...draft, currency: cur as Currency })
+                  }
+                  className={cn(
+                    "font-num min-h-[36px] rounded-full px-3.5 text-xs font-semibold transition-all duration-150 active:scale-95",
+                    draft.currency === cur
+                      ? "bg-positive text-primary-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {cur}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-2.5 flex items-baseline gap-2.5">
+            <span className="font-num text-3xl font-bold text-positive">
+              {draft.currency === "KHR" ? "៛" : "$"}
+            </span>
+            <input
+              type="text"
+              inputMode="decimal"
+              autoFocus={!isExisting}
+              placeholder={draft.currency === "KHR" ? "400,000" : "0.00"}
+              value={amtText}
+              onChange={(e) => {
+                const raw = e.target.value.replace(/[^0-9.]/g, "");
+                setAmtText(raw);
+                setDraft({ ...draft, amount: Number(raw) || 0 });
+              }}
+              className="font-num w-full bg-transparent text-4xl font-extrabold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/45"
+            />
+          </div>
+
+          <div className="no-scrollbar mt-3 flex items-center gap-2 overflow-x-auto">
+            {presets.map((p) => (
+              <button
+                key={p}
+                type="button"
+                onClick={() => {
+                  setAmtText(String(p));
+                  setDraft({ ...draft, amount: p });
+                }}
+                className="font-num min-h-[38px] shrink-0 rounded-full border border-border/80 bg-background/60 px-3.5 text-xs font-semibold text-muted-foreground transition-all hover:border-positive/50 hover:text-foreground active:scale-95"
+              >
+                {draft.currency === "KHR"
+                  ? `${Math.round(p / 1000)}k`
+                  : `$${p}`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+          <div className="grid grid-cols-2 gap-1 rounded-2xl border border-border bg-muted/50 p-1">
+            {["Bank Transfer", "ABA", "ACLEDA", "Cash"].map((m) => {
+              const active =
+                (draft.accountMethod || draft.method || "Bank Transfer") === m;
+              return (
+                <button
+                  key={m}
+                  type="button"
+                  onClick={() =>
+                    setDraft({ ...draft, accountMethod: m, method: m })
+                  }
+                  className={cn(
+                    "inline-flex min-h-[36px] items-center justify-center rounded-xl px-2 text-xs font-semibold transition-all active:scale-95",
+                    active
+                      ? "bg-positive text-primary-foreground shadow-xs"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {m}
+                </button>
+              );
+            })}
+          </div>
+
+          <label className="relative inline-flex min-h-[52px] cursor-pointer items-center gap-1.5 rounded-2xl border border-border bg-muted/50 px-3.5 text-xs font-medium text-foreground">
+            <Calendar className="h-4 w-4 shrink-0 text-positive" />
+            <input
+              type="date"
+              value={draft.date}
+              onChange={(e) => setDraft({ ...draft, date: e.target.value })}
+              className="font-num w-[7.8rem] bg-transparent text-sm outline-none sm:text-xs"
+            />
+          </label>
+        </div>
+
+        <div>
+          <span className="label-mono mb-2 block">Studio Income Type</span>
+          <div className="grid grid-cols-3 gap-2">
+            {STUDIO_INCOME_SOURCES.map((src) => {
+              const active = draft.source === src;
+              return (
+                <button
+                  key={src}
+                  type="button"
+                  onClick={() => setDraft({ ...draft, source: src })}
+                  className={cn(
+                    "flex min-h-[48px] items-center justify-center rounded-2xl border px-2 py-2 text-center text-xs font-semibold transition-all active:scale-95",
+                    active
+                      ? "border-positive bg-positive/18 text-positive ring-1 ring-positive/40"
+                      : "border-border bg-muted/35 text-muted-foreground hover:border-positive/35 hover:text-foreground",
+                  )}
+                >
+                  {shortLabel(src)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <input
+          type="text"
+          placeholder="Client name or payment description"
+          value={draft.description}
+          onChange={(e) => setDraft({ ...draft, description: e.target.value })}
+          className="field h-12 rounded-2xl text-base sm:text-sm"
+        />
+
+        <input
+          type="text"
+          placeholder="Reference / slip number (optional)"
+          value={draft.reference ?? ""}
+          onChange={(e) => setDraft({ ...draft, reference: e.target.value })}
+          className="field h-11 rounded-2xl font-num text-sm"
+        />
+
+        <div className="mt-1 space-y-2 border-t border-border/70 pt-3">
+          <div className="grid grid-cols-2 gap-2.5">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex h-12 items-center justify-center rounded-2xl border border-border bg-secondary text-sm font-bold text-foreground transition-all active:scale-95"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="inline-flex h-12 items-center justify-center gap-1.5 rounded-2xl bg-positive text-sm font-bold text-primary-foreground shadow-[0_8px_22px_-8px_var(--positive)] transition-all active:scale-95"
+            >
+              <Check className="h-4.5 w-4.5" />
+              Save Studio Income
             </button>
           </div>
           {onDelete && (

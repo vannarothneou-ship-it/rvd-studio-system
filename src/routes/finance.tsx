@@ -37,6 +37,7 @@ import {
   BreakdownPieCard,
   CHART_LENS_OPTIONS,
   CHART_MODE_OPTIONS,
+  ChartModeCycleButton,
   PeriodBarPulseCard,
   SparklineWithDates,
   TrendChartCanvas,
@@ -56,7 +57,13 @@ import {
   MonthlyGroupHeader,
 } from "@/components/rv/MonthlyLedgerControls";
 import {
+  QuickExpenseDrawer,
+  QuickIncomeDrawer,
+  QuickStudioIncomeDrawer,
+} from "@/components/rv/QuickTxDrawer";
+import {
   EXPENSE_CATEGORIES,
+  PERSONAL_CATEGORIES,
   cashFlowSeries,
   cashReceived,
   categoryTotals,
@@ -72,16 +79,22 @@ import {
   isInvoice,
   money,
   periodBreakdownBars,
+  recordToUSD,
+  safeKhrRate,
   setDB,
   shortDate,
-  toUSD,
+  stampFxSnapshot,
+  studioFinancialSummary,
   today,
   uid,
   useDB,
   workspaceBalances,
+  type Account,
   type CashRange,
   type Expense,
   type Goal,
+  type PersonalIncome,
+  type StudioIncome,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -129,7 +142,7 @@ type CombinedFilter = "all" | "studio" | "personal" | "income" | "expense";
 
 function Page() {
   const db = useDB((d) => d);
-  const r = db.settings.khrRate;
+  const r = safeKhrRate(db.settings.khrRate);
   const { view: searchView } = Route.useSearch();
   const [financeView, setFinanceView] = useState<FinanceView>(
     searchView === "combined" ? "combined" : "studio",
@@ -141,6 +154,9 @@ function Page() {
   }, [searchView]);
 
   const [studioRange, setStudioRange] = useState<CashRange>("today");
+  const [studioSummaryScope, setStudioSummaryScope] = useState<"month" | "all">(
+    "month",
+  );
   const [chartMode, setChartMode] = useState<ChartMode>("area");
   const [chartLens, setChartLens] = useState<ChartLens>("flow");
   const [month, setMonth] = useState(() => today().slice(0, 7));
@@ -160,10 +176,17 @@ function Page() {
   const [combinedGroupByMonth, setCombinedGroupByMonth] = useState(true);
   const [showAllPayments, setShowAllPayments] = useState(false);
   const [editingLayout, setEditingLayout] = useState(false);
-  const [inspectedCategory, setInspectedCategory] = useState<string | null>(
+  const [inspectedCategory, setInspectedCategory] = useState<{
+    account: Account;
+    category: string;
+  } | null>(null);
+  const [edit, setEdit] = useState<Expense | null>(null);
+  const [personalEdit, setPersonalEdit] = useState<Expense | null>(null);
+  const [personalIncomeEdit, setPersonalIncomeEdit] =
+    useState<PersonalIncome | null>(null);
+  const [studioIncomeEdit, setStudioIncomeEdit] = useState<StudioIncome | null>(
     null,
   );
-  const [edit, setEdit] = useState<Expense | null>(null);
   const [goal, setGoal] = useState<Goal | null>(null);
 
   const year = month.slice(0, 4) || today().slice(0, 4);
@@ -275,6 +298,20 @@ function Page() {
     [month],
   );
 
+  const openNewStudioIncome = useCallback(() => {
+    setStudioIncomeEdit({
+      id: uid(),
+      date: today().startsWith(month) ? today() : `${month}-01`,
+      source: "Retainer",
+      accountMethod: "Bank Transfer",
+      method: "Bank Transfer",
+      description: "",
+      amount: 0,
+      currency: "USD",
+      reference: "",
+    });
+  }, [month]);
+
   const openNewGoal = () => {
     setGoal({
       id: uid(),
@@ -359,11 +396,7 @@ function Page() {
     [db.expenses, studioExpenseMonth, catFilter, q],
   );
   const studioExpensesTotalUSD = useMemo(
-    () =>
-      filteredExpenses.reduce(
-        (acc, e) => acc + toUSD(e.amount, e.currency, r),
-        0,
-      ),
+    () => filteredExpenses.reduce((acc, e) => acc + recordToUSD(e, r), 0),
     [filteredExpenses, r],
   );
   const effectiveExpenseLimit =
@@ -376,56 +409,93 @@ function Page() {
       groupLedgerRowsByMonth(
         visibleExpenses,
         () => 0,
-        (e) => toUSD(e.amount, e.currency, r),
+        (e) => recordToUSD(e, r),
       ),
     [visibleExpenses, r],
+  );
+
+  const studioSummary = useMemo(
+    () =>
+      studioFinancialSummary(db, studioSummaryScope === "month" ? month : ""),
+    [db, studioSummaryScope, month],
   );
 
   const studioIncomeMonths = useMemo(
     () =>
       collectLedgerMonths(
-        db.payments.map((p) => p.date),
+        [
+          ...db.payments.map((p) => p.date),
+          ...(db.studioIncome ?? []).map((si) => si.date),
+        ],
         month,
       ),
-    [db.payments, month],
+    [db.payments, db.studioIncome, month],
   );
-  const filteredPayments = useMemo(
+  type StudioIncomeEntry =
+    | {
+        kind: "payment";
+        id: string;
+        date: string;
+        usd: number;
+        payment: (typeof db.payments)[number];
+      }
+    | {
+        kind: "studioIncome";
+        id: string;
+        date: string;
+        usd: number;
+        studioIncome: StudioIncome;
+      };
+  const filteredStudioIncomeEntries = useMemo<StudioIncomeEntry[]>(
     () =>
-      [...db.payments]
+      [
+        ...db.payments.map((p) => ({
+          kind: "payment" as const,
+          id: `pay-${p.id}`,
+          date: p.date,
+          usd: recordToUSD(p, r),
+          payment: p,
+        })),
+        ...(db.studioIncome ?? []).map((si) => ({
+          kind: "studioIncome" as const,
+          id: `sinc-${si.id}`,
+          date: si.date,
+          usd: recordToUSD(si, r),
+          studioIncome: si,
+        })),
+      ]
         .filter(
-          (p) =>
-            studioIncomeMonth === "all" || p.date.startsWith(studioIncomeMonth),
+          (row) =>
+            studioIncomeMonth === "all" ||
+            row.date.startsWith(studioIncomeMonth),
         )
         .sort((a, b) => b.date.localeCompare(a.date)),
-    [db.payments, studioIncomeMonth],
+    [db.payments, db.studioIncome, studioIncomeMonth, r],
   );
   const studioIncomeTotalUSD = useMemo(
-    () =>
-      filteredPayments.reduce(
-        (acc, p) => acc + toUSD(p.amount, p.currency, r),
-        0,
-      ),
-    [filteredPayments, r],
+    () => filteredStudioIncomeEntries.reduce((acc, row) => acc + row.usd, 0),
+    [filteredStudioIncomeEntries],
   );
   const recentPayments = useMemo(
     () =>
-      filteredPayments.slice(
+      filteredStudioIncomeEntries.slice(
         0,
         showAllPayments ||
-          (studioIncomeMonth !== "all" && filteredPayments.length <= 60)
-          ? filteredPayments.length
+          (studioIncomeMonth !== "all" &&
+            filteredStudioIncomeEntries.length <= 60)
+          ? filteredStudioIncomeEntries.length
           : 8,
       ),
-    [filteredPayments, showAllPayments, studioIncomeMonth],
+    [filteredStudioIncomeEntries, showAllPayments, studioIncomeMonth],
   );
   const groupedRecentPayments = useMemo(
     () =>
       groupLedgerRowsByMonth(
         recentPayments,
-        (p) => toUSD(p.amount, p.currency, r),
+        (row) => row.usd,
         () => 0,
       ),
-    [recentPayments, r],
+    [recentPayments],
   );
 
   const balances = useMemo(() => workspaceBalances(db, month), [db, month]);
@@ -476,9 +546,18 @@ function Page() {
             direction: "income" as const,
             title: `${clientName || "Client"} · ${inv?.no || "Invoice"}`,
             sub: `${p.method}${p.reference ? ` · ${p.reference}` : ""}`,
-            usd: toUSD(p.amount, p.currency, r),
+            usd: recordToUSD(p, r),
           };
         }),
+      ...(db.studioIncome ?? []).map((si) => ({
+        id: `sinc-${si.id}`,
+        date: si.date,
+        workspace: "Studio" as const,
+        direction: "income" as const,
+        title: si.description || si.source,
+        sub: `${si.source}${si.method ? ` · ${si.method}` : ""}`,
+        usd: recordToUSD(si, r),
+      })),
       ...(db.personalIncome ?? []).map((inc) => ({
         id: `pinc-${inc.id}`,
         date: inc.date,
@@ -486,7 +565,7 @@ function Page() {
         direction: "income" as const,
         title: inc.description || inc.source,
         sub: `${inc.source}${inc.accountMethod ? ` · ${inc.accountMethod}` : ""}`,
-        usd: toUSD(inc.amount, inc.currency, r),
+        usd: recordToUSD(inc, r),
       })),
       ...db.expenses.map((e) => {
         const ws = expenseAccount(e);
@@ -497,13 +576,21 @@ function Page() {
           direction: "expense" as const,
           title: e.description || e.vendor || e.category,
           sub: `${e.category}${e.vendor ? ` · ${e.vendor}` : ""}`,
-          usd: toUSD(e.amount, e.currency, r),
+          usd: recordToUSD(e, r),
         };
       }),
     ];
 
     return entries.sort((a, b) => b.date.localeCompare(a.date));
-  }, [db.payments, db.invoices, db.clients, db.personalIncome, db.expenses, r]);
+  }, [
+    db.payments,
+    db.studioIncome,
+    db.invoices,
+    db.clients,
+    db.personalIncome,
+    db.expenses,
+    r,
+  ]);
 
   const combinedMonths = useMemo(
     () =>
@@ -568,7 +655,7 @@ function Page() {
     [combinedVisibleRows],
   );
 
-  /** Swipe-delete for expenses & personal income (invoice payments stay protected). */
+  /** Swipe-delete for expenses, personal income & unmatched studio income (invoice payments stay protected). */
   const deleteCombinedRow = (rowId: string) => {
     if (rowId.startsWith("exp-")) {
       const item = db.expenses.find((x) => `exp-${x.id}` === rowId);
@@ -605,8 +692,44 @@ function Page() {
             })),
         },
       });
+    } else if (rowId.startsWith("sinc-")) {
+      const item = (db.studioIncome ?? []).find(
+        (x) => `sinc-${x.id}` === rowId,
+      );
+      if (!item) return;
+      setDB((d) => ({
+        ...d,
+        studioIncome: (d.studioIncome ?? []).filter((x) => x.id !== item.id),
+      }));
+      toast("Studio income deleted", {
+        action: {
+          label: "Undo",
+          onClick: () =>
+            setDB((d) => ({
+              ...d,
+              studioIncome: [item, ...(d.studioIncome ?? [])],
+            })),
+        },
+      });
     }
   };
+
+  const deleteStudioIncome = useCallback((item: StudioIncome) => {
+    setDB((d) => ({
+      ...d,
+      studioIncome: (d.studioIncome ?? []).filter((x) => x.id !== item.id),
+    }));
+    toast("Studio income deleted", {
+      action: {
+        label: "Undo",
+        onClick: () =>
+          setDB((d) => ({
+            ...d,
+            studioIncome: [item, ...(d.studioIncome ?? [])],
+          })),
+      },
+    });
+  }, []);
 
   const deleteStudioExpense = useCallback((item: Expense) => {
     setDB((d) => ({
@@ -631,9 +754,19 @@ function Page() {
         render: () => (
           <Glass className="flex h-full flex-col justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">
-                Studio net cash profit, {studioRangeMeta.desc}
-              </p>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-primary">
+                  <Briefcase className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="truncate font-display text-base font-bold leading-tight">
+                    Studio Net Cash Profit
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    {studioRangeMeta.desc}
+                  </p>
+                </div>
+              </div>
               <p
                 className={cn(
                   "font-num mt-2 text-3xl font-extrabold sm:text-4xl",
@@ -658,8 +791,8 @@ function Page() {
                 valueLabel="Studio cumulative net"
               />
             </div>
-            <div className="grid grid-cols-3 gap-3 border-t border-border pt-4">
-              <Link to="/invoices">
+            <div className="grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
+              <Link to="/invoices" className="ios-tap">
                 <Stat
                   label="Open A/R"
                   value={compactMoney(unpaidInvoicesUSD)}
@@ -687,38 +820,39 @@ function Page() {
         render: () => {
           const studioLens = chartLens === "method" ? "category" : chartLens;
           return (
-            <Glass delay={80} className="h-full">
-              <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 className="font-medium">
-                    {studioLens === "net"
-                      ? "Studio net cash flow"
-                      : studioLens === "category"
-                        ? "Studio costs by category"
-                        : "Studio cash flow"}
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    {studioRangeMeta.desc}
-                  </p>
+            <Glass delay={80} className="flex h-full flex-col justify-between">
+              <div>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <h2 className="truncate font-display text-base font-bold leading-tight">
+                      {studioLens === "net"
+                        ? "Studio net cash flow"
+                        : studioLens === "category"
+                          ? "Studio costs by category"
+                          : "Studio cash flow"}
+                    </h2>
+                    <p className="text-xs text-muted-foreground">
+                      {studioRangeMeta.desc}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <SlidingTabs
+                      iconOnly
+                      size="xs"
+                      tone="invert"
+                      layoutGroup="fin-chart-lens"
+                      value={studioLens}
+                      onChange={setChartLens}
+                      options={CHART_LENS_OPTIONS.slice(0, 3)}
+                    />
+                    <ChartModeCycleButton
+                      mode={chartMode}
+                      onChange={setChartMode}
+                    />
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <SlidingTabs
-                    iconOnly
-                    size="xs"
-                    tone="invert"
-                    layoutGroup="fin-chart-lens"
-                    value={studioLens}
-                    onChange={setChartLens}
-                    options={CHART_LENS_OPTIONS.slice(0, 3)}
-                  />
-                  <SlidingTabs
-                    iconOnly
-                    size="xs"
-                    layoutGroup="fin-chart-mode"
-                    value={chartMode}
-                    onChange={setChartMode}
-                    options={CHART_MODE_OPTIONS}
-                  />
+
+                <div className="mb-3 flex items-center justify-end">
                   <SlidingTabs
                     size="xs"
                     tone="invert"
@@ -731,25 +865,28 @@ function Page() {
                     }))}
                   />
                 </div>
-              </div>
 
-              <div className="mb-3 grid grid-cols-3 gap-3">
-                <Stat
-                  label="● Cash in"
-                  value={compactMoney(studioInRange)}
-                  fullValue={money(studioInRange)}
-                />
-                <Stat
-                  label="○ Studio out"
-                  value={compactMoney(studioOutRange)}
-                  fullValue={money(studioOutRange)}
-                />
-                <Stat
-                  label="Net"
-                  value={compactMoney(studioNetRange, "USD", true)}
-                  fullValue={money(studioNetRange, "USD", true)}
-                  tone={studioNetRange >= 0 ? "pos" : "neg"}
-                />
+                <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
+                  <Stat
+                    icon={ArrowDownLeft}
+                    label="Cash in"
+                    value={compactMoney(studioInRange)}
+                    fullValue={money(studioInRange)}
+                    tone="pos"
+                  />
+                  <Stat
+                    icon={ArrowUpRight}
+                    label="Studio out"
+                    value={compactMoney(studioOutRange)}
+                    fullValue={money(studioOutRange)}
+                  />
+                  <Stat
+                    label="Net"
+                    value={compactMoney(studioNetRange, "USD", true)}
+                    fullValue={money(studioNetRange, "USD", true)}
+                    tone={studioNetRange >= 0 ? "pos" : "neg"}
+                  />
+                </div>
               </div>
 
               {studioLens === "category" ? (
@@ -802,8 +939,8 @@ function Page() {
             personalItems={[]}
             studioItems={studioCats}
             scopeLabel={studioShelfScopeLabel}
-            onSelectCategory={(_acc, category) =>
-              setInspectedCategory(category)
+            onSelectCategory={(acc, category) =>
+              setInspectedCategory({ account: acc, category })
             }
           />
         ),
@@ -822,88 +959,119 @@ function Page() {
         ),
       },
       {
-        id: "jarsShelf",
-        title: "Studio category budget jars",
+        id: "financialSeparation",
+        title: "Cash vs Accrual & Cost Separation",
         defaultSpan: 12,
         render: () => (
-          <div>
-            {studioCats.length === 0 ? (
-              <Glass>
-                <Empty>No studio expenses recorded yet.</Empty>
-              </Glass>
-            ) : (
-              <BudgetShelf
-                db={db}
-                account="Studio"
-                month={month}
-                monthLabel={studioShelfScopeLabel}
-                items={studioCats}
-                selectedCategory={inspectedCategory}
-                onSelectCategory={(category) => setInspectedCategory(category)}
-              />
-            )}
-          </div>
-        ),
-      },
-      {
-        id: "goalsGrid",
-        title: "RothVan Studio goals",
-        defaultSpan: 12,
-        render: () => (
-          <Glass delay={180}>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-4 w-4 text-primary" />
-                <p className="label-mono">RothVan Studio goals</p>
+          <Glass delay={120}>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="label-mono">
+                  Financial Separation ·{" "}
+                  {studioSummaryScope === "month" ? monthLabel : "All time"}
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Cash flow separated from invoiced revenue, direct project
+                  costs, and studio overhead.
+                </p>
               </div>
-              <Btn
-                onClick={openNewGoal}
-                className="px-3 py-1 text-xs whitespace-nowrap shrink-0"
-              >
-                <Plus className="h-3 w-3" />
-                Add studio goal
-              </Btn>
+              <SlidingTabs
+                size="xs"
+                tone="invert"
+                layoutGroup="fin-summary-scope"
+                value={studioSummaryScope}
+                onChange={setStudioSummaryScope}
+                options={[
+                  { id: "month", label: formatMonthShort(month) },
+                  { id: "all", label: "All time" },
+                ]}
+              />
             </div>
 
-            {studioGoals.length === 0 ? (
-              <Empty>No studio goals yet.</Empty>
-            ) : (
-              <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-                {studioGoals.map((g, idx) => (
-                  <GoalRingCard
-                    key={g.id}
-                    goal={g}
-                    current={goalNow(g)}
-                    delay={idx * 60}
-                    onEdit={() => setGoal(g)}
-                    onQuickAdd={
-                      g.kind === "manual"
-                        ? (amt) =>
-                            setDB((d) => ({
-                              ...d,
-                              goals: d.goals.map((x) =>
-                                x.id === g.id
-                                  ? {
-                                      ...x,
-                                      current: x.current + amt,
-                                      contributions: [
-                                        {
-                                          id: uid(),
-                                          date: today(),
-                                          amount: amt,
-                                          cadence: x.cadence ?? "monthly",
-                                          note: "Quick add",
-                                        },
-                                        ...(x.contributions ?? []),
-                                      ],
-                                    }
-                                  : x,
-                              ),
-                            }))
-                        : undefined
-                    }
-                  />
-                ))}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border border-border/75 bg-muted/35 p-3">
+                <Stat
+                  label="Cash Received"
+                  value={compactMoney(studioSummary.cashReceivedUSD)}
+                  fullValue={money(studioSummary.cashReceivedUSD)}
+                  tone="pos"
+                />
+                <p className="mt-1 text-[0.7rem] text-muted-foreground">
+                  Invoices {money(studioSummary.invoicePaymentsUSD)} · Other{" "}
+                  {money(studioSummary.unmatchedStudioIncomeUSD)}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-border/75 bg-muted/35 p-3">
+                <Stat
+                  label="Revenue Invoiced"
+                  value={compactMoney(studioSummary.revenueInvoicedUSD)}
+                  fullValue={money(studioSummary.revenueInvoicedUSD)}
+                />
+                <p className="mt-1 text-[0.7rem] text-muted-foreground">
+                  Open A/R {money(studioSummary.outstandingReceivablesUSD)}
+                  {studioSummary.overdueReceivablesUSD > 0
+                    ? ` (${money(studioSummary.overdueReceivablesUSD)} overdue)`
+                    : ""}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-border/75 bg-muted/35 p-3">
+                <Stat
+                  label="Direct vs Operating Costs"
+                  value={compactMoney(studioSummary.totalExpensesUSD)}
+                  fullValue={money(studioSummary.totalExpensesUSD)}
+                  tone="neg"
+                />
+                <p className="mt-1 text-[0.7rem] text-muted-foreground">
+                  Project costs {money(studioSummary.directProjectCostsUSD)} ·
+                  Operating {money(studioSummary.operatingExpensesUSD)}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-border/75 bg-muted/35 p-3">
+                <Stat
+                  label="Estimated Project Profit"
+                  value={compactMoney(
+                    studioSummary.estimatedProjectProfitUSD,
+                    "USD",
+                    true,
+                  )}
+                  fullValue={money(
+                    studioSummary.estimatedProjectProfitUSD,
+                    "USD",
+                    true,
+                  )}
+                  tone={
+                    studioSummary.estimatedProjectProfitUSD >= 0 ? "pos" : "neg"
+                  }
+                />
+                <p className="mt-1 text-[0.7rem] text-muted-foreground">
+                  Net cash flow:{" "}
+                  <span
+                    className={cn(
+                      "font-num font-semibold",
+                      studioSummary.netCashFlowUSD >= 0
+                        ? "text-positive"
+                        : "text-destructive",
+                    )}
+                  >
+                    {money(studioSummary.netCashFlowUSD, "USD", true)}
+                  </span>
+                </p>
+              </div>
+            </div>
+
+            {studioSummary.planningReservePct > 0 && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-muted/25 px-3 py-2 text-xs">
+                <span className="text-muted-foreground">
+                  Planning reserve estimate ({studioSummary.planningReservePct}%
+                  of positive net cash flow — internal cash-flow buffer only,
+                  not an official tax liability)
+                </span>
+                <span className="font-num font-semibold text-foreground">
+                  {money(studioSummary.planningReserveUSD)}
+                </span>
               </div>
             )}
           </Glass>
@@ -911,14 +1079,51 @@ function Page() {
       },
       {
         id: "studioIncome",
-        title: "Client invoice payments",
+        title: "Studio income & invoice payments",
         defaultSpan: 12,
         render: () => {
-          const renderPayment = (p: (typeof recentPayments)[number]) => {
+          const renderPayment = (row: (typeof recentPayments)[number]) => {
+            if (row.kind === "studioIncome") {
+              const si = row.studioIncome;
+              return (
+                <li key={row.id}>
+                  <SwipeRow
+                    onEdit={() => setStudioIncomeEdit(si)}
+                    onDelete={() => deleteStudioIncome(si)}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setStudioIncomeEdit(si)}
+                      className="flex w-full items-center justify-between gap-3 rounded-xl px-2 py-2.5 text-left hover:bg-muted"
+                    >
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-positive">
+                          <ArrowDownLeft className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-medium">
+                            {si.description || si.source}
+                          </p>
+                          <p className="truncate text-xs text-muted-foreground">
+                            {shortDate(si.date)} · {si.source} ·{" "}
+                            {si.method || si.accountMethod}
+                            {si.reference ? ` · ${si.reference}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="font-num shrink-0 text-sm font-semibold text-positive">
+                        +{money(row.usd)}
+                      </span>
+                    </button>
+                  </SwipeRow>
+                </li>
+              );
+            }
+            const p = row.payment;
             const inv = db.invoices.find((i) => i.id === p.invoiceId);
             const client = db.clients.find((c) => c.id === inv?.clientId);
             return (
-              <li key={p.id}>
+              <li key={row.id}>
                 <Link
                   to="/invoices/$id"
                   params={{ id: p.invoiceId }}
@@ -939,7 +1144,7 @@ function Page() {
                     </div>
                   </div>
                   <span className="font-num shrink-0 text-sm font-semibold text-positive">
-                    +{money(toUSD(p.amount, p.currency, r))}
+                    +{money(row.usd)}
                   </span>
                 </Link>
               </li>
@@ -957,8 +1162,10 @@ function Page() {
                       : formatMonthShort(studioIncomeMonth)}
                   </p>
                   <p className="font-num mt-0.5 text-xs text-muted-foreground">
-                    {filteredPayments.length}{" "}
-                    {filteredPayments.length === 1 ? "payment" : "payments"}
+                    {filteredStudioIncomeEntries.length}{" "}
+                    {filteredStudioIncomeEntries.length === 1
+                      ? "entry"
+                      : "entries"}
                     {studioIncomeTotalUSD > 0 && (
                       <>
                         {" "}
@@ -970,8 +1177,16 @@ function Page() {
                     )}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  {filteredPayments.length > 8 &&
+                <div className="flex flex-wrap items-center gap-2">
+                  <Btn
+                    type="button"
+                    onClick={openNewStudioIncome}
+                    className="px-3 py-1 text-xs whitespace-nowrap shrink-0"
+                  >
+                    <Plus className="h-3 w-3 text-positive" />
+                    Add studio income
+                  </Btn>
+                  {filteredStudioIncomeEntries.length > 8 &&
                     studioIncomeMonth === "all" && (
                       <button
                         type="button"
@@ -1017,8 +1232,8 @@ function Page() {
               {recentPayments.length === 0 ? (
                 <Empty>
                   {studioIncomeMonth === "all"
-                    ? "No invoice payments recorded yet."
-                    : `No studio payments recorded in ${formatMonthShort(studioIncomeMonth)}.`}
+                    ? "No studio income or invoice payments recorded yet."
+                    : `No studio income recorded in ${formatMonthShort(studioIncomeMonth)}.`}
                 </Empty>
               ) : studioIncomeGroupByMonth ? (
                 <div className="space-y-3">
@@ -1272,6 +1487,100 @@ function Page() {
           );
         },
       },
+      {
+        id: "jarsShelf",
+        title: "Studio category budget jars",
+        defaultSpan: 12,
+        render: () => (
+          <div>
+            {studioCats.length === 0 ? (
+              <Glass>
+                <Empty>No studio expenses recorded yet.</Empty>
+              </Glass>
+            ) : (
+              <BudgetShelf
+                db={db}
+                account="Studio"
+                month={month}
+                monthLabel={studioShelfScopeLabel}
+                items={studioCats}
+                selectedCategory={
+                  inspectedCategory?.account === "Studio"
+                    ? inspectedCategory.category
+                    : null
+                }
+                onSelectCategory={(category) =>
+                  setInspectedCategory({ account: "Studio", category })
+                }
+              />
+            )}
+          </div>
+        ),
+      },
+      {
+        id: "goalsGrid",
+        title: "RothVan Studio goals",
+        defaultSpan: 12,
+        render: () => (
+          <Glass delay={180}>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                <p className="label-mono">RothVan Studio goals</p>
+              </div>
+              <Btn
+                onClick={openNewGoal}
+                className="px-3 py-1 text-xs whitespace-nowrap shrink-0"
+              >
+                <Plus className="h-3 w-3" />
+                Add studio goal
+              </Btn>
+            </div>
+
+            {studioGoals.length === 0 ? (
+              <Empty>No studio goals yet.</Empty>
+            ) : (
+              <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+                {studioGoals.map((g, idx) => (
+                  <GoalRingCard
+                    key={g.id}
+                    goal={g}
+                    current={goalNow(g)}
+                    delay={idx * 60}
+                    onEdit={() => setGoal(g)}
+                    onQuickAdd={
+                      g.kind === "manual"
+                        ? (amt) =>
+                            setDB((d) => ({
+                              ...d,
+                              goals: d.goals.map((x) =>
+                                x.id === g.id
+                                  ? {
+                                      ...x,
+                                      current: x.current + amt,
+                                      contributions: [
+                                        {
+                                          id: uid(),
+                                          date: today(),
+                                          amount: amt,
+                                          cadence: x.cadence ?? "monthly",
+                                          note: "Quick add",
+                                        },
+                                        ...(x.contributions ?? []),
+                                      ],
+                                    }
+                                  : x,
+                              ),
+                            }))
+                        : undefined
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </Glass>
+        ),
+      },
     ],
     [
       studioRangeMeta,
@@ -1291,17 +1600,19 @@ function Page() {
       studioCats,
       studioShelfScopeLabel,
       month,
+      monthLabel,
+      studioSummary,
+      studioSummaryScope,
       inspectedCategory,
       studioGoals,
       studioIncomeMonths,
       studioIncomeMonth,
       studioIncomeGroupByMonth,
       studioIncomeTotalUSD,
-      filteredPayments,
+      filteredStudioIncomeEntries,
       recentPayments,
       groupedRecentPayments,
       showAllPayments,
-      r,
       catFilter,
       studioExpenseMonths,
       studioExpenseMonth,
@@ -1315,6 +1626,8 @@ function Page() {
       visibleCount,
       goalNow,
       openNewExpense,
+      openNewStudioIncome,
+      deleteStudioIncome,
       deleteStudioExpense,
     ],
   );
@@ -1385,6 +1698,7 @@ function Page() {
             pageKey="finance:studio-only"
             widgets={widgets}
             editing={editingLayout}
+            onToggleEditing={() => setEditingLayout((e) => !e)}
             onDoneEditing={() => setEditingLayout(false)}
           />
         </>
@@ -1617,8 +1931,8 @@ function Page() {
             personalItems={personalCatsAll}
             studioItems={studioCatsAll}
             scopeLabel="all combined expenses"
-            onSelectCategory={(_acc, category) =>
-              setInspectedCategory(category)
+            onSelectCategory={(acc, category) =>
+              setInspectedCategory({ account: acc, category })
             }
           />
 
@@ -1736,11 +2050,30 @@ function Page() {
                     const expMatch = row.id.startsWith("exp-")
                       ? db.expenses.find((x) => `exp-${x.id}` === row.id)
                       : undefined;
+                    const pincMatch = row.id.startsWith("pinc-")
+                      ? (db.personalIncome ?? []).find(
+                          (x) => `pinc-${x.id}` === row.id,
+                        )
+                      : undefined;
+                    const sincMatch = row.id.startsWith("sinc-")
+                      ? (db.studioIncome ?? []).find(
+                          (x) => `sinc-${x.id}` === row.id,
+                        )
+                      : undefined;
                     return (
                       <li key={row.id}>
                         <SwipeRow
                           onEdit={
-                            expMatch ? () => setEdit(expMatch) : undefined
+                            expMatch
+                              ? () =>
+                                  expenseAccount(expMatch) === "Personal"
+                                    ? setPersonalEdit(expMatch)
+                                    : setEdit(expMatch)
+                              : pincMatch
+                                ? () => setPersonalIncomeEdit(pincMatch)
+                                : sincMatch
+                                  ? () => setStudioIncomeEdit(sincMatch)
+                                  : undefined
                           }
                           onDelete={
                             row.id.startsWith("pay-")
@@ -1877,12 +2210,36 @@ function Page() {
       {/* Right-Side Pop-Up Inspector Drawer */}
       <CategoryInspectorDrawer
         db={db}
-        account="Studio"
-        category={inspectedCategory}
+        account={inspectedCategory?.account ?? "Studio"}
+        category={inspectedCategory?.category ?? null}
         month={month}
         onClose={() => setInspectedCategory(null)}
-        onAddExpense={(_acc, cat) => openNewExpense(cat)}
-        onEditExpense={(exp) => setEdit(exp)}
+        onAddExpense={(acc, cat) => {
+          setInspectedCategory(null);
+          if (acc === "Personal") {
+            setPersonalEdit({
+              id: uid(),
+              date: today().startsWith(month) ? today() : `${month}-01`,
+              projectId: "",
+              category: PERSONAL_CATEGORIES.includes(cat)
+                ? cat
+                : (PERSONAL_CATEGORIES[0] ?? "Food"),
+              vendor: "Debit",
+              description: "",
+              amount: 0,
+              currency: "USD",
+              receipt: "",
+              account: "Personal",
+            });
+          } else {
+            openNewExpense(cat);
+          }
+        }}
+        onEditExpense={(exp) => {
+          setInspectedCategory(null);
+          if (expenseAccount(exp) === "Personal") setPersonalEdit(exp);
+          else setEdit(exp);
+        }}
       />
 
       {/* Right-Side Slide-Over Drawer for Adding / Editing Studio Expenses */}
@@ -1897,7 +2254,14 @@ function Page() {
         onSave={(v) =>
           setDB((d) => ({
             ...d,
-            expenses: upsert(d.expenses, { ...v, account: "Studio" }),
+            expenses: upsert(
+              d.expenses,
+              stampFxSnapshot(
+                { ...v, account: "Studio" },
+                safeKhrRate(d.settings.khrRate),
+                edit?.currency === v.currency && edit?.amount === v.amount,
+              ),
+            ),
           }))
         }
         onDelete={
@@ -1907,6 +2271,85 @@ function Page() {
                   ...d,
                   expenses: d.expenses.filter((x) => x.id !== v.id),
                 }))
+            : undefined
+        }
+      />
+
+      {/* Fast-Tap Personal Expense Drawer (from Combined Ledger or Category Inspector) */}
+      <QuickExpenseDrawer
+        item={personalEdit}
+        onClose={() => setPersonalEdit(null)}
+        onSave={(v) => {
+          const acc = expenseAccount(v);
+          setDB((d) => ({
+            ...d,
+            expenses: upsert(d.expenses, { ...v, account: acc }),
+          }));
+          toast.success(`${acc} expense saved.`);
+        }}
+        onDelete={
+          personalEdit && db.expenses.some((x) => x.id === personalEdit.id)
+            ? (v) => {
+                setDB((d) => ({
+                  ...d,
+                  expenses: d.expenses.filter((x) => x.id !== v.id),
+                }));
+                toast.message("Expense deleted.");
+              }
+            : undefined
+        }
+      />
+
+      {/* Fast-Tap Personal Income Drawer (from Combined Ledger) */}
+      <QuickIncomeDrawer
+        item={personalIncomeEdit}
+        onClose={() => setPersonalIncomeEdit(null)}
+        onSave={(v) => {
+          setDB((d) => ({
+            ...d,
+            personalIncome: upsert(d.personalIncome ?? [], v),
+          }));
+          toast.success("Personal income saved.");
+        }}
+        onDelete={
+          personalIncomeEdit &&
+          (db.personalIncome ?? []).some((x) => x.id === personalIncomeEdit.id)
+            ? (v) => {
+                setDB((d) => ({
+                  ...d,
+                  personalIncome: (d.personalIncome ?? []).filter(
+                    (x) => x.id !== v.id,
+                  ),
+                }));
+                toast.message("Personal income deleted.");
+              }
+            : undefined
+        }
+      />
+
+      {/* Unmatched Studio Income Drawer */}
+      <QuickStudioIncomeDrawer
+        item={studioIncomeEdit}
+        onClose={() => setStudioIncomeEdit(null)}
+        onSave={(v) => {
+          setDB((d) => ({
+            ...d,
+            studioIncome: upsert(d.studioIncome ?? [], v),
+          }));
+          toast.success("Studio income saved.");
+        }}
+        onDelete={
+          studioIncomeEdit &&
+          (db.studioIncome ?? []).some((x) => x.id === studioIncomeEdit.id)
+            ? (v) => {
+                setDB((d) => ({
+                  ...d,
+                  studioIncome: (d.studioIncome ?? []).filter(
+                    (x) => x.id !== v.id,
+                  ),
+                }));
+                toast.message("Studio income deleted.");
+              }
             : undefined
         }
       />

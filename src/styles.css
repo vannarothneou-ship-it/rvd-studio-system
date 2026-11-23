@@ -751,6 +751,26 @@
     transform: translate3d(0, 0, 0);
   }
 }
+@keyframes pageEnterNext {
+  from {
+    opacity: 0;
+    transform: translate3d(18px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+@keyframes pageEnterPrev {
+  from {
+    opacity: 0;
+    transform: translate3d(-18px, 0, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
 @keyframes flowChartEnter {
   from {
     opacity: 0;
@@ -780,7 +800,15 @@
   }
 }
 .page-enter {
-  animation: pageEnter 220ms var(--ease-ios, cubic-bezier(0.16, 1, 0.3, 1)) both;
+  animation: pageEnter 200ms var(--ease-ios, cubic-bezier(0.16, 1, 0.3, 1)) both;
+}
+.page-enter-next {
+  animation: pageEnterNext 200ms var(--ease-ios, cubic-bezier(0.16, 1, 0.3, 1))
+    both;
+}
+.page-enter-prev {
+  animation: pageEnterPrev 200ms var(--ease-ios, cubic-bezier(0.16, 1, 0.3, 1))
+    both;
 }
 .flow-chart-in {
   transform-origin: center top;
@@ -809,6 +837,8 @@ a {
 }
 @media (prefers-reduced-motion: reduce) {
   .page-enter,
+  .page-enter-next,
+  .page-enter-prev,
   .flow-chart-in,
   .flow-ribbon-in,
   .flow-node-in {
@@ -827,6 +857,7 @@ a {
 /* ---- Apple-style system (from design.md) ---- */
 :root {
   --ease-ios: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-ios-spring: cubic-bezier(0.32, 0.72, 0, 1);
 }
 body {
   letter-spacing: -0.011em;
@@ -838,20 +869,40 @@ h3,
   letter-spacing: -0.022em;
   font-weight: 600;
 }
-/* single press micro-interaction: scale .95 on every button */
+/* Tactile iOS press & tap micro-interaction (compositor-only) */
 button:not(:disabled),
 [role="button"],
-a.btn {
+a.btn,
+.ios-tap {
   transition:
-    transform 0.18s var(--ease-ios),
-    background-color 0.2s,
-    color 0.2s,
-    border-color 0.2s,
-    opacity 0.2s;
+    transform 0.16s var(--ease-ios-spring, var(--ease-ios)),
+    background-color 0.16s ease,
+    color 0.16s ease,
+    border-color 0.16s ease,
+    opacity 0.16s ease;
 }
 button:not(:disabled):active,
-[role="button"]:active {
-  transform: scale(0.96);
+[role="button"]:active,
+a.btn:active,
+.ios-tap:active {
+  transform: scale(0.962);
+}
+.ios-card-tap {
+  transition:
+    transform 0.18s var(--ease-ios-spring, var(--ease-ios)),
+    border-color 0.18s ease,
+    background-color 0.18s ease;
+}
+.ios-card-tap:active {
+  transform: scale(0.98);
+}
+@media (hover: hover) {
+  .ios-card-tap:hover {
+    transform: translate3d(0, -1px, 0);
+  }
+  .ios-card-tap:active {
+    transform: scale(0.985);
+  }
 }
 /* keyboard focus ring: 2px focus blue */
 :focus-visible {

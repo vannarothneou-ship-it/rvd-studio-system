@@ -71,9 +71,10 @@ import {
   expenseCategoriesFor,
   money,
   previousMonth,
+  recordToUSD,
+  safeKhrRate,
   setCategoryLimit,
   shortDate,
-  toUSD,
   today,
   uid,
   type Account,
@@ -710,7 +711,7 @@ export function CategoryInspectorDrawer({
       };
     }
     if (compareMode === "month") {
-      const r = db.settings.khrRate;
+      const r = safeKhrRate(db.settings.khrRate);
       const sum = db.expenses
         .filter(
           (e) =>
@@ -718,7 +719,7 @@ export function CategoryInspectorDrawer({
             (e.category || "Other") === category &&
             e.date.startsWith(compareMonth),
         )
-        .reduce((acc, e) => acc + toUSD(e.amount, e.currency, r), 0);
+        .reduce((acc, e) => acc + recordToUSD(e, r), 0);
       const diffUSD = timeline.totalUSD - sum;
       const deltaPct =
         sum > 0 ? Math.round(((timeline.totalUSD - sum) / sum) * 100) : null;
@@ -767,7 +768,7 @@ export function CategoryInspectorDrawer({
 
   if (!category || !timeline) return null;
 
-  const r = db.settings.khrRate;
+  const r = safeKhrRate(db.settings.khrRate);
   const pacePct = monthPacePercent(month);
   const jarLimit =
     timelineRange === "all"
@@ -1192,7 +1193,7 @@ export function CategoryInspectorDrawer({
                 <ul className="divide-y divide-border rounded-xl border border-border bg-muted/30">
                   {visibleItems.map((e) => {
                     const ItemIcon = expenseItemIcon(e);
-                    const usd = toUSD(e.amount, e.currency, r);
+                    const usd = recordToUSD(e, r);
                     return (
                       <li key={e.id}>
                         <button

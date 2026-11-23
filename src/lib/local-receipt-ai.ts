@@ -7,6 +7,7 @@ export interface ReceiptParseContext {
   ownerNames?: string[];
   khrRate?: number;
   learnedRules?: LearnedReceiptRule[];
+  defaultAccount?: "Personal" | "Studio";
 }
 
 export interface LocalScannedReceiptResult extends ScannedReceiptResult {
@@ -465,6 +466,111 @@ function extractLineItemMathSum(lines: string[]): number | null {
   return null;
 }
 
+function extractBreakdownFields(
+  lines: string[],
+  currency: "USD" | "KHR",
+): {
+  subtotal?: number;
+  tax?: number;
+  change?: number;
+  depositedAmount?: number;
+  receivedAmount?: number;
+} {
+  let subtotal: number | undefined;
+  let tax: number | undefined;
+  let change: number | undefined;
+  let depositedAmount: number | undefined;
+  let receivedAmount: number | undefined;
+
+  const extractValOnLine = (line: string): number | undefined => {
+    // Strip percentage tokens like "10%" or "10.5 %" so "VAT 10%: $0.90" never extracts 10 as the tax amount
+    const cleanedLine = line.replace(/\b\d+(?:\.\d+)?\s*%/g, " ");
+    if (currency === "KHR") {
+      const tagged = cleanedLine.match(
+        /(?:(?:KHR|៛)\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,8})|([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,8})\s*(?:KHR|៛|រៀល))/i,
+      );
+      const rawKhr = tagged?.[1] || tagged?.[2];
+      if (rawKhr) {
+        const n = parseNumberStr(rawKhr);
+        return n > 0 ? Math.round(n) : undefined;
+      }
+      const m = cleanedLine.match(/([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{3,8})/);
+      if (m?.[1]) {
+        const n = parseNumberStr(m[1]);
+        return n > 0 ? Math.round(n) : undefined;
+      }
+      return undefined;
+    }
+    const taggedUsd = cleanedLine.match(
+      /(?:(?:US\$|\$|USD)\s*([0-9]{1,5}(?:\.[0-9]{1,2})?)|([0-9]{1,5}(?:\.[0-9]{1,2})?)\s*(?:USD|\$))/i,
+    );
+    const rawUsd = taggedUsd?.[1] || taggedUsd?.[2];
+    if (rawUsd) {
+      const n = parseNumberStr(rawUsd);
+      return n > 0 ? Math.round(n * 100) / 100 : undefined;
+    }
+    const m = cleanedLine.match(/\b([0-9]{1,5}(?:\.[0-9]{1,2})?)\b/);
+    if (m?.[1]) {
+      const n = parseNumberStr(m[1]);
+      return n > 0 ? Math.round(n * 100) / 100 : undefined;
+    }
+    return undefined;
+  };
+
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (/sub[-\s]?total|សរុបរង/.test(lower) && subtotal === undefined) {
+      subtotal = extractValOnLine(line);
+    } else if (/\b(?:vat|tax|gst)\b|ពន្ធ/.test(lower) && tax === undefined) {
+      tax = extractValOnLine(line);
+    } else if (
+      /\b(?:change|cash\s*back|balance\s*due\s*change)\b|ប្រាក់អាប់/.test(lower) &&
+      change === undefined
+    ) {
+      change = extractValOnLine(line);
+    } else if (
+      /deposited\s*amount/i.test(lower) &&
+      depositedAmount === undefined
+    ) {
+      depositedAmount = extractValOnLine(line);
+    } else if (
+      /receiv(?:e|ed)\s*amount/i.test(lower) &&
+      receivedAmount === undefined
+    ) {
+      receivedAmount = extractValOnLine(line);
+    }
+  }
+
+  return {
+    ...(subtotal !== undefined ? { subtotal } : {}),
+    ...(tax !== undefined ? { tax } : {}),
+    ...(change !== undefined ? { change } : {}),
+    ...(depositedAmount !== undefined ? { depositedAmount } : {}),
+    ...(receivedAmount !== undefined ? { receivedAmount } : {}),
+  };
+}
+
+function detectPartialDigitLine(lines: string[]): boolean {
+  for (const line of lines) {
+    const lower = line.toLowerCase();
+    if (
+      !/total|ttl|amount|amt|paid|payment|sum|deposited|receiv|សរុប|ទឹកប្រាក់|ថ្លៃ/.test(
+        lower,
+      )
+    ) {
+      continue;
+    }
+    if (
+      /(?:US\$|\$|USD|Total|TTL|Amount|Amt|Paid|សរុប)[^0-9\n]{0,8}(?:[0-9]{1,5}\.(?=\s|$|[^0-9])|(?<![0-9])\.[0-9]{1,2}(?=\s|$))/i.test(
+        line,
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function extractAmountAndCurrency(
   raw: string,
   fields: StructuredSlipFields,
@@ -473,6 +579,7 @@ function extractAmountAndCurrency(
   amount: number;
   currency: "USD" | "KHR";
   ambiguous: boolean;
+  ambiguityReason: string;
   mathVerified: boolean;
 } {
   const norm = normalizeKhmerDigits(raw);
@@ -483,6 +590,7 @@ function extractAmountAndCurrency(
 
   const candidates: AmountCandidate[] = [];
   const lineItemSum = extractLineItemMathSum(lines);
+  const hasPartialDigits = detectPartialDigitLine(lines);
 
   for (const line of lines) {
     const lower = line.toLowerCase();
@@ -529,16 +637,20 @@ function extractAmountAndCurrency(
         lower,
       );
 
-    const lineBoost = isPrimaryBankAmount
-      ? 62
-      : isGrandTotal
-        ? 50
-        : isSentLine
-          ? -25
-          : isTotalLine
-            ? 32
-            : /subtotal|balance|fee|ប្រាក់អាប់/.test(lower)
-              ? 4
+    const isSubOrChangeOrTax =
+      /\b(?:subtotal|sub\s*total|vat|tax|gst|change|cash\s*tender|tendered|balance|fee|discount)\b|ប្រាក់អាប់|ពន្ធ/.test(
+        lower,
+      );
+    const lineBoost = isSubOrChangeOrTax
+      ? 2
+      : isPrimaryBankAmount
+        ? 62
+        : isGrandTotal
+          ? 50
+          : isSentLine
+            ? -25
+            : isTotalLine
+              ? 32
               : 12;
 
     // Detect whether a label-to-value colon was lost on a colon-formatted slip (common OCR ":" -> "1" failure)
@@ -681,10 +793,16 @@ function extractAmountAndCurrency(
       .filter((n) => n > 0 && n < 50_000);
     if (decMatches.length > 0) {
       const maxDec = Math.round(Math.max(...decMatches) * 100) / 100;
+      const amb = decMatches.length > 1 || hasPartialDigits;
       return {
         amount: maxDec,
         currency: "USD",
-        ambiguous: decMatches.length > 1,
+        ambiguous: amb,
+        ambiguityReason: hasPartialDigits
+          ? "Partial or cut-off amount digits detected; verify total before saving."
+          : decMatches.length > 1
+            ? "Multiple unlabeled amounts found on receipt; verify total."
+            : "",
         mathVerified:
           lineItemSum !== null && Math.abs(maxDec - lineItemSum) <= 0.03,
       };
@@ -696,10 +814,16 @@ function extractAmountAndCurrency(
       .map((m) => parseNumberStr(m[1] || ""))
       .filter((n) => n >= 500 && n % 100 === 0 && n < 10_000_000);
     if (khrMatches.length > 0) {
+      const amb = khrMatches.length > 1 || hasPartialDigits;
       return {
         amount: Math.max(...khrMatches),
         currency: "KHR",
-        ambiguous: khrMatches.length > 1,
+        ambiguous: amb,
+        ambiguityReason: hasPartialDigits
+          ? "Partial or cut-off amount digits detected; verify total before saving."
+          : khrMatches.length > 1
+            ? "Multiple amounts found on receipt; verify total."
+            : "",
         mathVerified: false,
       };
     }
@@ -707,7 +831,10 @@ function extractAmountAndCurrency(
     return {
       amount: 0,
       currency: "USD",
-      ambiguous: false,
+      ambiguous: hasPartialDigits,
+      ambiguityReason: hasPartialDigits
+        ? "Partial or cut-off amount digits detected; enter confirmed total manually."
+        : "No legible total amount detected.",
       mathVerified: false,
     };
   }
@@ -807,15 +934,22 @@ function extractAmountAndCurrency(
 
   if (bestUsd && (!bestKhr || bestUsd.finalScore >= bestKhr.finalScore - 5)) {
     const runnerUp = usdRanked[1];
-    const ambiguous = Boolean(
+    const competingTotals = Boolean(
       runnerUp &&
       runnerUp.directHits > 0 &&
       Math.abs(bestUsd.finalScore - runnerUp.finalScore) < 12,
     );
+    const ambiguous = competingTotals || hasPartialDigits;
+    const ambiguityReason = hasPartialDigits
+      ? "Partial or cut-off amount digits detected; verify total before saving."
+      : competingTotals
+        ? "Multiple competing totals found on slip; please confirm amount."
+        : "";
     return {
       amount: bestUsd.amount,
       currency: "USD",
       ambiguous,
+      ambiguityReason,
       mathVerified: verifiedUsdValues.has(bestUsd.amount),
     };
   }
@@ -823,15 +957,30 @@ function extractAmountAndCurrency(
     return {
       amount: bestKhr.amount,
       currency: "KHR",
-      ambiguous: false,
+      ambiguous: hasPartialDigits,
+      ambiguityReason: hasPartialDigits
+        ? "Partial or cut-off amount digits detected; verify total before saving."
+        : "",
       mathVerified: verifiedKhrValues.has(bestKhr.amount),
     };
   }
-  return { amount: 0, currency: "USD", ambiguous: false, mathVerified: false };
+  return {
+    amount: 0,
+    currency: "USD",
+    ambiguous: hasPartialDigits,
+    ambiguityReason: hasPartialDigits
+      ? "Partial or cut-off amount digits detected; enter total manually."
+      : "No legible total amount detected.",
+    mathVerified: false,
+  };
 }
+
+const STUDIO_WORKSPACE_CUES =
+  /\b(?:adobe|creative\s*cloud|figma|framer|canva|typekit|myfonts|monotype|font|fonts|license|shutterstock|envato|printing|print\s*shop|banner|signage|acrylic|vinyl|fabrication|pantone|subcontract|freelancer|vercel|hosting|domain|studio)\b|បោះពុម្ព|ផ្លាកយីហោ/i;
 
 function detectCategory(
   txType: "expense" | "income",
+  account: "Personal" | "Studio",
   text: string,
   fields: StructuredSlipFields,
 ): string {
@@ -841,6 +990,13 @@ function detectCategory(
     `${fields.purpose ?? ""} ${fields.relationship ?? ""}`.toLowerCase();
 
   if (txType === "income") {
+    if (account === "Studio") {
+      if (/retainer|monthly/.test(lower)) return "Retainer";
+      if (/deposit|advance|booking/.test(lower)) return "Deposit";
+      if (/refund|cashback/.test(lower)) return "Refund";
+      if (/design|artwork|logo|brand/.test(lower)) return "Design Fee";
+      return "Client Payment";
+    }
     if (/salary|payroll|wage|monthly\s*pay|ប្រាក់ខែ|ប្រាក់បៀវត្ស/.test(lower)) {
       return "Salary";
     }
@@ -856,6 +1012,71 @@ function detectCategory(
       )
     ) {
       return "Gift & Refund";
+    }
+    return "Other";
+  }
+
+  if (account === "Studio") {
+    if (
+      /\b(?:adobe|creative\s*cloud|figma|framer|canva|notion|google\s*workspace|icloud|subscription|saas|cloud|vercel|domain|hosting)\b/.test(
+        lower,
+      )
+    ) {
+      return "Software and subscriptions";
+    }
+    if (
+      /\b(?:font|fonts|typeface|myfonts|monotype|license|shutterstock|envato)\b/.test(
+        lower,
+      )
+    ) {
+      return "Fonts and licenses";
+    }
+    if (
+      /\b(?:print|printing|brochure|flyer|paper|proofing|packaging)\b|បោះពុម្ព/.test(
+        lower,
+      )
+    ) {
+      return "Printing and production";
+    }
+    if (
+      /\b(?:fabricat|signage|acrylic|vinyl|banner|booth|vendor|installation)\b|ផ្លាកយីហោ/.test(
+        lower,
+      )
+    ) {
+      return "Fabrication and vendors";
+    }
+    if (
+      /\b(?:freelance|subcontract|illustrator|photographer|assistant)\b/.test(
+        lower,
+      )
+    ) {
+      return "Freelancers";
+    }
+    if (
+      /\b(?:grab|passapp|tada|taxi|delivery|courier|fuel|gas|transport)\b/.test(
+        lower,
+      )
+    ) {
+      return "Transport";
+    }
+    if (
+      /\b(?:meta|facebook|instagram|boost|ads|marketing|sponsor)\b/.test(lower)
+    ) {
+      return "Marketing";
+    }
+    if (
+      /\b(?:macbook|laptop|monitor|camera|lens|tablet|ipad|wacom|keyboard|mouse|ssd|equipment)\b/.test(
+        lower,
+      )
+    ) {
+      return "Equipment";
+    }
+    if (
+      /\b(?:rent|office|electric|edc|water|wifi|internet|utility|utilities)\b/.test(
+        lower,
+      )
+    ) {
+      return "Office and utilities";
     }
     return "Other";
   }
@@ -1148,8 +1369,13 @@ export function parseReceiptText(
       ? "Credit"
       : "Debit";
 
-  const { amount, currency, ambiguous, mathVerified } =
+  const { amount, currency, ambiguous, ambiguityReason, mathVerified } =
     extractAmountAndCurrency(normalized, fields, context?.khrRate);
+  const normLines = normalized
+    .split(/\r?\n/)
+    .map((l) => stripLogoGlyphNoise(l.trim()))
+    .filter(Boolean);
+  const breakdown = extractBreakdownFields(normLines, currency);
   const date = extractDateFromText(normalized, fallbackDate);
   const merchantOrPayer = extractMerchantOrPayer(
     cleaned,
@@ -1157,7 +1383,13 @@ export function parseReceiptText(
     fields,
     ownerNames,
   );
-  let category = detectCategory(txType, normalized, fields);
+  const account: "Personal" | "Studio" =
+    context?.defaultAccount === "Studio"
+      ? "Studio"
+      : STUDIO_WORKSPACE_CUES.test(normalized)
+        ? "Studio"
+        : "Personal";
+  let category = detectCategory(txType, account, normalized, fields);
   const reference = extractReference(normalized, fields);
 
   const matched = matchLearnedRule(
@@ -1189,17 +1421,16 @@ export function parseReceiptText(
 
   const confidence: ScannedReceiptResult["confidence"] =
     amount > 0 &&
-    (mathVerified ||
-      Boolean(matched) ||
-      (merchantOrPayer !== "Scanned Slip" && !ambiguous))
+    !ambiguous &&
+    (mathVerified || Boolean(matched) || merchantOrPayer !== "Scanned Slip")
       ? "high"
-      : amount > 0
+      : amount > 0 && !ambiguous
         ? "medium"
         : "low";
 
   return {
     txType,
-    account: "Personal",
+    account,
     amount,
     currency,
     date,
@@ -1209,9 +1440,13 @@ export function parseReceiptText(
     category,
     reference,
     confidence,
-    notes: cleaned ? "Scanned locally on device (no API)" : "",
+    notes: cleaned ? "Scanned locally on device (OCR fallback)" : "",
     matchedRule: matched?.displayPattern,
     mathVerified,
+    ...breakdown,
+    ...(ambiguous ? { ambiguous: true } : {}),
+    ...(ambiguityReason ? { ambiguityReason } : {}),
+    engine: "local-ocr",
   };
 }
 
@@ -1771,4 +2006,63 @@ export async function scanReceiptLocally(
     ocrConfidence,
     passes,
   };
+}
+
+export async function prepareReceiptUploadPayload(
+  file: File,
+  rotationDeg = 0,
+): Promise<{
+  previewDataUrl: string;
+  thumbDataUrl: string;
+  imageBase64: string;
+  mimeType: "image/jpeg";
+}> {
+  const rot = (((rotationDeg ?? 0) % 360) + 360) % 360;
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Could not decode image."));
+      el.src = objectUrl;
+    });
+    const swapped = rot === 90 || rot === 270;
+    const baseW = swapped ? img.height : img.width;
+    const baseH = swapped ? img.width : img.height;
+    const maxDim = Math.max(baseW, baseH, 1);
+
+    const render = (targetMax: number, quality: number) => {
+      const scale = Math.min(1, targetMax / maxDim);
+      const cw = Math.max(1, Math.round(baseW * scale));
+      const ch = Math.max(1, Math.round(baseH * scale));
+      const c = document.createElement("canvas");
+      c.width = cw;
+      c.height = ch;
+      const ctx = c.getContext("2d");
+      if (ctx) {
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, cw, ch);
+        ctx.save();
+        ctx.translate(cw / 2, ch / 2);
+        ctx.rotate((rot * Math.PI) / 180);
+        const dw = swapped ? ch : cw;
+        const dh = swapped ? cw : ch;
+        ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+        ctx.restore();
+      }
+      return c.toDataURL("image/jpeg", quality);
+    };
+
+    const previewDataUrl = render(1280, 0.85);
+    const thumbDataUrl = render(320, 0.7);
+    const imageBase64 = previewDataUrl.replace(/^data:[^;]+;base64,/, "");
+    return {
+      previewDataUrl,
+      thumbDataUrl,
+      imageBase64,
+      mimeType: "image/jpeg",
+    };
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
 }

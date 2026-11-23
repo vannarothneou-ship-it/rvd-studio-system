@@ -10,6 +10,7 @@ import {
   Plus,
   Search,
   Sparkles,
+  Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
 import { SwipeRow } from "@/components/rv/SwipeRow";
@@ -76,9 +77,11 @@ import {
   personalIncomeSourceTotals,
   personalIncomeTotal,
   personalSeries,
+  recordToUSD,
+  safeKhrRate,
   setDB,
   shortDate,
-  toUSD,
+  stampFxSnapshot,
   today,
   uid,
   useDB,
@@ -125,7 +128,7 @@ type LedgerView = "all" | "spending" | "income";
 
 function PersonalPage() {
   const db = useDB((d) => d);
-  const r = db.settings.khrRate;
+  const r = safeKhrRate(db.settings.khrRate);
   const [personalRange, setPersonalRange] = useState<PersonalRange>("today");
   const [chartMode, setChartMode] = useState<ChartMode>("area");
   const [chartLens, setChartLens] = useState<ChartLens>("flow");
@@ -156,18 +159,22 @@ function PersonalPage() {
     if (parsedQuick.kind === "expense") {
       const id = uid();
       const d = parsedQuick.data;
-      const item: Expense = {
-        id,
-        date: d.date,
-        projectId: "",
-        category: d.category,
-        vendor: d.vendor,
-        description: d.description,
-        amount: d.amount,
-        currency: d.currency,
-        receipt: "",
-        account: "Personal",
-      };
+      const item: Expense = stampFxSnapshot(
+        {
+          id,
+          date: d.date,
+          projectId: "",
+          category: d.category,
+          vendor: d.vendor,
+          description: d.description,
+          amount: d.amount,
+          currency: d.currency,
+          receipt: "",
+          account: "Personal",
+        },
+        safeKhrRate(db.settings.khrRate),
+        false,
+      );
       setDB((prev) => ({ ...prev, expenses: [item, ...prev.expenses] }));
       setQuickText("");
       toast.success(
@@ -187,15 +194,19 @@ function PersonalPage() {
     }
     const id = uid();
     const d = parsedQuick.data;
-    const inc: PersonalIncome = {
-      id,
-      date: d.date,
-      source: d.source,
-      accountMethod: d.accountMethod,
-      description: d.description,
-      amount: d.amount,
-      currency: d.currency,
-    };
+    const inc: PersonalIncome = stampFxSnapshot(
+      {
+        id,
+        date: d.date,
+        source: d.source,
+        accountMethod: d.accountMethod,
+        description: d.description,
+        amount: d.amount,
+        currency: d.currency,
+      },
+      safeKhrRate(db.settings.khrRate),
+      false,
+    );
     setDB((prev) => ({
       ...prev,
       personalIncome: [inc, ...(prev.personalIncome ?? [])],
@@ -216,7 +227,7 @@ function PersonalPage() {
         },
       },
     );
-  }, [parsedQuick]);
+  }, [parsedQuick, db.settings.khrRate]);
 
   const monthLabel = new Date(month + "-01T00:00:00Z").toLocaleDateString(
     "en-US",
@@ -392,7 +403,7 @@ function PersonalPage() {
               title: e.description || e.vendor || e.category,
               sub: `${e.category}${e.vendor ? ` · ${e.vendor}` : ""}`,
               categoryOrSource: e.category,
-              usd: toUSD(e.amount, e.currency, r),
+              usd: recordToUSD(e, r),
               rawAmount: e.amount,
               currency: e.currency,
               expense: e,
@@ -412,7 +423,7 @@ function PersonalPage() {
               title: inc.description || inc.source,
               sub: `${inc.source}${inc.accountMethod ? ` · ${inc.accountMethod}` : ""}`,
               categoryOrSource: inc.source,
-              usd: toUSD(inc.amount, inc.currency, r),
+              usd: recordToUSD(inc, r),
               rawAmount: inc.amount,
               currency: inc.currency,
               income: inc,
@@ -526,10 +537,19 @@ function PersonalPage() {
         render: () => (
           <Glass className="flex h-full flex-col justify-between">
             <div>
-              <p className="text-sm text-muted-foreground">
-                Personal net cash,{" "}
-                {personalRange === "1m" ? monthLabel : pAgg.scopeLabel}
-              </p>
+              <div className="mb-2 flex items-center gap-2">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-primary">
+                  <Wallet className="h-4 w-4" />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="truncate font-display text-base font-bold leading-tight">
+                    Personal Net Cash
+                  </h2>
+                  <p className="text-xs text-muted-foreground">
+                    {personalRange === "1m" ? monthLabel : pAgg.scopeLabel}
+                  </p>
+                </div>
+              </div>
               <p
                 className={cn(
                   "font-num mt-2 text-3xl font-extrabold sm:text-4xl",
@@ -539,7 +559,7 @@ function PersonalPage() {
               >
                 <AnimatedNumber value={personalNetRange} />
               </p>
-              <p className="hidden mt-1 text-xs text-muted-foreground sm:block">
+              <p className="mt-1 hidden text-xs text-muted-foreground sm:block">
                 Personal income received minus personal spending
               </p>
               <SparklineWithDates
@@ -557,7 +577,7 @@ function PersonalPage() {
                 }
               />
             </div>
-            <div className="grid grid-cols-3 gap-3 rounded-2xl bg-muted/35 p-3">
+            <div className="grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
               <Stat
                 label="Income"
                 value={compactMoney(personalInRangeTotal)}
@@ -586,82 +606,89 @@ function PersonalPage() {
         render: () => {
           const isGrouped = chartLens === "category" || chartLens === "method";
           return (
-            <Glass delay={80} className="h-full">
-              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <h2 className="truncate font-medium">
-                    {chartLens === "net"
-                      ? "Net Flow"
-                      : chartLens === "category"
-                        ? "By Category"
-                        : chartLens === "method"
-                          ? "By Card"
-                          : "Cash Flow"}
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    {pAgg.scopeLabel}
-                  </p>
+            <Glass delay={80} className="flex h-full flex-col justify-between">
+              <div>
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-primary">
+                      <Activity className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <h2 className="truncate font-display text-base font-bold leading-tight">
+                        {chartLens === "net"
+                          ? "Net Flow"
+                          : chartLens === "category"
+                            ? "By Category"
+                            : chartLens === "method"
+                              ? "By Card"
+                              : "Cash Flow"}
+                      </h2>
+                      <p className="text-xs text-muted-foreground">
+                        {pAgg.scopeLabel}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <SlidingTabs
+                      iconOnly
+                      size="xs"
+                      tone="invert"
+                      layoutGroup="pers-chart-lens"
+                      value={chartLens}
+                      onChange={setChartLens}
+                      options={CHART_LENS_OPTIONS}
+                    />
+                    <ChartModeCycleButton
+                      mode={chartMode}
+                      onChange={setChartMode}
+                    />
+                  </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <SlidingTabs
-                    iconOnly
-                    size="xs"
-                    tone="invert"
-                    layoutGroup="pers-chart-lens"
-                    value={chartLens}
-                    onChange={setChartLens}
-                    options={CHART_LENS_OPTIONS}
-                  />
-                  <ChartModeCycleButton
-                    mode={chartMode}
-                    onChange={setChartMode}
-                  />
-                </div>
-              </div>
 
-              <div className="mb-3 grid grid-cols-3 gap-3 rounded-2xl bg-muted/35 p-3">
-                <Stat
-                  icon={ArrowDownLeft}
-                  label="In"
-                  value={compactMoney(personalInRangeTotal)}
-                  fullValue={money(personalInRangeTotal)}
-                  tone={personalInRangeTotal > 0 ? "pos" : undefined}
-                />
-                <Stat
-                  icon={ArrowUpRight}
-                  label="Out"
-                  value={compactMoney(personalOutRangeTotal)}
-                  fullValue={money(personalOutRangeTotal)}
-                />
-                <Stat
-                  icon={Activity}
-                  label={
-                    personalRange === "today" || personalRange === "week"
-                      ? "Net"
-                      : "Avg / mo"
-                  }
-                  value={compactMoney(
-                    personalRange === "today" || personalRange === "week"
-                      ? personalNetRange
-                      : personalAvgSpend,
-                    "USD",
-                    personalRange === "today" || personalRange === "week",
-                  )}
-                  fullValue={money(
-                    personalRange === "today" || personalRange === "week"
-                      ? personalNetRange
-                      : personalAvgSpend,
-                    "USD",
-                    personalRange === "today" || personalRange === "week",
-                  )}
-                  tone={
-                    personalRange === "today" || personalRange === "week"
-                      ? personalNetRange >= 0
-                        ? "pos"
-                        : "neg"
-                      : undefined
-                  }
-                />
+                <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
+                  <Stat
+                    icon={ArrowDownLeft}
+                    label="In"
+                    value={compactMoney(personalInRangeTotal)}
+                    fullValue={money(personalInRangeTotal)}
+                    tone={personalInRangeTotal > 0 ? "pos" : undefined}
+                  />
+                  <Stat
+                    icon={ArrowUpRight}
+                    label="Out"
+                    value={compactMoney(personalOutRangeTotal)}
+                    fullValue={money(personalOutRangeTotal)}
+                  />
+                  <Stat
+                    icon={Activity}
+                    label={
+                      personalRange === "today" || personalRange === "week"
+                        ? "Net"
+                        : "Avg / mo"
+                    }
+                    value={compactMoney(
+                      personalRange === "today" || personalRange === "week"
+                        ? personalNetRange
+                        : personalAvgSpend,
+                      "USD",
+                      personalRange === "today" || personalRange === "week",
+                    )}
+                    fullValue={money(
+                      personalRange === "today" || personalRange === "week"
+                        ? personalNetRange
+                        : personalAvgSpend,
+                      "USD",
+                      personalRange === "today" || personalRange === "week",
+                    )}
+                    tone={
+                      personalRange === "today" || personalRange === "week"
+                        ? personalNetRange >= 0
+                          ? "pos"
+                          : "neg"
+                        : undefined
+                    }
+                  />
+                </div>
               </div>
 
               {isGrouped ? (
@@ -704,177 +731,6 @@ function PersonalPage() {
             </Glass>
           );
         },
-      },
-      {
-        id: "personalMoneyFlow",
-        title: "Personal money flow river",
-        defaultSpan: 12,
-        render: () => (
-          <MoneyFlowSankeyCard
-            db={db}
-            accountScope="Personal"
-            anchorMonth={month}
-            onSelectCategory={(_acc, cat) => setInspectedCategory(cat)}
-            onQuickLog={(kind) =>
-              kind === "income" ? openNewIncome() : openNewExpense()
-            }
-            layoutIdPrefix="pers-money-flow"
-          />
-        ),
-      },
-      {
-        id: "personalPie",
-        title: "Personal spending & income breakdown",
-        defaultSpan: 6,
-        render: () => (
-          <BreakdownPieCard
-            db={db}
-            account="Personal"
-            personalItems={pAgg.items}
-            studioItems={[]}
-            personalIncomeItems={incAgg}
-            scopeLabel={pAgg.scopeLabel}
-            dateSet={pAgg.dateSet}
-            monthSet={pAgg.monthSet}
-            onSelectCategory={(_acc, cat) => setInspectedCategory(cat)}
-            onEmptyAction={(m) =>
-              m === "income" ? openNewIncome() : openNewExpense()
-            }
-          />
-        ),
-      },
-      {
-        id: "personalPulse",
-        title: "Personal spending pulse",
-        defaultSpan: 6,
-        render: () => {
-          const pulseData =
-            personalRange === "1m"
-              ? chartData.filter((d) => d.personalOut > 0).slice(-7)
-              : chartData.slice(-7);
-          const pulseTitle =
-            personalRange === "today"
-              ? "Today spending by slot"
-              : personalRange === "week"
-                ? "7-day spending pulse"
-                : personalRange === "1m"
-                  ? "Active spending days"
-                  : "Monthly spending bars";
-          return (
-            <PeriodBarPulseCard
-              title={pulseTitle}
-              subtitle={`Comparison across ${pAgg.scopeLabel}`}
-              data={pulseData.length > 0 ? pulseData : chartData.slice(-7)}
-              valueKey="personalOut"
-            />
-          );
-        },
-      },
-      {
-        id: "cardSpend",
-        title: "Card spending · Debit vs Credit",
-        defaultSpan: 12,
-        render: () => (
-          <CardSpendingChartCard
-            db={db}
-            month={month}
-            range={personalRange}
-            onRangeChange={(next) => {
-              setPersonalRange(next);
-              setVisibleCount(RECENT_ROWS);
-            }}
-            layoutIdPrefix="pers-card-spend"
-          />
-        ),
-      },
-      {
-        id: "personalJars",
-        title: "Personal budget jars",
-        defaultSpan: 12,
-        render: () => (
-          <div>
-            {pAgg.items.length === 0 ? (
-              <Glass>
-                <Empty>
-                  No personal expenses recorded in {pAgg.scopeLabel}.
-                </Empty>
-              </Glass>
-            ) : (
-              <BudgetShelf
-                db={db}
-                account="Personal"
-                month={month}
-                monthLabel={pAgg.scopeLabel}
-                items={pAgg.items}
-                limitScale={pAgg.monthsCount}
-                selectedCategory={inspectedCategory}
-                onSelectCategory={(cat) => setInspectedCategory(cat)}
-              />
-            )}
-          </div>
-        ),
-      },
-      {
-        id: "personalGoals",
-        title: "Personal saving goals",
-        defaultSpan: 12,
-        render: () => (
-          <Glass delay={180}>
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <PiggyBank className="h-4 w-4 text-primary" />
-                <p className="label-mono">Personal saving goals</p>
-              </div>
-              <Btn
-                onClick={openNewGoal}
-                className="px-3 py-1 text-xs whitespace-nowrap shrink-0"
-              >
-                <Plus className="h-3 w-3" />
-                Add saving goal
-              </Btn>
-            </div>
-
-            {personalGoals.length === 0 ? (
-              <Empty>No personal saving goals yet.</Empty>
-            ) : (
-              <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-                {personalGoals.map((g, idx) => (
-                  <GoalRingCard
-                    key={g.id}
-                    goal={g}
-                    current={g.current}
-                    delay={idx * 60}
-                    onEdit={() => setGoalDraft(g)}
-                    onQuickAdd={(amt) => {
-                      setDB((d) => ({
-                        ...d,
-                        goals: d.goals.map((x) =>
-                          x.id === g.id
-                            ? {
-                                ...x,
-                                current: x.current + amt,
-                                contributions: [
-                                  {
-                                    id: uid(),
-                                    date: today(),
-                                    amount: amt,
-                                    cadence: x.cadence ?? "monthly",
-                                    note: "Quick add",
-                                  },
-                                  ...(x.contributions ?? []),
-                                ],
-                              }
-                            : x,
-                        ),
-                      }));
-                      toast.success(`Added +$${amt} to ${g.name}`);
-                    }}
-                  />
-                ))}
-              </div>
-            )}
-          </Glass>
-        ),
       },
       {
         id: "personalLedger",
@@ -1236,6 +1092,177 @@ function PersonalPage() {
           );
         },
       },
+      {
+        id: "cardSpend",
+        title: "Card spending · Debit vs Credit",
+        defaultSpan: 12,
+        render: () => (
+          <CardSpendingChartCard
+            db={db}
+            month={month}
+            range={personalRange}
+            onRangeChange={(next) => {
+              setPersonalRange(next);
+              setVisibleCount(RECENT_ROWS);
+            }}
+            layoutIdPrefix="pers-card-spend"
+          />
+        ),
+      },
+      {
+        id: "personalMoneyFlow",
+        title: "Personal money flow river",
+        defaultSpan: 12,
+        render: () => (
+          <MoneyFlowSankeyCard
+            db={db}
+            accountScope="Personal"
+            anchorMonth={month}
+            onSelectCategory={(_acc, cat) => setInspectedCategory(cat)}
+            onQuickLog={(kind) =>
+              kind === "income" ? openNewIncome() : openNewExpense()
+            }
+            layoutIdPrefix="pers-money-flow"
+          />
+        ),
+      },
+      {
+        id: "personalPie",
+        title: "Personal spending & income breakdown",
+        defaultSpan: 6,
+        render: () => (
+          <BreakdownPieCard
+            db={db}
+            account="Personal"
+            personalItems={pAgg.items}
+            studioItems={[]}
+            personalIncomeItems={incAgg}
+            scopeLabel={pAgg.scopeLabel}
+            dateSet={pAgg.dateSet}
+            monthSet={pAgg.monthSet}
+            onSelectCategory={(_acc, cat) => setInspectedCategory(cat)}
+            onEmptyAction={(m) =>
+              m === "income" ? openNewIncome() : openNewExpense()
+            }
+          />
+        ),
+      },
+      {
+        id: "personalPulse",
+        title: "Personal spending pulse",
+        defaultSpan: 6,
+        render: () => {
+          const pulseData =
+            personalRange === "1m"
+              ? chartData.filter((d) => d.personalOut > 0).slice(-7)
+              : chartData.slice(-7);
+          const pulseTitle =
+            personalRange === "today"
+              ? "Today spending by slot"
+              : personalRange === "week"
+                ? "7-day spending pulse"
+                : personalRange === "1m"
+                  ? "Active spending days"
+                  : "Monthly spending bars";
+          return (
+            <PeriodBarPulseCard
+              title={pulseTitle}
+              subtitle={`Comparison across ${pAgg.scopeLabel}`}
+              data={pulseData.length > 0 ? pulseData : chartData.slice(-7)}
+              valueKey="personalOut"
+            />
+          );
+        },
+      },
+      {
+        id: "personalJars",
+        title: "Personal budget jars",
+        defaultSpan: 12,
+        render: () => (
+          <div>
+            {pAgg.items.length === 0 ? (
+              <Glass>
+                <Empty>
+                  No personal expenses recorded in {pAgg.scopeLabel}.
+                </Empty>
+              </Glass>
+            ) : (
+              <BudgetShelf
+                db={db}
+                account="Personal"
+                month={month}
+                monthLabel={pAgg.scopeLabel}
+                items={pAgg.items}
+                limitScale={pAgg.monthsCount}
+                selectedCategory={inspectedCategory}
+                onSelectCategory={(cat) => setInspectedCategory(cat)}
+              />
+            )}
+          </div>
+        ),
+      },
+      {
+        id: "personalGoals",
+        title: "Personal saving goals",
+        defaultSpan: 12,
+        render: () => (
+          <Glass delay={180}>
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <PiggyBank className="h-4 w-4 text-primary" />
+                <p className="label-mono">Personal saving goals</p>
+              </div>
+              <Btn
+                onClick={openNewGoal}
+                className="px-3 py-1 text-xs whitespace-nowrap shrink-0"
+              >
+                <Plus className="h-3 w-3" />
+                Add saving goal
+              </Btn>
+            </div>
+
+            {personalGoals.length === 0 ? (
+              <Empty>No personal saving goals yet.</Empty>
+            ) : (
+              <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+                {personalGoals.map((g, idx) => (
+                  <GoalRingCard
+                    key={g.id}
+                    goal={g}
+                    current={g.current}
+                    delay={idx * 60}
+                    onEdit={() => setGoalDraft(g)}
+                    onQuickAdd={(amt) => {
+                      setDB((d) => ({
+                        ...d,
+                        goals: d.goals.map((x) =>
+                          x.id === g.id
+                            ? {
+                                ...x,
+                                current: x.current + amt,
+                                contributions: [
+                                  {
+                                    id: uid(),
+                                    date: today(),
+                                    amount: amt,
+                                    cadence: x.cadence ?? "monthly",
+                                    note: "Quick add",
+                                  },
+                                  ...(x.contributions ?? []),
+                                ],
+                              }
+                            : x,
+                        ),
+                      }));
+                      toast.success(`Added +$${amt} to ${g.name}`);
+                    }}
+                  />
+                ))}
+              </div>
+            )}
+          </Glass>
+        ),
+      },
     ],
     [
       personalRange,
@@ -1286,17 +1313,15 @@ function PersonalPage() {
         title="Personal Money"
         owner={db.settings.ownerName}
         action={
-          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-center">
-            <div className="hidden sm:block">
-              <EditLayoutButton
-                editing={editingLayout}
-                onToggle={() => setEditingLayout((e) => !e)}
-              />
-            </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <EditLayoutButton
+              editing={editingLayout}
+              onToggle={() => setEditingLayout((e) => !e)}
+            />
             <Btn
               type="button"
               onClick={() => openNewIncome()}
-              className="w-full justify-center whitespace-nowrap sm:w-auto sm:shrink-0"
+              className="flex-1 justify-center whitespace-nowrap sm:flex-none"
             >
               <Plus className="h-4 w-4 text-positive" />
               Log income
@@ -1305,7 +1330,7 @@ function PersonalPage() {
               type="button"
               variant="gold"
               onClick={() => openNewExpense()}
-              className="w-full justify-center whitespace-nowrap sm:w-auto sm:shrink-0"
+              className="flex-1 justify-center whitespace-nowrap sm:flex-none"
             >
               <Plus className="h-4 w-4" />
               Add expense
@@ -1364,6 +1389,7 @@ function PersonalPage() {
         pageKey="personal-money"
         widgets={widgets}
         editing={editingLayout}
+        onToggleEditing={() => setEditingLayout((e) => !e)}
         onDoneEditing={() => setEditingLayout(false)}
       />
 

@@ -15,6 +15,8 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import {
+  ArrowDown,
+  ArrowUp,
   Check,
   Columns2,
   Eye,
@@ -26,6 +28,7 @@ import {
   Sparkles,
   Wand2,
 } from "lucide-react";
+import { motion } from "motion/react";
 import {
   useCallback,
   useEffect,
@@ -35,6 +38,7 @@ import {
   type ReactNode,
 } from "react";
 import { toast } from "sonner";
+import { useHoldTip } from "@/components/rv/ui";
 import { autoArrange, recordChoice, type LearnedSpans } from "@/lib/bento-ai";
 import { cn } from "@/lib/utils";
 
@@ -186,6 +190,32 @@ export function packBentoItems(
   }
 
   return packed;
+}
+
+/**
+ * Step-reorder a widget up (-1) or down (+1) among non-hidden items.
+ */
+export function moveBentoItem(
+  items: LayoutItemConfig[],
+  id: string,
+  delta: -1 | 1,
+): LayoutItemConfig[] {
+  const idx = items.findIndex((x) => x.id === id);
+  if (idx < 0) return items;
+  let targetIdx = idx + delta;
+  while (
+    targetIdx >= 0 &&
+    targetIdx < items.length &&
+    items[targetIdx]?.hidden
+  ) {
+    targetIdx += delta;
+  }
+  if (targetIdx < 0 || targetIdx >= items.length) return items;
+  const copy = [...items];
+  const current = copy[idx]!;
+  copy[idx] = copy[targetIdx]!;
+  copy[targetIdx] = current;
+  return copy;
 }
 
 function readLayouts(): Record<string, LayoutItemConfig[]> {
@@ -348,6 +378,13 @@ export function usePageLayout(pageKey: string, defaults: LayoutItemConfig[]) {
     [commit],
   );
 
+  const moveItem = useCallback(
+    (id: string, delta: -1 | 1) => {
+      commit((prev) => moveBentoItem(prev, id, delta));
+    },
+    [commit],
+  );
+
   const setAutoFill = useCallback(
     (next: boolean) => {
       setAutoFillState(next);
@@ -409,6 +446,7 @@ export function usePageLayout(pageKey: string, defaults: LayoutItemConfig[]) {
     toggleHide,
     showWidget,
     reorder,
+    moveItem,
     resetLayout,
   };
 }
@@ -472,45 +510,68 @@ export function EditLayoutButton({
   editing: boolean;
   onToggle: () => void;
 }) {
+  const { handlers, bubble } = useHoldTip(
+    editing ? "Finish rearranging cards" : "Rearrange & resize bento cards",
+  );
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={cn(
-        "hidden shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-all sm:inline-flex",
-        editing
-          ? "border-primary bg-primary text-primary-foreground shadow-sm"
-          : "border-border bg-secondary/70 text-muted-foreground hover:border-primary/50 hover:text-foreground",
-      )}
-    >
-      {editing ? (
-        <>
-          <Check className="h-3.5 w-3.5" />
-          Done editing
-        </>
-      ) : (
-        <>
-          <LayoutGrid className="h-3.5 w-3.5" />
-          Edit layout
-        </>
-      )}
-    </button>
+    <>
+      <button
+        type="button"
+        onClick={onToggle}
+        {...handlers}
+        aria-pressed={editing}
+        className={cn(
+          "ios-tap inline-flex min-h-[36px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+          editing
+            ? "border-primary bg-primary text-primary-foreground shadow-sm"
+            : "border-border bg-secondary/75 text-muted-foreground hover:border-primary/50 hover:text-foreground",
+        )}
+      >
+        {editing ? (
+          <>
+            <Check className="h-3.5 w-3.5" />
+            <span className="sm:hidden">Done</span>
+            <span className="hidden sm:inline">Done editing</span>
+          </>
+        ) : (
+          <>
+            <LayoutGrid className="h-3.5 w-3.5" />
+            <span className="sm:hidden">Edit</span>
+            <span className="hidden sm:inline">Edit layout</span>
+          </>
+        )}
+      </button>
+      {bubble}
+    </>
   );
 }
 
 export function EditableBentoGrid({
   pageKey,
   widgets,
-  editing,
+  editing: controlledEditing,
+  onToggleEditing,
   onDoneEditing,
+  showToolbarToggle = true,
   className,
 }: {
   pageKey: string;
   widgets: BentoWidgetDef[];
-  editing: boolean;
-  onDoneEditing?: () => void;
-  className?: string;
+  editing?: boolean | undefined;
+  onToggleEditing?: (() => void) | undefined;
+  onDoneEditing?: (() => void) | undefined;
+  showToolbarToggle?: boolean | undefined;
+  className?: string | undefined;
 }) {
+  const [internalEditing, setInternalEditing] = useState(false);
+  const editing = controlledEditing ?? internalEditing;
+  const toggleEdit = onToggleEditing ?? (() => setInternalEditing((v) => !v));
+  const doneEdit =
+    onDoneEditing ?? onToggleEditing ?? (() => setInternalEditing(false));
+  const { handlers: arrangeTipHandlers, bubble: arrangeTipBubble } = useHoldTip(
+    "Rearrange & resize bento cards",
+  );
+
   const defaults = useMemo<LayoutItemConfig[]>(
     () => widgets.map((w) => ({ id: w.id, span: w.defaultSpan })),
     [widgets],
@@ -525,6 +586,7 @@ export function EditableBentoGrid({
     toggleHide,
     showWidget,
     reorder,
+    moveItem,
     resetLayout,
   } = usePageLayout(pageKey, defaults);
 
@@ -628,6 +690,22 @@ export function EditableBentoGrid({
 
   return (
     <div className={className}>
+      {!editing && showToolbarToggle && (
+        <div className="mb-2.5 flex items-center justify-end gap-2">
+          <button
+            type="button"
+            onClick={toggleEdit}
+            aria-label="Rearrange bento cards"
+            {...arrangeTipHandlers}
+            className="ios-tap inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--glass-border)] bg-[var(--glass)] px-2.5 text-[0.7rem] font-medium text-muted-foreground backdrop-blur-md transition-colors hover:border-primary/45 hover:text-foreground"
+          >
+            <LayoutGrid className="h-3.5 w-3.5 text-primary" />
+            <span>Arrange</span>
+          </button>
+          {arrangeTipBubble}
+        </div>
+      )}
+
       {editing && (
         <div className="glass-strong mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/40 px-4 py-3 rise">
           <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -636,8 +714,7 @@ export function EditableBentoGrid({
               Layout editor
             </span>
             <span className="text-muted-foreground">
-              Drag card to move · Drag right edge to resize · Click Pair (½+½)
-              to combine 2 full cards
+              Drag card or tap ↑/↓ to reorder · Resize width · Pair ½+½
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -695,16 +772,14 @@ export function EditableBentoGrid({
               <RotateCcw className="h-3 w-3" />
               Reset
             </button>
-            {onDoneEditing && (
-              <button
-                type="button"
-                onClick={onDoneEditing}
-                className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground"
-              >
-                <Check className="h-3 w-3" />
-                Done
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={doneEdit}
+              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground"
+            >
+              <Check className="h-3 w-3" />
+              Done
+            </button>
           </div>
         </div>
       )}
@@ -726,7 +801,7 @@ export function EditableBentoGrid({
           ref={gridRef}
           className="grid grid-cols-1 items-stretch gap-4 [grid-auto-flow:dense] md:grid-cols-2 lg:grid-cols-12"
         >
-          {packedEntries.map((entry) => {
+          {packedEntries.map((entry, idx) => {
             const def = widgetMap.get(entry.config.id);
             if (!def) return null;
             const isPreviewSlot = activeId === entry.config.id;
@@ -738,9 +813,12 @@ export function EditableBentoGrid({
                 mdSpan={entry.mdSpan}
                 title={def.title}
                 editing={editing}
+                isDragging={Boolean(activeId)}
                 isPreviewSlot={isPreviewSlot}
                 isResizing={resizingState?.id === entry.config.id}
                 canPair={visibleItems.length > 1 && entry.effectiveSpan >= 8}
+                canMoveUp={idx > 0}
+                canMoveDown={idx < packedEntries.length - 1}
                 gridRef={gridRef}
                 onSpan={(span) => setSpan(entry.config.id, span)}
                 onResizePreview={(span) =>
@@ -751,6 +829,8 @@ export function EditableBentoGrid({
                   setSpan(entry.config.id, span);
                 }}
                 onPair={() => pairWithNext(entry.config.id)}
+                onMoveUp={() => moveItem(entry.config.id, -1)}
+                onMoveDown={() => moveItem(entry.config.id, 1)}
                 onHide={() => toggleHide(entry.config.id)}
               >
                 {def.render()}
@@ -802,14 +882,19 @@ function BentoSlot({
   mdSpan,
   title,
   editing,
+  isDragging,
   isPreviewSlot,
   isResizing,
   canPair,
+  canMoveUp,
+  canMoveDown,
   gridRef,
   onSpan,
   onResizePreview,
   onResizeCommit,
   onPair,
+  onMoveUp,
+  onMoveDown,
   onHide,
   children,
 }: {
@@ -818,14 +903,19 @@ function BentoSlot({
   mdSpan: 1 | 2;
   title: string;
   editing: boolean;
+  isDragging: boolean;
   isPreviewSlot: boolean;
   isResizing: boolean;
   canPair: boolean;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
   gridRef: React.RefObject<HTMLDivElement | null>;
   onSpan: (s: BentoSpan) => void;
   onResizePreview: (s: BentoSpan) => void;
   onResizeCommit: (s: BentoSpan) => void;
   onPair: () => void;
+  onMoveUp: () => void;
+  onMoveDown: () => void;
   onHide: () => void;
   children: ReactNode;
 }) {
@@ -889,12 +979,14 @@ function BentoSlot({
   const autoExpanded = effectiveSpan !== config.span;
 
   return (
-    <div
+    <motion.div
       ref={setRefs}
+      layout={isDragging ? false : "position"}
+      transition={{ type: "spring", stiffness: 460, damping: 36 }}
       {...(editing ? listeners : {})}
       {...(editing ? attributes : {})}
       className={cn(
-        "group/bento col-span-1 flex h-full min-w-0 flex-col transition-[transform,opacity] duration-200",
+        "group/bento col-span-1 flex h-full min-w-0 flex-col transition-[opacity,border-color] duration-200",
         mdSpan === 2 && "md:col-span-2",
         SPAN_CLASS[effectiveSpan] ?? SPAN_CLASS[config.span],
         editing &&
@@ -937,15 +1029,37 @@ function BentoSlot({
                 )}
               </div>
               <div
-                className="flex shrink-0 items-center gap-1"
+                className="flex flex-wrap shrink-0 items-center gap-1"
                 onPointerDown={(e) => e.stopPropagation()}
               >
+                <div className="mr-0.5 flex items-center gap-0.5 rounded-full border border-border/80 bg-muted/60 p-0.5">
+                  <button
+                    type="button"
+                    disabled={!canMoveUp}
+                    onClick={onMoveUp}
+                    aria-label={`Move ${title} up`}
+                    title="Move card earlier"
+                    className="grid h-7 w-7 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-30"
+                  >
+                    <ArrowUp className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canMoveDown}
+                    onClick={onMoveDown}
+                    aria-label={`Move ${title} down`}
+                    title="Move card later"
+                    className="grid h-7 w-7 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-30"
+                  >
+                    <ArrowDown className="h-3 w-3" />
+                  </button>
+                </div>
                 {canPair && (
                   <button
                     type="button"
                     onClick={onPair}
                     title="Combine 2 cards side by side (½ + ½)"
-                    className="font-num mr-1 inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[0.65rem] font-medium text-primary hover:bg-primary/20"
+                    className="font-num mr-0.5 inline-flex min-h-[30px] shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[0.65rem] font-medium text-primary hover:bg-primary/20"
                   >
                     <Columns2 className="h-3 w-3" />
                     Pair ½+½
@@ -962,7 +1076,7 @@ function BentoSlot({
                       onClick={() => onSpan(c.span)}
                       title={`Resize target to ${c.label}`}
                       className={cn(
-                        "font-num shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[0.65rem] transition-colors",
+                        "font-num min-h-[30px] shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[0.65rem] transition-colors",
                         active
                           ? "bg-primary text-primary-foreground"
                           : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -976,7 +1090,7 @@ function BentoSlot({
                   type="button"
                   onClick={onHide}
                   title={`Hide ${title}`}
-                  className="ml-1 shrink-0 rounded-full p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                  className="ml-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
                 >
                   <EyeOff className="h-3.5 w-3.5" />
                 </button>
@@ -1011,6 +1125,6 @@ function BentoSlot({
           )}
         </>
       )}
-    </div>
+    </motion.div>
   );
 }

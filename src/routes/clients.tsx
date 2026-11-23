@@ -455,6 +455,7 @@ function Page() {
         pageKey="clients"
         widgets={widgets}
         editing={editingLayout}
+        onToggleEditing={() => setEditingLayout((e) => !e)}
         onDoneEditing={() => setEditingLayout(false)}
       />
 

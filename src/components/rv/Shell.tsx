@@ -1,5 +1,6 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
+  AlertTriangle,
   FileText,
   FolderKanban,
   Moon,
@@ -24,6 +25,7 @@ import {
   ReceiptScannerProvider,
   useReceiptScanner,
 } from "@/components/rv/ReceiptScanner";
+import { retryPersistDB, usePersistStatus } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const studioNav = [
@@ -193,6 +195,7 @@ function ShellInner({ children }: { children: ReactNode }) {
   const [topHidden, setTopHidden] = useState(false);
   const [bottomHidden, setBottomHidden] = useState(false);
   const lastScrollYRef = useRef(0);
+  const persistStatus = usePersistStatus();
 
   useEffect(() => {
     setLight(localStorage.getItem("rv-theme") === "light");
@@ -309,6 +312,18 @@ function ShellInner({ children }: { children: ReactNode }) {
           ? 3
           : -1;
 
+  const prevTabIndexRef = useRef<number>(activeTabIndex);
+  const [swipeDir, setSwipeDir] = useState<-1 | 0 | 1>(0);
+  useEffect(() => {
+    const prev = prevTabIndexRef.current;
+    if (prev >= 0 && activeTabIndex >= 0 && prev !== activeTabIndex) {
+      setSwipeDir(activeTabIndex > prev ? 1 : -1);
+    } else if (prev !== activeTabIndex) {
+      setSwipeDir(0);
+    }
+    prevTabIndexRef.current = activeTabIndex;
+  }, [activeTabIndex]);
+
   const swipeStartRef = useRef<{
     x: number;
     y: number;
@@ -361,7 +376,7 @@ function ShellInner({ children }: { children: ReactNode }) {
     const dx = t.clientX - start.x;
     const dy = t.clientY - start.y;
     const dt = Date.now() - start.time;
-    if (dt > 520 || Math.abs(dx) < 68 || Math.abs(dx) < Math.abs(dy) * 1.45) {
+    if (dt > 520 || Math.abs(dx) < 62 || Math.abs(dx) < Math.abs(dy) * 1.35) {
       return;
     }
     const nextIdx =
@@ -369,6 +384,7 @@ function ShellInner({ children }: { children: ReactNode }) {
         ? Math.min(swipeTabs.length - 1, activeTabIndex + 1)
         : Math.max(0, activeTabIndex - 1);
     if (nextIdx !== activeTabIndex) {
+      setSwipeDir(nextIdx > activeTabIndex ? 1 : -1);
       navigate({ to: swipeTabs[nextIdx]! });
     }
   };
@@ -383,7 +399,7 @@ function ShellInner({ children }: { children: ReactNode }) {
       <header
         onFocusCapture={() => setTopHidden(false)}
         className={cn(
-          "no-print pointer-events-none sticky top-0 z-40 w-full px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-1.5 transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform sm:hidden",
+          "no-print pointer-events-none sticky top-0 z-40 w-full px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-1.5 transition-[opacity,transform] duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform sm:hidden",
           topHidden
             ? "-translate-y-[120%] opacity-0"
             : "translate-y-0 opacity-100",
@@ -396,7 +412,7 @@ function ShellInner({ children }: { children: ReactNode }) {
           )}
         >
           <div className="flex h-10 w-full items-center justify-between gap-2">
-            <Link to="/" className="flex min-w-0 items-center gap-2.5">
+            <Link to="/" className="ios-tap flex min-w-0 items-center gap-2.5">
               <img
                 src="/apple-touch-icon.png"
                 alt="RothVan"
@@ -435,7 +451,7 @@ function ShellInner({ children }: { children: ReactNode }) {
                 to="/settings"
                 aria-label="Settings"
                 className={cn(
-                  "grid h-9 w-9 place-items-center rounded-xl transition-colors active:scale-95",
+                  "ios-tap grid h-9 w-9 place-items-center rounded-xl transition-colors",
                   isSettings
                     ? "bg-primary text-primary-foreground"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -460,7 +476,7 @@ function ShellInner({ children }: { children: ReactNode }) {
                     to={it.to}
                     aria-current={on ? "page" : undefined}
                     className={cn(
-                      "inline-flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[0.72rem] font-medium transition-colors",
+                      "ios-tap inline-flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[0.72rem] font-medium transition-colors",
                       on
                         ? "bg-primary/18 text-primary"
                         : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -481,7 +497,7 @@ function ShellInner({ children }: { children: ReactNode }) {
         aria-label="Mobile navigation"
         onFocusCapture={() => setBottomHidden(false)}
         className={cn(
-          "no-print pointer-events-none fixed inset-x-0 bottom-0 z-40 px-3 pt-2 pb-[max(0.65rem,env(safe-area-inset-bottom))] transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform sm:hidden",
+          "no-print pointer-events-none fixed inset-x-0 bottom-0 z-40 px-3 pt-2 pb-[max(0.65rem,env(safe-area-inset-bottom))] transition-[opacity,transform] duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform sm:hidden",
           bottomHidden
             ? "translate-y-[125%] opacity-0"
             : "translate-y-0 opacity-100",
@@ -497,9 +513,9 @@ function ShellInner({ children }: { children: ReactNode }) {
             to="/"
             aria-label="Dashboard"
             className={cn(
-              "relative flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl transition-colors active:scale-95",
+              "ios-tap relative flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl transition-colors",
               isDashboard
-                ? "text-primary"
+                ? "bg-primary/12 text-primary"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -513,9 +529,9 @@ function ShellInner({ children }: { children: ReactNode }) {
             to="/studio"
             aria-label="Studio"
             className={cn(
-              "relative flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl transition-colors active:scale-95",
+              "ios-tap relative flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl transition-colors",
               isStudio
-                ? "text-primary"
+                ? "bg-primary/12 text-primary"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -530,7 +546,7 @@ function ShellInner({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => openScanner(isStudio ? "Studio" : "Personal")}
               aria-label="Scan receipt"
-              className="grid h-11 w-12 place-items-center rounded-xl bg-primary text-primary-foreground shadow-[0_6px_18px_-4px_color-mix(in_oklch,var(--primary)_50%,transparent)] transition-transform duration-150 hover:bg-[var(--primary-hover,var(--primary))] active:scale-95"
+              className="grid h-11 w-12 place-items-center rounded-xl bg-primary text-primary-foreground shadow-[0_6px_18px_-4px_color-mix(in_oklch,var(--primary)_50%,transparent)] transition-transform duration-150 hover:bg-[var(--primary-hover,var(--primary))] active:scale-92"
             >
               <ScanLine className="h-[19px] w-[19px]" strokeWidth={2.3} />
             </button>
@@ -540,9 +556,9 @@ function ShellInner({ children }: { children: ReactNode }) {
             to="/personal"
             aria-label="Personal"
             className={cn(
-              "relative flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl transition-colors active:scale-95",
+              "ios-tap relative flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl transition-colors",
               isPersonal
-                ? "text-primary"
+                ? "bg-primary/12 text-primary"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -556,9 +572,9 @@ function ShellInner({ children }: { children: ReactNode }) {
             to="/work"
             aria-label="Work"
             className={cn(
-              "relative flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl transition-colors active:scale-95",
+              "ios-tap relative flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl transition-colors",
               isWork
-                ? "text-primary"
+                ? "bg-primary/12 text-primary"
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
@@ -574,7 +590,7 @@ function ShellInner({ children }: { children: ReactNode }) {
       <nav
         onFocusCapture={() => setTopHidden(false)}
         className={cn(
-          "no-print pointer-events-none sticky top-0 z-40 hidden w-full px-4 pt-3 pb-2 transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-transform sm:block",
+          "no-print pointer-events-none sticky top-0 z-40 hidden w-full px-4 pt-3 pb-2 transition-[opacity,transform] duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform sm:block",
           topHidden
             ? "-translate-y-[120%] opacity-0"
             : "translate-y-0 opacity-100",
@@ -606,7 +622,7 @@ function ShellInner({ children }: { children: ReactNode }) {
                     to={it.to}
                     aria-current={on ? "page" : undefined}
                     className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                      "ios-tap inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
                       on
                         ? "bg-primary/18 text-primary"
                         : "text-muted-foreground hover:bg-accent hover:text-foreground",
@@ -667,7 +683,7 @@ function ShellInner({ children }: { children: ReactNode }) {
               to="/settings"
               aria-label="Settings"
               className={cn(
-                "grid h-8 w-8 place-items-center rounded-xl transition-colors hover:bg-accent",
+                "ios-tap grid h-8 w-8 place-items-center rounded-xl transition-colors hover:bg-accent",
                 active("/settings")
                   ? "bg-primary text-primary-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -681,8 +697,50 @@ function ShellInner({ children }: { children: ReactNode }) {
 
       <main
         key={path}
-        className="page-enter mx-auto max-w-6xl px-3 pt-1.5 sm:px-4 sm:pt-3"
+        className={cn(
+          "mx-auto max-w-6xl px-3 pt-1.5 sm:px-4 sm:pt-3",
+          swipeDir > 0
+            ? "page-enter-next"
+            : swipeDir < 0
+              ? "page-enter-prev"
+              : "page-enter",
+        )}
       >
+        {persistStatus.lastError && (
+          <div
+            role="alert"
+            className="no-print mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/45 bg-destructive/12 px-4 py-3 text-xs text-foreground"
+          >
+            <div className="flex min-w-0 items-start gap-2.5">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+              <div className="min-w-0">
+                <p className="font-semibold text-destructive">
+                  {persistStatus.quotaExceeded
+                    ? "Browser storage limit reached"
+                    : "Local save issue"}
+                </p>
+                <p className="mt-0.5 text-muted-foreground">
+                  {persistStatus.lastError}
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => retryPersistDB()}
+                className="inline-flex min-h-[32px] items-center rounded-full border border-border bg-background px-3 font-medium hover:bg-accent"
+              >
+                Retry Save
+              </button>
+              <Link
+                to="/settings"
+                className="inline-flex min-h-[32px] items-center rounded-full bg-primary px-3 font-medium text-primary-foreground hover:opacity-90"
+              >
+                Backup &amp; Storage
+              </Link>
+            </div>
+          </div>
+        )}
         {children}
       </main>
       <OfflineIndicator />

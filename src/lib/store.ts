@@ -63,6 +63,14 @@ export const PERSONAL_INCOME_SOURCES = [
   "Gift & Refund",
   "Other",
 ] as const;
+export const STUDIO_INCOME_SOURCES = [
+  "Client Payment",
+  "Retainer",
+  "Deposit",
+  "Design Fee",
+  "Refund",
+  "Other",
+] as const;
 export const PERSONAL_INCOME_METHODS = ["Debit", "Credit"] as const;
 export const EXPENSE_CATEGORIES = [
   "Software and subscriptions",
@@ -348,6 +356,7 @@ export interface Invoice {
   issue: string;
   due: string;
   currency: Currency;
+  exchangeRate?: number;
   discount: number;
   sent: boolean;
   showSchedule: boolean;
@@ -374,6 +383,8 @@ export interface Payment {
   date: string;
   amount: number;
   currency: Currency;
+  exchangeRate?: number;
+  usdAmount?: number;
   method: string;
   reference: string;
 }
@@ -386,6 +397,8 @@ export interface Expense {
   description: string;
   amount: number;
   currency: Currency;
+  exchangeRate?: number;
+  usdAmount?: number;
   receipt: string;
   account?: Account;
 }
@@ -397,6 +410,23 @@ export interface PersonalIncome {
   description: string;
   amount: number;
   currency: Currency;
+  exchangeRate?: number;
+  usdAmount?: number;
+}
+export interface StudioIncome {
+  id: string;
+  date: string;
+  source: string;
+  accountMethod: string;
+  method?: string;
+  description: string;
+  amount: number;
+  currency: Currency;
+  reference?: string;
+  receipt?: string;
+  projectId?: string;
+  exchangeRate?: number;
+  usdAmount?: number;
 }
 export type GoalCadence = "daily" | "monthly" | "yearly";
 export interface GoalContribution {
@@ -433,6 +463,7 @@ export interface Settings {
   signatoryTitle: string;
   dueDays: number;
   khrRate: number;
+  planningReservePct?: number;
   designTerms: { label: string; text: string }[];
   paymentTerms: string[];
   extraRates: { label: string; detail: string; price: string }[];
@@ -507,7 +538,10 @@ export interface LearnedReceiptRule {
   updatedAt: string;
 }
 
+export const SCHEMA_VERSION = 4;
+
 export interface DB {
+  schemaVersion?: number;
   clients: Client[];
   services: Service[];
   projects: Project[];
@@ -515,6 +549,7 @@ export interface DB {
   payments: Payment[];
   expenses: Expense[];
   personalIncome: PersonalIncome[];
+  studioIncome?: StudioIncome[];
   workTasks: WorkTask[];
   reminders?: CalendarReminder[];
   learnedReceiptRules?: LearnedReceiptRule[];
@@ -548,6 +583,7 @@ const defaultSettings: Settings = {
   signatoryTitle: "Design Manager, RothVan Design",
   dueDays: 28,
   khrRate: 4100,
+  planningReservePct: 0,
   ownerName: "Roth",
   designTerms: [
     {
@@ -611,6 +647,7 @@ function seed(): DB {
     return d.toISOString().slice(0, 10);
   };
   return {
+    schemaVersion: SCHEMA_VERSION,
     clients: rothvanClients.map((c) => ({ ...c })),
     services: rothvanServices.map((s) => ({ ...s })),
     projects: rothvanProjects.map((p) => ({ ...p })),
@@ -622,6 +659,7 @@ function seed(): DB {
     payments: rothvanPayments.map((p) => ({ ...p })),
     expenses: buildSampleExpenses(m),
     personalIncome: [],
+    studioIncome: [],
     workTasks: [],
     reminders: [],
     learnedReceiptRules: [],
@@ -632,103 +670,352 @@ function seed(): DB {
   };
 }
 
-const KEY = "rothvan-studio-v3";
+export const KEY = "rothvan-studio-v3";
 const PREV_KEY = "rothvan-studio-v2";
 const LEGACY_KEY = "rothvan-studio-v1";
+export const PRE_RESTORE_KEY = "rothvan-studio-pre-restore";
+
+export interface PersistStatus {
+  dirty: boolean;
+  lastError: string | null;
+  lastSavedAt: string | null;
+  quotaExceeded: boolean;
+}
+
 let state: DB = seed();
 let loaded = false;
 const listeners = new Set<() => void>();
+const persistListeners = new Set<() => void>();
+let persistStatus: PersistStatus = {
+  dirty: false,
+  lastError: null,
+  lastSavedAt: null,
+  quotaExceeded: false,
+};
+
+function updatePersistStatus(next: PersistStatus) {
+  persistStatus = next;
+  persistListeners.forEach((l) => l());
+}
+
+export function getPersistStatus(): PersistStatus {
+  return persistStatus;
+}
+
+export function subscribePersistStatus(fn: () => void): () => void {
+  persistListeners.add(fn);
+  return () => persistListeners.delete(fn);
+}
+
+export function usePersistStatus(): PersistStatus {
+  return useSyncExternalStore(
+    subscribePersistStatus,
+    getPersistStatus,
+    getPersistStatus,
+  );
+}
+
+function sanitizeMoneyAmount(n: unknown): number {
+  const num = Number(n);
+  return Number.isFinite(num) && num >= 0 ? num : 0;
+}
+
+function sanitizeCurrency(c: unknown): Currency {
+  return c === "KHR" ? "KHR" : "USD";
+}
+
+function sanitizeIsoDate(d: unknown, fallback = today()): string {
+  if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}/.test(d.trim())) {
+    return d.trim().slice(0, 10);
+  }
+  return fallback;
+}
+
+export function migrateAndValidateDB(raw: unknown): DB {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error("Invalid RothVan database payload.");
+  }
+  const p = raw as Record<string, unknown>;
+  const seeded = seed();
+
+  const rawSettings =
+    p["settings"] &&
+    typeof p["settings"] === "object" &&
+    !Array.isArray(p["settings"])
+      ? (p["settings"] as Partial<Settings>)
+      : {};
+
+  const khrRate = safeKhrRate(rawSettings.khrRate);
+  const reserveRaw = Number(rawSettings.planningReservePct);
+  const planningReservePct =
+    Number.isFinite(reserveRaw) && reserveRaw >= 0
+      ? Math.min(50, Math.round(reserveRaw * 10) / 10)
+      : 0;
+
+  const settings: Settings = {
+    ...defaultSettings,
+    ...rawSettings,
+    dueDays: Math.max(
+      0,
+      Number.isFinite(Number(rawSettings.dueDays))
+        ? Number(rawSettings.dueDays)
+        : defaultSettings.dueDays,
+    ),
+    khrRate,
+    planningReservePct,
+    workProjects:
+      Array.isArray(rawSettings.workProjects) &&
+      rawSettings.workProjects.length > 0
+        ? rawSettings.workProjects
+        : [...DEFAULT_WORK_PROJECTS],
+  };
+
+  const rawServices = Array.isArray(p["services"])
+    ? (p["services"] as Service[])
+    : seeded.services;
+
+  const stampMissingFx = <
+    T extends {
+      amount: number;
+      currency: Currency;
+      exchangeRate?: number;
+      usdAmount?: number;
+    },
+  >(
+    item: T,
+  ): T => {
+    const cleanAmt = sanitizeMoneyAmount(item.amount);
+    const cur = sanitizeCurrency(item.currency);
+    const rate =
+      typeof item.exchangeRate === "number" &&
+      Number.isFinite(item.exchangeRate) &&
+      item.exchangeRate > 0
+        ? item.exchangeRate
+        : khrRate;
+    const usd =
+      typeof item.usdAmount === "number" &&
+      Number.isFinite(item.usdAmount) &&
+      item.usdAmount >= 0
+        ? item.usdAmount
+        : cur === "KHR"
+          ? Math.round((cleanAmt / rate) * 100) / 100
+          : Math.round(cleanAmt * 100) / 100;
+    return {
+      ...item,
+      amount: cleanAmt,
+      currency: cur,
+      exchangeRate: rate,
+      usdAmount: usd,
+    };
+  };
+
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    clients: Array.isArray(p["clients"])
+      ? (p["clients"] as Client[])
+      : seeded.clients,
+    services: rawServices.map((s) => ({
+      ...s,
+      pillar: normalizeServicePillar(s.pillar),
+    })),
+    projects: Array.isArray(p["projects"])
+      ? (p["projects"] as Project[])
+      : seeded.projects,
+    invoices: Array.isArray(p["invoices"])
+      ? (p["invoices"] as Invoice[]).map((inv) => ({
+          ...inv,
+          currency: sanitizeCurrency(inv.currency),
+          exchangeRate:
+            typeof inv.exchangeRate === "number" &&
+            Number.isFinite(inv.exchangeRate) &&
+            inv.exchangeRate > 0
+              ? inv.exchangeRate
+              : khrRate,
+          items: Array.isArray(inv.items) ? inv.items : [],
+          images: Array.isArray(inv.images) ? inv.images : [],
+        }))
+      : seeded.invoices,
+    payments: Array.isArray(p["payments"])
+      ? (p["payments"] as Payment[]).map((pay) =>
+          stampMissingFx({
+            ...pay,
+            date: sanitizeIsoDate(pay.date),
+          }),
+        )
+      : seeded.payments,
+    expenses: Array.isArray(p["expenses"])
+      ? (p["expenses"] as Expense[]).map((e) =>
+          stampMissingFx({
+            ...e,
+            date: sanitizeIsoDate(e.date),
+            account: e.account === "Personal" ? "Personal" : "Studio",
+          }),
+        )
+      : seeded.expenses,
+    personalIncome: Array.isArray(p["personalIncome"])
+      ? (p["personalIncome"] as PersonalIncome[]).map((inc) =>
+          stampMissingFx({
+            ...inc,
+            date: sanitizeIsoDate(inc.date),
+          }),
+        )
+      : [],
+    studioIncome: Array.isArray(p["studioIncome"])
+      ? (p["studioIncome"] as StudioIncome[]).map((si) =>
+          stampMissingFx({
+            ...si,
+            date: sanitizeIsoDate(si.date),
+          }),
+        )
+      : [],
+    workTasks: Array.isArray(p["workTasks"])
+      ? (p["workTasks"] as WorkTask[]).map((t) => ({
+          ...t,
+          projectName: t.projectName ?? t.company ?? "",
+          startDate: t.startDate ?? "",
+          conceptOnly: Boolean(t.conceptOnly),
+          featured: Boolean(t.featured),
+          media: Array.isArray(t.media) ? t.media : [],
+          artworkCount: Math.max(1, Number(t.artworkCount) || 1),
+        }))
+      : [],
+    reminders: Array.isArray(p["reminders"])
+      ? (p["reminders"] as CalendarReminder[]).map((rm) => ({
+          ...rm,
+          notifyDaysBefore: Math.max(0, Number(rm.notifyDaysBefore) || 0),
+          media: Array.isArray(rm.media) ? rm.media : [],
+        }))
+      : [],
+    learnedReceiptRules: Array.isArray(p["learnedReceiptRules"])
+      ? (p["learnedReceiptRules"] as LearnedReceiptRule[])
+      : [],
+    goals: Array.isArray(p["goals"]) ? (p["goals"] as Goal[]) : seeded.goals,
+    settings,
+    categoryLimits:
+      p["categoryLimits"] &&
+      typeof p["categoryLimits"] === "object" &&
+      !Array.isArray(p["categoryLimits"])
+        ? { ...(p["categoryLimits"] as Record<string, number>) }
+        : {},
+    caseStudies:
+      p["caseStudies"] &&
+      typeof p["caseStudies"] === "object" &&
+      !Array.isArray(p["caseStudies"])
+        ? (p["caseStudies"] as Record<string, CaseStudyDoc>)
+        : {},
+  };
+}
 
 function load() {
   if (loaded || typeof window === "undefined") return;
   loaded = true;
   try {
-    const raw = localStorage.getItem(KEY);
+    const raw =
+      localStorage.getItem(KEY) ??
+      localStorage.getItem(PREV_KEY) ??
+      localStorage.getItem(LEGACY_KEY);
     if (raw) {
-      const p = JSON.parse(raw);
-      const seeded = seed();
-      const rawServices = Array.isArray(p.services)
-        ? (p.services as Service[])
-        : seeded.services;
-      state = {
-        ...seeded,
-        ...p,
-        personalIncome: Array.isArray(p.personalIncome)
-          ? (p.personalIncome as PersonalIncome[])
-          : [],
-        workTasks: Array.isArray(p.workTasks)
-          ? (p.workTasks as WorkTask[]).map((t) => ({
-              ...t,
-              projectName: t.projectName ?? t.company ?? "",
-              startDate: t.startDate ?? "",
-              conceptOnly: Boolean(t.conceptOnly),
-              featured: Boolean(t.featured),
-              media: Array.isArray(t.media) ? t.media : [],
-              artworkCount: Math.max(1, Number(t.artworkCount) || 1),
-            }))
-          : [],
-        reminders: Array.isArray(p.reminders)
-          ? (p.reminders as CalendarReminder[]).map((rm) => ({
-              ...rm,
-              notifyDaysBefore: Math.max(0, Number(rm.notifyDaysBefore) || 0),
-              media: Array.isArray(rm.media) ? rm.media : [],
-            }))
-          : [],
-        learnedReceiptRules: Array.isArray(p.learnedReceiptRules)
-          ? (p.learnedReceiptRules as LearnedReceiptRule[])
-          : [],
-        services: rawServices.map((s) => ({
-          ...s,
-          pillar: normalizeServicePillar(s.pillar),
-        })),
-        settings: {
-          ...defaultSettings,
-          ...p.settings,
-          workProjects:
-            Array.isArray(p.settings?.workProjects) &&
-            p.settings.workProjects.length > 0
-              ? (p.settings.workProjects as string[])
-              : [...DEFAULT_WORK_PROJECTS],
-        },
-        categoryLimits: { ...(p.categoryLimits ?? {}) },
-        caseStudies:
-          p.caseStudies && typeof p.caseStudies === "object"
-            ? (p.caseStudies as Record<string, CaseStudyDoc>)
-            : {},
-      };
-      return;
+      const parsed: unknown = JSON.parse(raw);
+      state = migrateAndValidateDB(parsed);
     }
-    const prevRaw =
-      localStorage.getItem(PREV_KEY) ?? localStorage.getItem(LEGACY_KEY);
-    if (prevRaw) {
-      const lp = JSON.parse(prevRaw);
-      if (lp?.settings) {
-        state = {
-          ...seed(),
-          settings: { ...defaultSettings, ...lp.settings },
-        };
-      }
-    }
-  } catch {
-    /* ignore */
+  } catch (err) {
+    updatePersistStatus({
+      ...persistStatus,
+      lastError:
+        err instanceof Error
+          ? `Could not read saved browser data: ${err.message}`
+          : "Could not read saved browser data.",
+    });
   }
 }
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 let persistDirty = false;
 let persistHooksAttached = false;
 
-export function flushDB() {
-  if (!persistDirty || typeof window === "undefined") return;
+export function flushDB(): boolean {
+  if (!persistDirty || typeof window === "undefined") return true;
   if (persistTimer !== null) {
     clearTimeout(persistTimer);
     persistTimer = null;
   }
-  persistDirty = false;
   try {
     localStorage.setItem(KEY, JSON.stringify(state));
-  } catch {
-    console.warn("Local storage capacity reached.");
+    persistDirty = false;
+    updatePersistStatus({
+      dirty: false,
+      lastError: null,
+      lastSavedAt: new Date().toISOString(),
+      quotaExceeded: false,
+    });
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const quotaExceeded =
+      (err instanceof Error && err.name === "QuotaExceededError") ||
+      /quota|storage|exceeded/i.test(msg);
+    updatePersistStatus({
+      dirty: true,
+      lastError: quotaExceeded
+        ? "Browser localStorage quota reached. Changes remain in memory until you free space or download a backup."
+        : `Failed to save changes locally: ${msg}`,
+      lastSavedAt: persistStatus.lastSavedAt,
+      quotaExceeded,
+    });
+    console.warn("RothVan persistence warning:", err);
+    return false;
   }
+}
+
+export function retryPersistDB(): boolean {
+  if (typeof window === "undefined") return true;
+  persistDirty = true;
+  return flushDB();
+}
+
+export function savePreRestoreSnapshot(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    localStorage.setItem(PRE_RESTORE_KEY, JSON.stringify(getDB()));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function hasPreRestoreSnapshot(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return Boolean(localStorage.getItem(PRE_RESTORE_KEY));
+  } catch {
+    return false;
+  }
+}
+
+export function restorePreRestoreSnapshot(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const raw = localStorage.getItem(PRE_RESTORE_KEY);
+    if (!raw) return false;
+    const restored = migrateAndValidateDB(JSON.parse(raw));
+    setDB(() => restored);
+    return flushDB();
+  } catch {
+    return false;
+  }
+}
+
+export function collectReferencedMediaIds(db: DB): Set<string> {
+  const ids = new Set<string>();
+  for (const p of db.projects) {
+    for (const m of p.media ?? []) if (m.id) ids.add(m.id);
+  }
+  for (const t of db.workTasks ?? []) {
+    for (const m of t.media ?? []) if (m.id) ids.add(m.id);
+  }
+  for (const r of db.reminders ?? []) {
+    for (const m of r.media ?? []) if (m.id) ids.add(m.id);
+  }
+  return ids;
 }
 
 function schedulePersist() {
@@ -736,8 +1023,12 @@ function schedulePersist() {
   persistDirty = true;
   if (!persistHooksAttached) {
     persistHooksAttached = true;
-    window.addEventListener("pagehide", flushDB);
-    window.addEventListener("beforeunload", flushDB);
+    window.addEventListener("pagehide", () => {
+      flushDB();
+    });
+    window.addEventListener("beforeunload", () => {
+      flushDB();
+    });
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") flushDB();
     });
@@ -745,7 +1036,9 @@ function schedulePersist() {
   if (persistTimer !== null) {
     clearTimeout(persistTimer);
   }
-  persistTimer = setTimeout(flushDB, 140);
+  persistTimer = setTimeout(() => {
+    flushDB();
+  }, 140);
 }
 
 export function getDB() {
@@ -805,14 +1098,76 @@ export function invoiceTotals(inv: Pick<Invoice, "items" | "discount">) {
   const discountAmt = subtotal * (pct / 100);
   return { subtotal, discountAmt, total: subtotal - discountAmt };
 }
-export const toUSD = (amount: number, cur: Currency, rate: number) =>
-  cur === "KHR" ? amount / (rate || 4100) : amount;
+export function safeKhrRate(rate?: number | null): number {
+  return typeof rate === "number" && Number.isFinite(rate) && rate > 0
+    ? rate
+    : 4100;
+}
+
+export const toUSD = (amount: number, cur: Currency, rate: number) => {
+  const clean = Number.isFinite(amount) ? amount : 0;
+  return cur === "KHR" ? clean / safeKhrRate(rate) : clean;
+};
+
+export function recordToUSD(
+  rec: {
+    amount: number;
+    currency: Currency;
+    exchangeRate?: number;
+    usdAmount?: number;
+  },
+  fallbackRate: number,
+): number {
+  const amt = Number.isFinite(rec.amount) ? rec.amount : 0;
+  if (rec.currency === "USD") return amt;
+  if (
+    typeof rec.usdAmount === "number" &&
+    Number.isFinite(rec.usdAmount) &&
+    rec.usdAmount >= 0 &&
+    (amt > 0 || rec.usdAmount === 0)
+  ) {
+    return rec.usdAmount;
+  }
+  return toUSD(
+    amt,
+    rec.currency,
+    safeKhrRate(rec.exchangeRate ?? fallbackRate),
+  );
+}
+
+export function stampFxSnapshot<
+  T extends {
+    amount: number;
+    currency: Currency;
+    exchangeRate?: number;
+    usdAmount?: number;
+  },
+>(rec: T, currentRate: number, preserveRate = true): T {
+  const cleanAmt = Math.max(0, Number(rec.amount) || 0);
+  const rate = preserveRate
+    ? safeKhrRate(rec.exchangeRate ?? currentRate)
+    : safeKhrRate(currentRate);
+  const usd =
+    rec.currency === "KHR"
+      ? Math.round((cleanAmt / rate) * 100) / 100
+      : Math.round(cleanAmt * 100) / 100;
+  return {
+    ...rec,
+    amount: cleanAmt,
+    exchangeRate: rate,
+    usdAmount: usd,
+  };
+}
+
 interface LedgerIndex {
   invIds: Set<string>;
   paymentsByInvoice: Map<string, Payment[]>;
   invoicePaymentsAll: Payment[];
   invoicePaymentsByMonth: Map<string, Payment[]>;
   invoicePaymentsByDay: Map<string, Payment[]>;
+  studioIncomeAll: StudioIncome[];
+  studioIncomeByMonth: Map<string, StudioIncome[]>;
+  studioIncomeByDay: Map<string, StudioIncome[]>;
   studioExpensesAll: Expense[];
   personalExpensesAll: Expense[];
   studioExpensesByMonth: Map<string, Expense[]>;
@@ -856,6 +1211,9 @@ function getLedgerIndex(db: DB): LedgerIndex {
   const invoicePaymentsAll: Payment[] = [];
   const invoicePaymentsByMonth = new Map<string, Payment[]>();
   const invoicePaymentsByDay = new Map<string, Payment[]>();
+  const studioIncomeAll: StudioIncome[] = [];
+  const studioIncomeByMonth = new Map<string, StudioIncome[]>();
+  const studioIncomeByDay = new Map<string, StudioIncome[]>();
   const latestDateByMonth = new Map<string, string>();
   let earliestYM = today().slice(0, 7);
 
@@ -872,6 +1230,17 @@ function getLedgerIndex(db: DB): LedgerIndex {
         pushMap(invoicePaymentsByMonth, ym, p);
         pushMap(invoicePaymentsByDay, p.date, p);
       }
+    }
+  }
+
+  for (const si of db.studioIncome ?? []) {
+    studioIncomeAll.push(si);
+    if (/^\d{4}-\d{2}/.test(si.date)) {
+      const ym = si.date.slice(0, 7);
+      if (ym < earliestYM) earliestYM = ym;
+      noteLatest(latestDateByMonth, si.date);
+      pushMap(studioIncomeByMonth, ym, si);
+      pushMap(studioIncomeByDay, si.date, si);
     }
   }
 
@@ -919,6 +1288,9 @@ function getLedgerIndex(db: DB): LedgerIndex {
     invoicePaymentsAll,
     invoicePaymentsByMonth,
     invoicePaymentsByDay,
+    studioIncomeAll,
+    studioIncomeByMonth,
+    studioIncomeByDay,
     studioExpensesAll,
     personalExpensesAll,
     studioExpensesByMonth,
@@ -935,15 +1307,17 @@ function getLedgerIndex(db: DB): LedgerIndex {
 }
 
 export function invoicePaid(inv: Invoice, payments: Payment[], rate: number) {
+  const baseRate = safeKhrRate(inv.exchangeRate ?? rate);
   let sum = 0;
   for (const p of payments) {
     if (p.invoiceId !== inv.id) continue;
+    const payRate = safeKhrRate(p.exchangeRate ?? baseRate);
     sum +=
       p.currency === inv.currency
         ? p.amount
         : inv.currency === "USD"
-          ? toUSD(p.amount, p.currency, rate)
-          : p.amount * rate;
+          ? recordToUSD(p, payRate)
+          : p.amount * payRate;
   }
   return sum;
 }
@@ -1024,14 +1398,16 @@ export function invoiceView(inv: Invoice, db: DB) {
   const t = invoiceTotals(inv);
   const idx = getLedgerIndex(db);
   const invPayments = idx.paymentsByInvoice.get(inv.id) ?? [];
-  const paid = isInvoice(inv)
-    ? invoicePaid(inv, invPayments, db.settings.khrRate)
+  const r = safeKhrRate(inv.exchangeRate ?? db.settings.khrRate);
+  const paid = isInvoice(inv) ? invoicePaid(inv, invPayments, r) : 0;
+  const paidUSD = isInvoice(inv)
+    ? invPayments.reduce((s, p) => s + recordToUSD(p, r), 0)
     : 0;
   const status = invoiceStatus(inv, paid);
-  const r = db.settings.khrRate;
   return {
     ...t,
     paid,
+    paidUSD,
     balance: isInvoice(inv) ? Math.max(0, t.total - paid) : 0,
     status,
     totalUSD: isInvoice(inv) ? toUSD(t.total, inv.currency, r) : 0,
@@ -1048,21 +1424,29 @@ export const expenseCategoriesFor = (account: Account) =>
   account === "Personal" ? PERSONAL_CATEGORIES : EXPENSE_CATEGORIES;
 export function cashReceived(db: DB, period: string) {
   const idx = getLedgerIndex(db);
-  const r = db.settings.khrRate;
-  const source =
+  const r = safeKhrRate(db.settings.khrRate);
+  const paySource =
     period.length === 7
       ? (idx.invoicePaymentsByMonth.get(period) ?? [])
       : idx.invoicePaymentsAll;
   let sum = 0;
-  for (const p of source) {
+  for (const p of paySource) {
     if (period && period.length !== 7 && !p.date.startsWith(period)) continue;
-    sum += toUSD(p.amount, p.currency, r);
+    sum += recordToUSD(p, r);
+  }
+  const studioIncSource =
+    period.length === 7
+      ? (idx.studioIncomeByMonth.get(period) ?? [])
+      : idx.studioIncomeAll;
+  for (const si of studioIncSource) {
+    if (period && period.length !== 7 && !si.date.startsWith(period)) continue;
+    sum += recordToUSD(si, r);
   }
   return sum;
 }
 export function expenseTotal(db: DB, account: Account, period: string) {
   const idx = getLedgerIndex(db);
-  const r = db.settings.khrRate;
+  const r = safeKhrRate(db.settings.khrRate);
   const source =
     period.length === 7
       ? ((account === "Studio"
@@ -1074,13 +1458,13 @@ export function expenseTotal(db: DB, account: Account, period: string) {
   let sum = 0;
   for (const e of source) {
     if (period && period.length !== 7 && !e.date.startsWith(period)) continue;
-    sum += toUSD(e.amount, e.currency, r);
+    sum += recordToUSD(e, r);
   }
   return sum;
 }
 export function categoryTotals(db: DB, account: Account, period: string) {
   const idx = getLedgerIndex(db);
-  const r = db.settings.khrRate;
+  const r = safeKhrRate(db.settings.khrRate);
   const source =
     period.length === 7
       ? ((account === "Studio"
@@ -1100,11 +1484,105 @@ export function categoryTotals(db: DB, account: Account, period: string) {
       totalUSD: 0,
       count: 0,
     };
-    prev.totalUSD += toUSD(e.amount, e.currency, r);
+    prev.totalUSD += recordToUSD(e, r);
     prev.count += 1;
     map.set(e.category, prev);
   }
   return Array.from(map.values()).sort((a, b) => b.totalUSD - a.totalUSD);
+}
+
+export interface StudioFinancialSummary {
+  period: string;
+  invoicePaymentsUSD: number;
+  unmatchedStudioIncomeUSD: number;
+  cashReceivedUSD: number;
+  revenueInvoicedUSD: number;
+  outstandingReceivablesUSD: number;
+  overdueReceivablesUSD: number;
+  directProjectCostsUSD: number;
+  operatingExpensesUSD: number;
+  totalExpensesUSD: number;
+  estimatedProjectProfitUSD: number;
+  netCashFlowUSD: number;
+  planningReservePct: number;
+  planningReserveUSD: number;
+}
+
+export function studioFinancialSummary(
+  db: DB,
+  period = "",
+): StudioFinancialSummary {
+  const idx = getLedgerIndex(db);
+  const r = safeKhrRate(db.settings.khrRate);
+  const matchesPeriod = (dt: string) => !period || dt.startsWith(period);
+
+  let invoicePaymentsUSD = 0;
+  for (const p of idx.invoicePaymentsAll) {
+    if (matchesPeriod(p.date)) invoicePaymentsUSD += recordToUSD(p, r);
+  }
+
+  let unmatchedStudioIncomeUSD = 0;
+  for (const si of idx.studioIncomeAll) {
+    if (matchesPeriod(si.date)) unmatchedStudioIncomeUSD += recordToUSD(si, r);
+  }
+
+  const cashReceivedUSD = invoicePaymentsUSD + unmatchedStudioIncomeUSD;
+
+  let revenueInvoicedUSD = 0;
+  let outstandingReceivablesUSD = 0;
+  let overdueReceivablesUSD = 0;
+  for (const inv of db.invoices) {
+    if (!isInvoice(inv)) continue;
+    const v = invoiceView(inv, db);
+    if (v.status === "Draft") continue;
+    if (matchesPeriod(inv.issue)) {
+      revenueInvoicedUSD += v.totalUSD;
+    }
+    if (v.balanceUSD > 0) {
+      outstandingReceivablesUSD += v.balanceUSD;
+      if (v.status === "Overdue") overdueReceivablesUSD += v.balanceUSD;
+    }
+  }
+
+  let directProjectCostsUSD = 0;
+  let operatingExpensesUSD = 0;
+  for (const e of idx.studioExpensesAll) {
+    if (!matchesPeriod(e.date)) continue;
+    const usd = recordToUSD(e, r);
+    if (e.projectId && e.projectId.trim()) {
+      directProjectCostsUSD += usd;
+    } else {
+      operatingExpensesUSD += usd;
+    }
+  }
+
+  const totalExpensesUSD = directProjectCostsUSD + operatingExpensesUSD;
+  const estimatedProjectProfitUSD = revenueInvoicedUSD - directProjectCostsUSD;
+  const netCashFlowUSD = cashReceivedUSD - totalExpensesUSD;
+  const rawPct = Number(db.settings.planningReservePct);
+  const planningReservePct =
+    Number.isFinite(rawPct) && rawPct > 0 ? Math.min(50, rawPct) : 0;
+  const planningReserveUSD =
+    planningReservePct > 0 && netCashFlowUSD > 0
+      ? Math.round(netCashFlowUSD * (planningReservePct / 100) * 100) / 100
+      : 0;
+
+  return {
+    period,
+    invoicePaymentsUSD,
+    unmatchedStudioIncomeUSD,
+    cashReceivedUSD,
+    revenueInvoicedUSD,
+    outstandingReceivablesUSD,
+    overdueReceivablesUSD,
+    directProjectCostsUSD,
+    operatingExpensesUSD,
+    totalExpensesUSD,
+    estimatedProjectProfitUSD,
+    netCashFlowUSD,
+    planningReservePct,
+    planningReserveUSD,
+  };
 }
 export function categoryLimit(db: DB, account: Account, category: string) {
   const key = `${account}:${category}`;
@@ -1200,9 +1678,10 @@ export interface PersonalSeriesPoint {
 }
 
 export function personalIncomeTotal(db: DB, period: string) {
+  const r = safeKhrRate(db.settings.khrRate);
   return (db.personalIncome ?? [])
     .filter((i) => !period || i.date.startsWith(period))
-    .reduce((s, i) => s + toUSD(i.amount, i.currency, db.settings.khrRate), 0);
+    .reduce((s, i) => s + recordToUSD(i, r), 0);
 }
 
 function personalDateMatch(
@@ -1236,6 +1715,7 @@ export function personalIncomeSourceTotals(
     string,
     { source: string; totalUSD: number; count: number }
   >();
+  const r = safeKhrRate(db.settings.khrRate);
   for (const inc of db.personalIncome ?? []) {
     if (
       !personalDateMatch(
@@ -1250,7 +1730,7 @@ export function personalIncomeSourceTotals(
       continue;
     const key = inc.source || "Other";
     const prev = map.get(key) ?? { source: key, totalUSD: 0, count: 0 };
-    prev.totalUSD += toUSD(inc.amount, inc.currency, db.settings.khrRate);
+    prev.totalUSD += recordToUSD(inc, r);
     prev.count += 1;
     map.set(key, prev);
   }
@@ -1263,7 +1743,7 @@ export function personalSeries(
   anchorMonth = today().slice(0, 7),
 ): PersonalSeriesPoint[] {
   const idx = getLedgerIndex(db);
-  const r = db.settings.khrRate;
+  const r = safeKhrRate(db.settings.khrRate);
   const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
     ? anchorMonth
     : today().slice(0, 7);
@@ -1287,12 +1767,12 @@ export function personalSeries(
     ];
     dayExpenses.forEach((e, i) => {
       const slot = slots[i % slots.length]!;
-      slot.out += toUSD(e.amount, e.currency, r);
+      slot.out += recordToUSD(e, r);
       slot.c += 1;
     });
     dayIncomes.forEach((inc, i) => {
       const slot = slots[i % slots.length]!;
-      slot.inn += toUSD(inc.amount, inc.currency, r);
+      slot.inn += recordToUSD(inc, r);
       slot.ic += 1;
     });
     const fullDay = new Date(anchorDay + "T00:00:00Z").toLocaleDateString(
@@ -1325,10 +1805,9 @@ export function personalSeries(
       const dayExps = idx.personalExpensesByDay.get(iso) ?? [];
       const dayIncs = idx.incomeByDay.get(iso) ?? [];
       let personalOut = 0;
-      for (const e of dayExps) personalOut += toUSD(e.amount, e.currency, r);
+      for (const e of dayExps) personalOut += recordToUSD(e, r);
       let personalIn = 0;
-      for (const inc of dayIncs)
-        personalIn += toUSD(inc.amount, inc.currency, r);
+      for (const inc of dayIncs) personalIn += recordToUSD(inc, r);
       return {
         key: iso,
         label: dt.toLocaleDateString("en-US", {
@@ -1361,13 +1840,13 @@ export function personalSeries(
 
     for (const e of idx.personalExpensesByMonth.get(ym) ?? []) {
       const prev = outByDay.get(e.date) ?? { usd: 0, count: 0 };
-      prev.usd += toUSD(e.amount, e.currency, r);
+      prev.usd += recordToUSD(e, r);
       prev.count += 1;
       outByDay.set(e.date, prev);
     }
     for (const inc of idx.incomeByMonth.get(ym) ?? []) {
       const prev = inByDay.get(inc.date) ?? { usd: 0, count: 0 };
-      prev.usd += toUSD(inc.amount, inc.currency, r);
+      prev.usd += recordToUSD(inc, r);
       prev.count += 1;
       inByDay.set(inc.date, prev);
     }
@@ -1413,13 +1892,13 @@ export function personalSeries(
     const exps = idx.personalExpensesByMonth.get(m);
     if (exps && exps.length > 0) {
       let usd = 0;
-      for (const e of exps) usd += toUSD(e.amount, e.currency, r);
+      for (const e of exps) usd += recordToUSD(e, r);
       outByMonth.set(m, { usd, count: exps.length });
     }
     const incs = idx.incomeByMonth.get(m);
     if (incs && incs.length > 0) {
       let usd = 0;
-      for (const inc of incs) usd += toUSD(inc.amount, inc.currency, r);
+      for (const inc of incs) usd += recordToUSD(inc, r);
       inByMonth.set(m, { usd, count: incs.length });
     }
   }
@@ -1481,14 +1960,14 @@ export function personalCategoryTotals(
     string,
     { category: string; totalUSD: number; count: number }
   >();
-  const r = db.settings.khrRate;
+  const r = safeKhrRate(db.settings.khrRate);
   const addExp = (e: Expense) => {
     const prev = map.get(e.category) ?? {
       category: e.category || "Other",
       totalUSD: 0,
       count: 0,
     };
-    prev.totalUSD += toUSD(e.amount, e.currency, r);
+    prev.totalUSD += recordToUSD(e, r);
     prev.count += 1;
     map.set(e.category, prev);
   };
@@ -1554,7 +2033,7 @@ export function cardSpendSeries(
   anchorMonth = today().slice(0, 7),
 ) {
   const idx = getLedgerIndex(db);
-  const r = db.settings.khrRate;
+  const r = safeKhrRate(db.settings.khrRate);
   let points: CardSpendPoint[];
   const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
     ? anchorMonth
@@ -1588,7 +2067,7 @@ export function cardSpendSeries(
     const dayExps = idx.personalExpensesByDay.get(anchorDay) ?? [];
     dayExps.forEach((e, i) => {
       const b = slotDefs[i % slotDefs.length]!;
-      const usd = toUSD(e.amount, e.currency, r);
+      const usd = recordToUSD(e, r);
       const kind = cardKind(e.vendor);
       if (kind === "Debit") {
         b.debit += usd;
@@ -1631,7 +2110,7 @@ export function cardSpendSeries(
       if (!exps || exps.length === 0) continue;
       const b = emptyBucket();
       for (const e of exps) {
-        const usd = toUSD(e.amount, e.currency, r);
+        const usd = recordToUSD(e, r);
         const kind = cardKind(e.vendor);
         if (kind === "Debit") {
           b.debit += usd;
@@ -1682,7 +2161,7 @@ export function cardSpendSeries(
 
     for (const e of idx.personalExpensesByMonth.get(ym) ?? []) {
       const b = byDay.get(e.date) ?? emptyBucket();
-      const usd = toUSD(e.amount, e.currency, r);
+      const usd = recordToUSD(e, r);
       const kind = cardKind(e.vendor);
       if (kind === "Debit") {
         b.debit += usd;
@@ -1737,7 +2216,7 @@ export function cardSpendSeries(
       if (!exps || exps.length === 0) continue;
       const b = emptyBucket();
       for (const e of exps) {
-        const usd = toUSD(e.amount, e.currency, r);
+        const usd = recordToUSD(e, r);
         const kind = cardKind(e.vendor);
         if (kind === "Debit") {
           b.debit += usd;
@@ -1830,7 +2309,7 @@ export function periodBreakdownBars(
   groupBy: "category" | "method" = "category",
   direction: "spending" | "income" = "spending",
 ): PeriodBreakdownPoint[] {
-  const r = db.settings.khrRate;
+  const r = safeKhrRate(db.settings.khrRate);
   const ym = /^\d{4}-\d{2}$/.test(anchorMonth)
     ? anchorMonth
     : today().slice(0, 7);
@@ -1867,7 +2346,7 @@ export function periodBreakdownBars(
       const acc = expenseAccount(e);
       if (scope !== "Combined" && acc !== scope) continue;
       if (!matchesDate(e.date)) continue;
-      const usd = toUSD(e.amount, e.currency, r);
+      const usd = recordToUSD(e, r);
       const key =
         groupBy === "method" ? e.vendor || "Other" : e.category || "Other";
       add(key, "out", usd);
@@ -1878,7 +2357,7 @@ export function periodBreakdownBars(
     if (scope !== "Studio") {
       for (const inc of db.personalIncome ?? []) {
         if (!matchesDate(inc.date)) continue;
-        const usd = toUSD(inc.amount, inc.currency, r);
+        const usd = recordToUSD(inc, r);
         const key =
           groupBy === "method"
             ? inc.accountMethod || "Bank"
@@ -1890,9 +2369,18 @@ export function periodBreakdownBars(
       const invIds = new Set(db.invoices.filter(isInvoice).map((i) => i.id));
       for (const p of db.payments) {
         if (!invIds.has(p.invoiceId) || !matchesDate(p.date)) continue;
-        const usd = toUSD(p.amount, p.currency, r);
+        const usd = recordToUSD(p, r);
         const key =
           groupBy === "method" ? p.method || "Bank" : "Client invoices";
+        add(key, "in", usd);
+      }
+      for (const si of db.studioIncome ?? []) {
+        if (!matchesDate(si.date)) continue;
+        const usd = recordToUSD(si, r);
+        const key =
+          groupBy === "method"
+            ? si.accountMethod || "Bank"
+            : si.source || "Studio income";
         add(key, "in", usd);
       }
     }
@@ -1949,11 +2437,12 @@ export function cashFlowSeries(
   anchorMonth = today().slice(0, 7),
 ): CashFlowPoint[] {
   const idx = getLedgerIndex(db);
-  const r = db.settings.khrRate;
+  const r = safeKhrRate(db.settings.khrRate);
 
   if (range === "today") {
     const anchorDay = resolveAnchorDay(db, anchorMonth);
     const pays = idx.invoicePaymentsByDay.get(anchorDay) ?? [];
+    const studioIncs = idx.studioIncomeByDay.get(anchorDay) ?? [];
     const studioExps = idx.studioExpensesByDay.get(anchorDay) ?? [];
     const personalExps = idx.personalExpensesByDay.get(anchorDay) ?? [];
     const slots = [
@@ -1996,17 +2485,22 @@ export function cashFlowSeries(
     ];
     pays.forEach((p, i) => {
       const s = slots[i % slots.length]!;
-      s.inn += toUSD(p.amount, p.currency, r);
+      s.inn += recordToUSD(p, r);
+      s.inCount += 1;
+    });
+    studioIncs.forEach((si, i) => {
+      const s = slots[i % slots.length]!;
+      s.inn += recordToUSD(si, r);
       s.inCount += 1;
     });
     studioExps.forEach((e, i) => {
       const s = slots[i % slots.length]!;
-      s.out += toUSD(e.amount, e.currency, r);
+      s.out += recordToUSD(e, r);
       s.outCount += 1;
     });
     personalExps.forEach((e, i) => {
       const s = slots[i % slots.length]!;
-      s.personalOut += toUSD(e.amount, e.currency, r);
+      s.personalOut += recordToUSD(e, r);
     });
     const fullDay = new Date(anchorDay + "T00:00:00Z").toLocaleDateString(
       "en-US",
@@ -2037,15 +2531,16 @@ export function cashFlowSeries(
     const days = trailingDays(anchorDay, 7);
     return days.map((iso) => {
       const pays = idx.invoicePaymentsByDay.get(iso) ?? [];
+      const studioIncs = idx.studioIncomeByDay.get(iso) ?? [];
       const studioExps = idx.studioExpensesByDay.get(iso) ?? [];
       const personalExps = idx.personalExpensesByDay.get(iso) ?? [];
       let inn = 0;
-      for (const p of pays) inn += toUSD(p.amount, p.currency, r);
+      for (const p of pays) inn += recordToUSD(p, r);
+      for (const si of studioIncs) inn += recordToUSD(si, r);
       let out = 0;
-      for (const e of studioExps) out += toUSD(e.amount, e.currency, r);
+      for (const e of studioExps) out += recordToUSD(e, r);
       let personalOut = 0;
-      for (const e of personalExps)
-        personalOut += toUSD(e.amount, e.currency, r);
+      for (const e of personalExps) personalOut += recordToUSD(e, r);
       const dt = new Date(iso + "T00:00:00Z");
       return {
         m: iso,
@@ -2066,7 +2561,7 @@ export function cashFlowSeries(
         personalOut,
         net: inn - out,
         combinedNet: inn - out - personalOut,
-        inCount: pays.length,
+        inCount: pays.length + studioIncs.length,
         outCount: studioExps.length,
       };
     });
@@ -2102,14 +2597,16 @@ export function cashFlowSeries(
   const showYear = range === "all";
   return months.map((m) => {
     const pays = idx.invoicePaymentsByMonth.get(m) ?? [];
+    const studioIncs = idx.studioIncomeByMonth.get(m) ?? [];
     const studioExps = idx.studioExpensesByMonth.get(m) ?? [];
     const personalExps = idx.personalExpensesByMonth.get(m) ?? [];
     let inn = 0;
-    for (const p of pays) inn += toUSD(p.amount, p.currency, r);
+    for (const p of pays) inn += recordToUSD(p, r);
+    for (const si of studioIncs) inn += recordToUSD(si, r);
     let out = 0;
-    for (const e of studioExps) out += toUSD(e.amount, e.currency, r);
+    for (const e of studioExps) out += recordToUSD(e, r);
     let personalOut = 0;
-    for (const e of personalExps) personalOut += toUSD(e.amount, e.currency, r);
+    for (const e of personalExps) personalOut += recordToUSD(e, r);
     const dt = new Date(m + "-01T00:00:00Z");
     const label = dt.toLocaleDateString("en-US", {
       month: "short",
@@ -2130,7 +2627,7 @@ export function cashFlowSeries(
       personalOut,
       net: inn - out,
       combinedNet: inn - out - personalOut,
-      inCount: pays.length,
+      inCount: pays.length + studioIncs.length,
       outCount: studioExps.length,
     };
   });
@@ -2158,11 +2655,12 @@ export function combinedCashFlowSeries(
   anchorMonth = today().slice(0, 7),
 ): CombinedCashPoint[] {
   const idx = getLedgerIndex(db);
-  const r = db.settings.khrRate;
+  const r = safeKhrRate(db.settings.khrRate);
 
   if (range === "today") {
     const anchorDay = resolveAnchorDay(db, anchorMonth);
     const sPays = idx.invoicePaymentsByDay.get(anchorDay) ?? [];
+    const sIncs = idx.studioIncomeByDay.get(anchorDay) ?? [];
     const pIncs = idx.incomeByDay.get(anchorDay) ?? [];
     const sExps = idx.studioExpensesByDay.get(anchorDay) ?? [];
     const pExps = idx.personalExpensesByDay.get(anchorDay) ?? [];
@@ -2206,22 +2704,27 @@ export function combinedCashFlowSeries(
     ];
     sPays.forEach((p, i) => {
       const s = slots[i % slots.length]!;
-      s.studioIn += toUSD(p.amount, p.currency, r);
+      s.studioIn += recordToUSD(p, r);
+      s.count += 1;
+    });
+    sIncs.forEach((si, i) => {
+      const s = slots[i % slots.length]!;
+      s.studioIn += recordToUSD(si, r);
       s.count += 1;
     });
     pIncs.forEach((inc, i) => {
       const s = slots[i % slots.length]!;
-      s.personalIn += toUSD(inc.amount, inc.currency, r);
+      s.personalIn += recordToUSD(inc, r);
       s.count += 1;
     });
     sExps.forEach((e, i) => {
       const s = slots[i % slots.length]!;
-      s.studioOut += toUSD(e.amount, e.currency, r);
+      s.studioOut += recordToUSD(e, r);
       s.count += 1;
     });
     pExps.forEach((e, i) => {
       const s = slots[i % slots.length]!;
-      s.personalOut += toUSD(e.amount, e.currency, r);
+      s.personalOut += recordToUSD(e, r);
       s.count += 1;
     });
     const fullDay = new Date(anchorDay + "T00:00:00Z").toLocaleDateString(
@@ -2260,17 +2763,19 @@ export function combinedCashFlowSeries(
     const days = trailingDays(anchorDay, 7);
     return days.map((iso) => {
       const sPays = idx.invoicePaymentsByDay.get(iso) ?? [];
+      const sIncs = idx.studioIncomeByDay.get(iso) ?? [];
       const pIncs = idx.incomeByDay.get(iso) ?? [];
       const sExps = idx.studioExpensesByDay.get(iso) ?? [];
       const pExps = idx.personalExpensesByDay.get(iso) ?? [];
       let studioIn = 0;
-      for (const p of sPays) studioIn += toUSD(p.amount, p.currency, r);
+      for (const p of sPays) studioIn += recordToUSD(p, r);
+      for (const si of sIncs) studioIn += recordToUSD(si, r);
       let personalIn = 0;
-      for (const inc of pIncs) personalIn += toUSD(inc.amount, inc.currency, r);
+      for (const inc of pIncs) personalIn += recordToUSD(inc, r);
       let studioOut = 0;
-      for (const e of sExps) studioOut += toUSD(e.amount, e.currency, r);
+      for (const e of sExps) studioOut += recordToUSD(e, r);
       let personalOut = 0;
-      for (const e of pExps) personalOut += toUSD(e.amount, e.currency, r);
+      for (const e of pExps) personalOut += recordToUSD(e, r);
       const totalIn = studioIn + personalIn;
       const totalOut = studioOut + personalOut;
       const dt = new Date(iso + "T00:00:00Z");
@@ -2297,7 +2802,12 @@ export function combinedCashFlowSeries(
         studioNet: studioIn - studioOut,
         personalNet: personalIn - personalOut,
         combinedNet: totalIn - totalOut,
-        count: sPays.length + pIncs.length + sExps.length + pExps.length,
+        count:
+          sPays.length +
+          sIncs.length +
+          pIncs.length +
+          sExps.length +
+          pExps.length,
       };
     });
   }
@@ -2333,17 +2843,19 @@ export function combinedCashFlowSeries(
   const showYear = range === "all";
   return months.map((m) => {
     const sPays = idx.invoicePaymentsByMonth.get(m) ?? [];
+    const sIncs = idx.studioIncomeByMonth.get(m) ?? [];
     const pIncs = idx.incomeByMonth.get(m) ?? [];
     const sExps = idx.studioExpensesByMonth.get(m) ?? [];
     const pExps = idx.personalExpensesByMonth.get(m) ?? [];
     let studioIn = 0;
-    for (const p of sPays) studioIn += toUSD(p.amount, p.currency, r);
+    for (const p of sPays) studioIn += recordToUSD(p, r);
+    for (const si of sIncs) studioIn += recordToUSD(si, r);
     let personalIn = 0;
-    for (const inc of pIncs) personalIn += toUSD(inc.amount, inc.currency, r);
+    for (const inc of pIncs) personalIn += recordToUSD(inc, r);
     let studioOut = 0;
-    for (const e of sExps) studioOut += toUSD(e.amount, e.currency, r);
+    for (const e of sExps) studioOut += recordToUSD(e, r);
     let personalOut = 0;
-    for (const e of pExps) personalOut += toUSD(e.amount, e.currency, r);
+    for (const e of pExps) personalOut += recordToUSD(e, r);
     const totalIn = studioIn + personalIn;
     const totalOut = studioOut + personalOut;
     const dt = new Date(m + "-01T00:00:00Z");
@@ -2368,26 +2880,36 @@ export function combinedCashFlowSeries(
       studioNet: studioIn - studioOut,
       personalNet: personalIn - personalOut,
       combinedNet: totalIn - totalOut,
-      count: sPays.length + pIncs.length + sExps.length + pExps.length,
+      count:
+        sPays.length +
+        sIncs.length +
+        pIncs.length +
+        sExps.length +
+        pExps.length,
     };
   });
 }
 
 export function workspaceBalances(db: DB, period = today().slice(0, 7)) {
   const idx = getLedgerIndex(db);
-  const r = db.settings.khrRate;
+  const r = safeKhrRate(db.settings.khrRate);
   let studioInAll = 0;
   let studioInMonth = 0;
   for (const p of idx.invoicePaymentsAll) {
-    const usd = toUSD(p.amount, p.currency, r);
+    const usd = recordToUSD(p, r);
     studioInAll += usd;
     if (period && p.date.startsWith(period)) studioInMonth += usd;
+  }
+  for (const si of idx.studioIncomeAll) {
+    const usd = recordToUSD(si, r);
+    studioInAll += usd;
+    if (period && si.date.startsWith(period)) studioInMonth += usd;
   }
 
   let personalInAll = 0;
   let personalInMonth = 0;
   for (const inc of db.personalIncome ?? []) {
-    const usd = toUSD(inc.amount, inc.currency, r);
+    const usd = recordToUSD(inc, r);
     personalInAll += usd;
     if (period && inc.date.startsWith(period)) personalInMonth += usd;
   }
@@ -2395,7 +2917,7 @@ export function workspaceBalances(db: DB, period = today().slice(0, 7)) {
   let studioOutAll = 0;
   let studioOutMonth = 0;
   for (const e of idx.studioExpensesAll) {
-    const usd = toUSD(e.amount, e.currency, r);
+    const usd = recordToUSD(e, r);
     studioOutAll += usd;
     if (period && e.date.startsWith(period)) studioOutMonth += usd;
   }
@@ -2403,7 +2925,7 @@ export function workspaceBalances(db: DB, period = today().slice(0, 7)) {
   let personalOutAll = 0;
   let personalOutMonth = 0;
   for (const e of idx.personalExpensesAll) {
-    const usd = toUSD(e.amount, e.currency, r);
+    const usd = recordToUSD(e, r);
     personalOutAll += usd;
     if (period && e.date.startsWith(period)) personalOutMonth += usd;
   }
@@ -2881,7 +3403,8 @@ function estimateDue(inv: Invoice, start: string): string {
 }
 /** Save a document and its milestone together; drafts do not start production. */
 export function saveDocument(db: DB, document: Invoice): DB {
-  const inv = { ...document };
+  const rate = safeKhrRate(db.settings.khrRate);
+  const inv = { ...document, exchangeRate: document.exchangeRate ?? rate };
   let projects = [...db.projects];
   const existingProject = projects.find((p) => p.id === inv.projectId);
   if (existingProject && existingProject.clientId !== inv.clientId)
@@ -2891,7 +3414,7 @@ export function saveDocument(db: DB, document: Invoice): DB {
   const totalUSD = toUSD(
     invoiceTotals(inv).total,
     inv.currency,
-    db.settings.khrRate,
+    inv.exchangeRate ?? rate,
   );
   const itemServiceId = inv.items.find((i) => i.serviceId)?.serviceId ?? "";
   if (!inv.projectId && (inv.sent || inv.response === "Accepted")) {
@@ -3011,18 +3534,22 @@ export function recordPayment(db: DB, payment: Payment): DB {
   const inv = db.invoices.find((i) => i.id === payment.invoiceId);
   if (!inv || !isInvoice(inv))
     throw new Error("Payments must belong to an invoice.");
+  const rate = safeKhrRate(
+    payment.exchangeRate ?? inv.exchangeRate ?? db.settings.khrRate,
+  );
   const amount =
     payment.currency === inv.currency
       ? payment.amount
       : inv.currency === "USD"
-        ? toUSD(payment.amount, payment.currency, db.settings.khrRate)
-        : payment.amount * db.settings.khrRate;
+        ? toUSD(payment.amount, payment.currency, rate)
+        : payment.amount * rate;
   if (
     !(amount > 0) ||
     !Number.isFinite(amount) ||
     amount > invoiceView(inv, db).balance + 0.005
   )
     throw new Error("Enter a payment within the outstanding balance.");
+  const stampedPayment = stampFxSnapshot(payment, rate, true);
   const invoices = db.invoices.map((i) =>
     i.id === inv.id && !i.sent ? { ...i, sent: true } : i,
   );
@@ -3035,7 +3562,7 @@ export function recordPayment(db: DB, payment: Payment): DB {
     ...db,
     invoices,
     clients,
-    payments: [...db.payments, payment],
+    payments: [...db.payments, stampedPayment],
   });
 }
 export function deletePayment(db: DB, paymentId: string): DB {
