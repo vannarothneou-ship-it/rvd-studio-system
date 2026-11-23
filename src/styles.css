@@ -118,7 +118,8 @@
   --glass-strong: oklch(0.16 0.004 286 / 82%);
   --glass-border: oklch(1 0 0 / 12%);
   --bg-gradient: none;
-  --shadow-glass: 0 0 0 0.5px oklch(1 0 0 / 8%);
+  --shadow-glass:
+    0 1px 0 0 oklch(1 0 0 / 5%) inset, 0 0 0 0.5px oklch(1 0 0 / 8%);
   --sidebar: oklch(0.227 0.004 286 / 88%);
   --sidebar-foreground: oklch(0.971 0.003 286);
   --sidebar-primary: oklch(0.669 0.181 252);
@@ -162,7 +163,7 @@
   --glass-strong: oklch(0.971 0.003 286 / 86%);
   --glass-border: oklch(0 0 0 / 8%);
   --bg-gradient: none;
-  --shadow-glass: 0 0 0 0.5px oklch(0 0 0 / 6%);
+  --shadow-glass: 0 1px 2px oklch(0 0 0 / 4%), 0 0 0 0.5px oklch(0 0 0 / 6%);
 }
 
 @layer base {
@@ -298,7 +299,7 @@
   color: var(--muted-foreground);
 }
 @utility rise {
-  animation: rise 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: rise 0.22s var(--ease-ios, cubic-bezier(0.16, 1, 0.3, 1)) both;
 }
 @keyframes rise {
   from {
@@ -320,7 +321,7 @@
 }
 @utility grow-bar {
   transform-origin: left;
-  animation: grow 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: grow 0.38s var(--ease-ios, cubic-bezier(0.16, 1, 0.3, 1)) both;
 }
 @keyframes drawerIn {
   from {
@@ -365,13 +366,14 @@
   }
 }
 @utility drawer-in {
-  animation: drawerUp 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: drawerUp 0.24s var(--ease-ios, cubic-bezier(0.16, 1, 0.3, 1)) both;
   @media (min-width: 640px) {
-    animation: drawerIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: drawerIn 0.24s var(--ease-ios, cubic-bezier(0.16, 1, 0.3, 1))
+      both;
   }
 }
 @utility backdrop-in {
-  animation: backdropIn 0.16s ease-out both;
+  animation: backdropIn 0.18s ease-out both;
 }
 @utility scan-sweep {
   animation: scanSweep 2.1s ease-in-out infinite;
@@ -694,14 +696,6 @@
     min-height: 68px;
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
-}
 .paper {
   background: #fff;
   color: #222;
@@ -786,35 +780,21 @@
   }
 }
 .page-enter {
-  animation: pageEnter 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: pageEnter 220ms var(--ease-ios, cubic-bezier(0.16, 1, 0.3, 1)) both;
 }
 .flow-chart-in {
   transform-origin: center top;
-  animation: flowChartEnter 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation: flowChartEnter 360ms var(--ease-ios, cubic-bezier(0.16, 1, 0.3, 1))
+    both;
 }
 .flow-ribbon-in {
-  animation: flowRibbonEnter 520ms ease-out both;
+  animation: flowRibbonEnter 480ms ease-out both;
 }
 .flow-node-in {
   transform-box: fill-box;
   transform-origin: center;
-  animation: flowNodeEnter 420ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-@media (prefers-reduced-motion: reduce) {
-  .page-enter,
-  .flow-chart-in,
-  .flow-ribbon-in,
-  .flow-node-in {
-    animation: none !important;
-  }
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    transition-duration: 0.01ms !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-  }
+  animation: flowNodeEnter 400ms var(--ease-ios, cubic-bezier(0.16, 1, 0.3, 1))
+    both;
 }
 
 /* ---- iOS polish ---- */
@@ -828,6 +808,12 @@ a {
   touch-action: manipulation;
 }
 @media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .flow-chart-in,
+  .flow-ribbon-in,
+  .flow-node-in {
+    animation: none !important;
+  }
   *,
   *::before,
   *::after {
@@ -840,7 +826,7 @@ a {
 
 /* ---- Apple-style system (from design.md) ---- */
 :root {
-  --ease-ios: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-ios: cubic-bezier(0.16, 1, 0.3, 1);
 }
 body {
   letter-spacing: -0.011em;

@@ -52,15 +52,22 @@ import { MonthPicker } from "@/components/rv/MonthPicker";
 import { WorkspaceBalanceCard } from "@/components/rv/WorkspaceBalanceCard";
 import { CentralAiBrief } from "@/components/rv/CentralAiBrief";
 import {
+  MonthlyLedgerToolbar,
+  MonthlyGroupHeader,
+} from "@/components/rv/MonthlyLedgerControls";
+import {
   EXPENSE_CATEGORIES,
   cashFlowSeries,
   cashReceived,
   categoryTotals,
+  collectLedgerMonths,
   combinedCashFlowSeries,
   compactMoney,
   expenseAccount,
   expenseTotal,
+  formatMonthShort,
   goalAccount,
+  groupLedgerRowsByMonth,
   invoiceView,
   isInvoice,
   money,
@@ -140,9 +147,17 @@ function Page() {
   const [catFilter, setCatFilter] = useState<string>("All");
   const [query, setQuery] = useState("");
   const [visibleCount, setVisibleCount] = useState(8);
+  const [studioExpenseMonth, setStudioExpenseMonth] = useState<string>("all");
+  const [studioExpenseGroupByMonth, setStudioExpenseGroupByMonth] =
+    useState(true);
+  const [studioIncomeMonth, setStudioIncomeMonth] = useState<string>("all");
+  const [studioIncomeGroupByMonth, setStudioIncomeGroupByMonth] =
+    useState(true);
   const [combinedFilter, setCombinedFilter] = useState<CombinedFilter>("all");
   const [combinedQuery, setCombinedQuery] = useState("");
   const [combinedVisible, setCombinedVisible] = useState(8);
+  const [combinedMonth, setCombinedMonth] = useState<string>("all");
+  const [combinedGroupByMonth, setCombinedGroupByMonth] = useState(true);
   const [showAllPayments, setShowAllPayments] = useState(false);
   const [editingLayout, setEditingLayout] = useState(false);
   const [inspectedCategory, setInspectedCategory] = useState<string | null>(
@@ -311,11 +326,27 @@ function Page() {
   ];
 
   const q = query.trim().toLowerCase();
+  const studioExpenseMonths = useMemo(
+    () =>
+      collectLedgerMonths(
+        db.expenses
+          .filter((e) => expenseAccount(e) === "Studio")
+          .map((e) => e.date),
+        month,
+      ),
+    [db.expenses, month],
+  );
   const filteredExpenses = useMemo(
     () =>
       db.expenses
         .filter((e) => {
           if (expenseAccount(e) !== "Studio") return false;
+          if (
+            studioExpenseMonth !== "all" &&
+            !e.date.startsWith(studioExpenseMonth)
+          ) {
+            return false;
+          }
           if (catFilter !== "All" && e.category !== catFilter) return false;
           if (q) {
             const hay =
@@ -325,16 +356,76 @@ function Page() {
           return true;
         })
         .sort((a, b) => b.date.localeCompare(a.date)),
-    [db.expenses, catFilter, q],
+    [db.expenses, studioExpenseMonth, catFilter, q],
+  );
+  const studioExpensesTotalUSD = useMemo(
+    () =>
+      filteredExpenses.reduce(
+        (acc, e) => acc + toUSD(e.amount, e.currency, r),
+        0,
+      ),
+    [filteredExpenses, r],
+  );
+  const effectiveExpenseLimit =
+    studioExpenseMonth !== "all" && filteredExpenses.length <= 60
+      ? filteredExpenses.length
+      : visibleCount;
+  const visibleExpenses = filteredExpenses.slice(0, effectiveExpenseLimit);
+  const groupedVisibleExpenses = useMemo(
+    () =>
+      groupLedgerRowsByMonth(
+        visibleExpenses,
+        () => 0,
+        (e) => toUSD(e.amount, e.currency, r),
+      ),
+    [visibleExpenses, r],
   );
 
-  const visibleExpenses = filteredExpenses.slice(0, visibleCount);
-  const recentPayments = useMemo(
+  const studioIncomeMonths = useMemo(
+    () =>
+      collectLedgerMonths(
+        db.payments.map((p) => p.date),
+        month,
+      ),
+    [db.payments, month],
+  );
+  const filteredPayments = useMemo(
     () =>
       [...db.payments]
-        .sort((a, b) => b.date.localeCompare(a.date))
-        .slice(0, showAllPayments ? db.payments.length : 8),
-    [db.payments, showAllPayments],
+        .filter(
+          (p) =>
+            studioIncomeMonth === "all" || p.date.startsWith(studioIncomeMonth),
+        )
+        .sort((a, b) => b.date.localeCompare(a.date)),
+    [db.payments, studioIncomeMonth],
+  );
+  const studioIncomeTotalUSD = useMemo(
+    () =>
+      filteredPayments.reduce(
+        (acc, p) => acc + toUSD(p.amount, p.currency, r),
+        0,
+      ),
+    [filteredPayments, r],
+  );
+  const recentPayments = useMemo(
+    () =>
+      filteredPayments.slice(
+        0,
+        showAllPayments ||
+          (studioIncomeMonth !== "all" && filteredPayments.length <= 60)
+          ? filteredPayments.length
+          : 8,
+      ),
+    [filteredPayments, showAllPayments, studioIncomeMonth],
+  );
+  const groupedRecentPayments = useMemo(
+    () =>
+      groupLedgerRowsByMonth(
+        recentPayments,
+        (p) => toUSD(p.amount, p.currency, r),
+        () => 0,
+      ),
+    [recentPayments, r],
   );
 
   const balances = useMemo(() => workspaceBalances(db, month), [db, month]);
@@ -356,7 +447,7 @@ function Page() {
     [db],
   );
 
-  const combinedLedgerRows = useMemo(() => {
+  const allCombinedEntries = useMemo(() => {
     type Entry = {
       id: string;
       date: string;
@@ -411,36 +502,71 @@ function Page() {
       }),
     ];
 
+    return entries.sort((a, b) => b.date.localeCompare(a.date));
+  }, [db.payments, db.invoices, db.clients, db.personalIncome, db.expenses, r]);
+
+  const combinedMonths = useMemo(
+    () =>
+      collectLedgerMonths(
+        allCombinedEntries.map((e) => e.date),
+        month,
+      ),
+    [allCombinedEntries, month],
+  );
+
+  const combinedLedgerRows = useMemo(() => {
     const cq = combinedQuery.trim().toLowerCase();
-    return entries
-      .filter((row) => {
-        if (combinedFilter === "studio" && row.workspace !== "Studio")
-          return false;
-        if (combinedFilter === "personal" && row.workspace !== "Personal")
-          return false;
-        if (combinedFilter === "income" && row.direction !== "income")
-          return false;
-        if (combinedFilter === "expense" && row.direction !== "expense")
-          return false;
-        if (cq) {
-          const hay =
-            `${row.title} ${row.sub} ${row.workspace} ${row.direction}`.toLowerCase();
-          if (!hay.includes(cq)) return false;
-        }
-        return true;
-      })
-      .sort((a, b) => b.date.localeCompare(a.date));
-  }, [
-    db.payments,
-    db.invoices,
-    db.clients,
-    db.personalIncome,
-    db.expenses,
-    r,
-    combinedFilter,
-    combinedQuery,
-  ]);
-  const combinedVisibleRows = combinedLedgerRows.slice(0, combinedVisible);
+    return allCombinedEntries.filter((row) => {
+      if (combinedMonth !== "all" && !row.date.startsWith(combinedMonth))
+        return false;
+      if (combinedFilter === "studio" && row.workspace !== "Studio")
+        return false;
+      if (combinedFilter === "personal" && row.workspace !== "Personal")
+        return false;
+      if (combinedFilter === "income" && row.direction !== "income")
+        return false;
+      if (combinedFilter === "expense" && row.direction !== "expense")
+        return false;
+      if (cq) {
+        const hay =
+          `${row.title} ${row.sub} ${row.workspace} ${row.direction}`.toLowerCase();
+        if (!hay.includes(cq)) return false;
+      }
+      return true;
+    });
+  }, [allCombinedEntries, combinedMonth, combinedFilter, combinedQuery]);
+
+  const combinedLedgerTotals = useMemo(() => {
+    let incomeUSD = 0;
+    let expenseUSD = 0;
+    for (const row of combinedLedgerRows) {
+      if (row.direction === "income") incomeUSD += row.usd;
+      else expenseUSD += row.usd;
+    }
+    return {
+      incomeUSD,
+      expenseUSD,
+      netUSD: incomeUSD - expenseUSD,
+    };
+  }, [combinedLedgerRows]);
+
+  const effectiveCombinedLimit =
+    combinedMonth !== "all" && combinedLedgerRows.length <= 60
+      ? combinedLedgerRows.length
+      : combinedVisible;
+  const combinedVisibleRows = combinedLedgerRows.slice(
+    0,
+    effectiveCombinedLimit,
+  );
+  const groupedCombinedRows = useMemo(
+    () =>
+      groupLedgerRowsByMonth(
+        combinedVisibleRows,
+        (row) => (row.direction === "income" ? row.usd : 0),
+        (row) => (row.direction === "expense" ? row.usd : 0),
+      ),
+    [combinedVisibleRows],
+  );
 
   /** Swipe-delete for expenses & personal income (invoice payments stay protected). */
   const deleteCombinedRow = (rowId: string) => {
@@ -787,234 +913,364 @@ function Page() {
         id: "studioIncome",
         title: "Client invoice payments",
         defaultSpan: 12,
-        render: () => (
-          <Glass delay={240}>
-            <div className="mb-3 flex items-center justify-between">
-              <div className="flex min-w-0 items-center gap-2">
-                <p className="label-mono">
-                  Recent Studio Income ({db.payments.length} recorded invoice
-                  payments)
-                </p>
-                <button
-                  type="button"
-                  onClick={() => setShowAllPayments((value) => !value)}
-                  aria-label={
-                    showAllPayments
-                      ? "Show recent 8 payments"
-                      : "Show all payments"
-                  }
-                  title={showAllPayments ? "Show recent 8" : "Show all"}
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        render: () => {
+          const renderPayment = (p: (typeof recentPayments)[number]) => {
+            const inv = db.invoices.find((i) => i.id === p.invoiceId);
+            const client = db.clients.find((c) => c.id === inv?.clientId);
+            return (
+              <li key={p.id}>
+                <Link
+                  to="/invoices/$id"
+                  params={{ id: p.invoiceId }}
+                  className="flex items-center justify-between gap-3 rounded-xl px-2 py-2.5 hover:bg-muted"
                 >
-                  {showAllPayments ? (
-                    <EyeOff className="h-3.5 w-3.5" />
-                  ) : (
-                    <Eye className="h-3.5 w-3.5" />
-                  )}
-                </button>
-              </div>
-              <Link
-                to="/invoices"
-                className="text-xs text-primary hover:underline"
-              >
-                Invoices →
-              </Link>
-            </div>
-            {recentPayments.length === 0 ? (
-              <Empty>No invoice payments recorded yet.</Empty>
-            ) : (
-              <ul className="divide-y divide-border">
-                {recentPayments.map((p) => {
-                  const inv = db.invoices.find((i) => i.id === p.invoiceId);
-                  const client = db.clients.find((c) => c.id === inv?.clientId);
-                  return (
-                    <li key={p.id}>
-                      <Link
-                        to="/invoices/$id"
-                        params={{ id: p.invoiceId }}
-                        className="flex items-center justify-between gap-3 rounded-xl px-2 py-2.5 hover:bg-muted"
-                      >
-                        <div className="flex min-w-0 items-center gap-3">
-                          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-positive">
-                            <ArrowDownLeft className="h-4 w-4" />
-                          </span>
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">
-                              {client?.name ?? "Client"} ·{" "}
-                              {inv?.no ?? "Invoice"}
-                            </p>
-                            <p className="truncate text-xs text-muted-foreground">
-                              {shortDate(p.date)} · {p.method}
-                              {p.reference ? ` · ${p.reference}` : ""}
-                            </p>
-                          </div>
-                        </div>
-                        <span className="font-num shrink-0 text-sm text-positive">
-                          +{money(toUSD(p.amount, p.currency, r))}
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-positive">
+                      <ArrowDownLeft className="h-4 w-4" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {client?.name ?? "Client"} · {inv?.no ?? "Invoice"}
+                      </p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {shortDate(p.date)} · {p.method}
+                        {p.reference ? ` · ${p.reference}` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="font-num shrink-0 text-sm font-semibold text-positive">
+                    +{money(toUSD(p.amount, p.currency, r))}
+                  </span>
+                </Link>
+              </li>
+            );
+          };
+
+          return (
+            <Glass delay={240}>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="label-mono">
+                    Studio Income ·{" "}
+                    {studioIncomeMonth === "all"
+                      ? "All months"
+                      : formatMonthShort(studioIncomeMonth)}
+                  </p>
+                  <p className="font-num mt-0.5 text-xs text-muted-foreground">
+                    {filteredPayments.length}{" "}
+                    {filteredPayments.length === 1 ? "payment" : "payments"}
+                    {studioIncomeTotalUSD > 0 && (
+                      <>
+                        {" "}
+                        ·{" "}
+                        <span className="font-semibold text-positive">
+                          +{money(studioIncomeTotalUSD)}
                         </span>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </Glass>
-        ),
+                      </>
+                    )}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {filteredPayments.length > 8 &&
+                    studioIncomeMonth === "all" && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllPayments((value) => !value)}
+                        aria-label={
+                          showAllPayments
+                            ? "Show recent 8 payments"
+                            : "Show all payments"
+                        }
+                        title={showAllPayments ? "Show recent 8" : "Show all"}
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                      >
+                        {showAllPayments ? (
+                          <EyeOff className="h-3.5 w-3.5" />
+                        ) : (
+                          <Eye className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    )}
+                  <Link
+                    to="/invoices"
+                    className="text-xs font-medium text-primary hover:underline"
+                  >
+                    Invoices →
+                  </Link>
+                </div>
+              </div>
+
+              <MonthlyLedgerToolbar
+                months={studioIncomeMonths}
+                selectedMonth={studioIncomeMonth}
+                onSelectMonth={(next) => {
+                  setStudioIncomeMonth(next);
+                  setShowAllPayments(false);
+                }}
+                groupByMonth={studioIncomeGroupByMonth}
+                onToggleGroupByMonth={() =>
+                  setStudioIncomeGroupByMonth((g) => !g)
+                }
+                className="mb-3"
+              />
+
+              {recentPayments.length === 0 ? (
+                <Empty>
+                  {studioIncomeMonth === "all"
+                    ? "No invoice payments recorded yet."
+                    : `No studio payments recorded in ${formatMonthShort(studioIncomeMonth)}.`}
+                </Empty>
+              ) : studioIncomeGroupByMonth ? (
+                <div className="space-y-3">
+                  {groupedRecentPayments.map((grp) => (
+                    <div key={grp.month} className="space-y-1.5">
+                      <MonthlyGroupHeader
+                        month={grp.month}
+                        label={grp.label}
+                        count={grp.rows.length}
+                        incomeUSD={grp.incomeUSD}
+                        expenseUSD={0}
+                        netUSD={grp.incomeUSD}
+                        showIncome
+                        showExpense={false}
+                        activeFilterMonth={studioIncomeMonth}
+                        onSelectMonth={(next) => {
+                          setStudioIncomeMonth(next);
+                          setShowAllPayments(false);
+                        }}
+                      />
+                      <ul className="divide-y divide-border/75">
+                        {grp.rows.map(renderPayment)}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {recentPayments.map(renderPayment)}
+                </ul>
+              )}
+            </Glass>
+          );
+        },
       },
       {
         id: "expensesLedger",
         title: "Studio expenses ledger",
         defaultSpan: 12,
-        render: () => (
-          <Glass delay={280}>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <p className="label-mono">
-                  RothVan Design expenses
-                  {catFilter !== "All" ? ` · ${catFilter}` : ""}
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {filteredExpenses.length}{" "}
-                  {filteredExpenses.length === 1 ? "entry" : "entries"}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative min-w-0 flex-1 sm:flex-none">
-                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="search"
-                    value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value);
-                      setVisibleCount(8);
-                    }}
-                    placeholder="Search vendor or item..."
-                    className="field w-full py-1.5 pl-8 text-base sm:w-56 sm:text-xs"
-                  />
-                </div>
-                <Btn
-                  onClick={() => openNewExpense()}
-                  className="px-3 py-1.5 text-xs whitespace-nowrap shrink-0"
+        render: () => {
+          const renderExpenseRow = (e: Expense) => {
+            const proj = e.projectId
+              ? db.projects.find((p) => p.id === e.projectId)
+              : undefined;
+            const ItemIcon = expenseItemIcon(e);
+            return (
+              <li key={e.id}>
+                <SwipeRow
+                  onEdit={() => setEdit(e)}
+                  onDelete={() => deleteStudioExpense(e)}
                 >
-                  <Plus className="h-3 w-3" />
-                  Add studio cost
-                </Btn>
-              </div>
-            </div>
-
-            <div className="no-scrollbar mb-3 flex flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0">
-              <button
-                type="button"
-                onClick={() => setCatFilter("All")}
-                className={cn(
-                  "rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
-                  catFilter === "All"
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border text-muted-foreground hover:text-foreground",
-                )}
-              >
-                All
-              </button>
-              {EXPENSE_CATEGORIES.map((c) => {
-                const CatIcon = categoryIcon(c);
-                return (
                   <button
-                    key={c}
                     type="button"
-                    onClick={() => setCatFilter(catFilter === c ? "All" : c)}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
-                      catFilter === c
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border text-muted-foreground hover:text-foreground",
-                    )}
+                    onClick={() => setEdit(e)}
+                    className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-muted"
                   >
-                    <CatIcon className="h-3 w-3 shrink-0" />
-                    <span>{c}</span>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-primary">
+                        <ItemIcon className="h-4 w-4" />
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium">
+                          {e.description || e.vendor || "Studio expense"}
+                        </p>
+                        <p className="truncate text-xs text-muted-foreground">
+                          {shortDate(e.date)} · {e.category}
+                          {e.vendor ? ` · ${e.vendor}` : ""}
+                          {proj ? ` · ${proj.code}` : ""}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="font-num text-sm text-destructive">
+                      {money(-e.amount, e.currency)}
+                    </p>
                   </button>
-                );
-              })}
-            </div>
+                </SwipeRow>
+              </li>
+            );
+          };
 
-            {visibleExpenses.length === 0 ? (
-              <Empty>No studio expenses match this filter.</Empty>
-            ) : (
-              <>
-                <ul className="divide-y divide-border">
-                  {visibleExpenses.map((e) => {
-                    const proj = e.projectId
-                      ? db.projects.find((p) => p.id === e.projectId)
-                      : undefined;
-                    const ItemIcon = expenseItemIcon(e);
-                    return (
-                      <li key={e.id}>
-                        <SwipeRow
-                          onEdit={() => setEdit(e)}
-                          onDelete={() => deleteStudioExpense(e)}
+          return (
+            <Glass delay={280}>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="label-mono">
+                    RothVan Design expenses ·{" "}
+                    {studioExpenseMonth === "all"
+                      ? "All months"
+                      : formatMonthShort(studioExpenseMonth)}
+                    {catFilter !== "All" ? ` · ${catFilter}` : ""}
+                  </p>
+                  <p className="font-num mt-0.5 text-xs text-muted-foreground">
+                    {filteredExpenses.length}{" "}
+                    {filteredExpenses.length === 1 ? "entry" : "entries"}
+                    {studioExpensesTotalUSD > 0 && (
+                      <>
+                        {" "}
+                        ·{" "}
+                        <span className="font-semibold text-destructive">
+                          {money(-studioExpensesTotalUSD)}
+                        </span>
+                      </>
+                    )}
+                  </p>
+                </div>
+                <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+                  <div className="relative min-w-0 flex-1 sm:flex-none">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type="search"
+                      value={query}
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        setVisibleCount(8);
+                      }}
+                      placeholder="Search vendor or item..."
+                      className="field w-full py-1.5 pl-8 text-base sm:w-56 sm:text-xs"
+                    />
+                  </div>
+                  <Btn
+                    onClick={() => openNewExpense()}
+                    className="px-3 py-1.5 text-xs whitespace-nowrap shrink-0"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Add studio cost
+                  </Btn>
+                </div>
+              </div>
+
+              <MonthlyLedgerToolbar
+                months={studioExpenseMonths}
+                selectedMonth={studioExpenseMonth}
+                onSelectMonth={(next) => {
+                  setStudioExpenseMonth(next);
+                  setVisibleCount(8);
+                }}
+                groupByMonth={studioExpenseGroupByMonth}
+                onToggleGroupByMonth={() =>
+                  setStudioExpenseGroupByMonth((g) => !g)
+                }
+                className="mb-3"
+              />
+
+              <div className="no-scrollbar mb-3 flex flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCatFilter("All");
+                    setVisibleCount(8);
+                  }}
+                  className={cn(
+                    "rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
+                    catFilter === "All"
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  All
+                </button>
+                {EXPENSE_CATEGORIES.map((c) => {
+                  const CatIcon = categoryIcon(c);
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => {
+                        setCatFilter(catFilter === c ? "All" : c);
+                        setVisibleCount(8);
+                      }}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
+                        catFilter === c
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <CatIcon className="h-3 w-3 shrink-0" />
+                      <span>{c}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {visibleExpenses.length === 0 ? (
+                <Empty>No studio expenses match this filter.</Empty>
+              ) : (
+                <>
+                  {studioExpenseGroupByMonth ? (
+                    <div className="space-y-3">
+                      {groupedVisibleExpenses.map((grp) => (
+                        <div key={grp.month} className="space-y-1.5">
+                          <MonthlyGroupHeader
+                            month={grp.month}
+                            label={grp.label}
+                            count={grp.rows.length}
+                            incomeUSD={0}
+                            expenseUSD={grp.expenseUSD}
+                            netUSD={-grp.expenseUSD}
+                            showIncome={false}
+                            showExpense
+                            activeFilterMonth={studioExpenseMonth}
+                            onSelectMonth={(next) => {
+                              setStudioExpenseMonth(next);
+                              setVisibleCount(8);
+                            }}
+                          />
+                          <ul className="divide-y divide-border/75">
+                            {grp.rows.map(renderExpenseRow)}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-border">
+                      {visibleExpenses.map(renderExpenseRow)}
+                    </ul>
+                  )}
+                  {filteredExpenses.length > effectiveExpenseLimit && (
+                    <div className="mt-3 flex justify-center gap-2">
+                      <Btn
+                        onClick={() => setVisibleCount((n) => n + 8)}
+                        className="px-4 py-1.5 text-xs"
+                      >
+                        Show 8 more (
+                        {filteredExpenses.length - visibleExpenses.length}{" "}
+                        remaining)
+                      </Btn>
+                      <Btn
+                        onClick={() => setVisibleCount(filteredExpenses.length)}
+                        className="px-4 py-1.5 text-xs"
+                      >
+                        Show all ({filteredExpenses.length})
+                      </Btn>
+                    </div>
+                  )}
+                  {visibleCount > 8 &&
+                    filteredExpenses.length > 8 &&
+                    visibleExpenses.length >= filteredExpenses.length && (
+                      <div className="mt-2 flex justify-center">
+                        <Btn
+                          onClick={() => setVisibleCount(8)}
+                          className="px-4 py-1.5 text-xs"
                         >
-                          <button
-                            type="button"
-                            onClick={() => setEdit(e)}
-                            className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-muted"
-                          >
-                            <div className="flex min-w-0 items-center gap-3">
-                              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted text-primary">
-                                <ItemIcon className="h-4 w-4" />
-                              </span>
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium">
-                                  {e.description ||
-                                    e.vendor ||
-                                    "Studio expense"}
-                                </p>
-                                <p className="truncate text-xs text-muted-foreground">
-                                  {shortDate(e.date)} · {e.category}
-                                  {e.vendor ? ` · ${e.vendor}` : ""}
-                                  {proj ? ` · ${proj.code}` : ""}
-                                </p>
-                              </div>
-                            </div>
-                            <p className="font-num text-sm text-destructive">
-                              {money(-e.amount, e.currency)}
-                            </p>
-                          </button>
-                        </SwipeRow>
-                      </li>
-                    );
-                  })}
-                </ul>
-                {filteredExpenses.length > visibleExpenses.length && (
-                  <div className="mt-3 flex justify-center gap-2">
-                    <Btn
-                      onClick={() => setVisibleCount((n) => n + 8)}
-                      className="px-4 py-1.5 text-xs"
-                    >
-                      Show 8 more (
-                      {filteredExpenses.length - visibleExpenses.length}{" "}
-                      remaining)
-                    </Btn>
-                    <Btn
-                      onClick={() => setVisibleCount(filteredExpenses.length)}
-                      className="px-4 py-1.5 text-xs"
-                    >
-                      Show all ({filteredExpenses.length})
-                    </Btn>
-                  </div>
-                )}
-                {visibleCount > 8 && filteredExpenses.length > 8 && (
-                  <div className="mt-2 flex justify-center">
-                    <Btn
-                      onClick={() => setVisibleCount(8)}
-                      className="px-4 py-1.5 text-xs"
-                    >
-                      Hide extra rows
-                    </Btn>
-                  </div>
-                )}
-              </>
-            )}
-          </Glass>
-        ),
+                          Hide extra rows
+                        </Btn>
+                      </div>
+                    )}
+                </>
+              )}
+            </Glass>
+          );
+        },
       },
     ],
     [
@@ -1037,13 +1293,25 @@ function Page() {
       month,
       inspectedCategory,
       studioGoals,
+      studioIncomeMonths,
+      studioIncomeMonth,
+      studioIncomeGroupByMonth,
+      studioIncomeTotalUSD,
+      filteredPayments,
       recentPayments,
+      groupedRecentPayments,
       showAllPayments,
       r,
       catFilter,
+      studioExpenseMonths,
+      studioExpenseMonth,
+      studioExpenseGroupByMonth,
+      studioExpensesTotalUSD,
       filteredExpenses,
       query,
+      effectiveExpenseLimit,
       visibleExpenses,
+      groupedVisibleExpenses,
       visibleCount,
       goalNow,
       openNewExpense,
@@ -1101,7 +1369,11 @@ function Page() {
           value={month}
           onChange={(next) => {
             setMonth(next);
+            setStudioIncomeMonth(next);
+            setStudioExpenseMonth(next);
+            setCombinedMonth(next);
             setVisibleCount(8);
+            setCombinedVisible(8);
           }}
         />
       </div>
@@ -1355,18 +1627,57 @@ function Page() {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="label-mono">
-                  Combined Studio &amp; Personal Ledger (
-                  {combinedLedgerRows.length})
+                  Combined Studio &amp; Personal Ledger ·{" "}
+                  {combinedMonth === "all"
+                    ? "All months"
+                    : formatMonthShort(combinedMonth)}
                 </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Every invoice payment, studio operating cost, personal income,
-                  and personal expense in chronological order
+                <p className="font-num mt-0.5 text-xs text-muted-foreground">
+                  {combinedLedgerRows.length}{" "}
+                  {combinedLedgerRows.length === 1 ? "entry" : "entries"}
+                  {combinedLedgerTotals.incomeUSD > 0 && (
+                    <>
+                      {" "}
+                      ·{" "}
+                      <span className="font-semibold text-positive">
+                        +{money(combinedLedgerTotals.incomeUSD)}
+                      </span>
+                    </>
+                  )}
+                  {combinedLedgerTotals.expenseUSD > 0 && (
+                    <>
+                      {" "}
+                      ·{" "}
+                      <span className="font-semibold text-destructive">
+                        {money(-combinedLedgerTotals.expenseUSD)}
+                      </span>
+                    </>
+                  )}
+                  {combinedLedgerTotals.incomeUSD > 0 &&
+                    combinedLedgerTotals.expenseUSD > 0 && (
+                      <>
+                        {" "}
+                        · Net{" "}
+                        <span
+                          className={cn(
+                            "font-semibold",
+                            combinedLedgerTotals.netUSD >= 0
+                              ? "text-positive"
+                              : "text-destructive",
+                          )}
+                        >
+                          {money(combinedLedgerTotals.netUSD, "USD", true)}
+                        </span>
+                      </>
+                    )}
                 </p>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
                 <SlidingTabs
+                  stretch
                   size="xs"
                   layoutGroup="fin-combined-filter"
+                  className="w-full sm:w-auto"
                   value={combinedFilter}
                   onChange={(v) => {
                     setCombinedFilter(v);
@@ -1390,18 +1701,38 @@ function Page() {
                       setCombinedVisible(8);
                     }}
                     placeholder="Search combined ledger…"
-                    className="field w-full py-1.5 pl-8 text-xs sm:w-56"
+                    className="field w-full py-1.5 pl-8 text-base sm:w-56 sm:text-xs"
                   />
                 </div>
               </div>
             </div>
 
+            <MonthlyLedgerToolbar
+              months={combinedMonths}
+              selectedMonth={combinedMonth}
+              onSelectMonth={(next) => {
+                setCombinedMonth(next);
+                setCombinedVisible(8);
+              }}
+              groupByMonth={combinedGroupByMonth}
+              onToggleGroupByMonth={() => setCombinedGroupByMonth((g) => !g)}
+              className="mb-3"
+            />
+
             {combinedVisibleRows.length === 0 ? (
-              <Empty>No ledger entries match this filter.</Empty>
+              <Empty>
+                No ledger entries match this filter
+                {combinedMonth !== "all"
+                  ? ` in ${formatMonthShort(combinedMonth)}`
+                  : ""}
+                .
+              </Empty>
             ) : (
               <>
-                <ul className="divide-y divide-border">
-                  {combinedVisibleRows.map((row) => {
+                {(() => {
+                  const renderCombinedRow = (
+                    row: (typeof combinedVisibleRows)[number],
+                  ) => {
                     const expMatch = row.id.startsWith("exp-")
                       ? db.expenses.find((x) => `exp-${x.id}` === row.id)
                       : undefined;
@@ -1434,23 +1765,21 @@ function Page() {
                                 )}
                               </span>
                               <div className="min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="truncate text-sm font-medium text-foreground">
-                                    {row.title}
-                                  </p>
+                                <p className="truncate text-sm font-medium text-foreground">
+                                  {row.title}
+                                </p>
+                                <p className="truncate text-xs text-muted-foreground">
                                   <span
                                     className={cn(
-                                      "rounded-full border px-2 py-0.5 text-[0.62rem] font-medium",
+                                      "font-medium",
                                       row.workspace === "Studio"
-                                        ? "border-primary/40 bg-primary/12 text-primary"
-                                        : "border-border bg-muted text-muted-foreground",
+                                        ? "text-primary"
+                                        : "text-foreground/80",
                                     )}
                                   >
                                     {row.workspace}
-                                  </span>
-                                </div>
-                                <p className="truncate text-xs text-muted-foreground">
-                                  {shortDate(row.date)} · {row.sub}
+                                  </span>{" "}
+                                  · {shortDate(row.date)} · {row.sub}
                                 </p>
                               </div>
                             </div>
@@ -1470,10 +1799,41 @@ function Page() {
                         </SwipeRow>
                       </li>
                     );
-                  })}
-                </ul>
+                  };
 
-                {combinedLedgerRows.length > combinedVisibleRows.length && (
+                  return combinedGroupByMonth ? (
+                    <div className="space-y-3">
+                      {groupedCombinedRows.map((grp) => (
+                        <div key={grp.month} className="space-y-1.5">
+                          <MonthlyGroupHeader
+                            month={grp.month}
+                            label={grp.label}
+                            count={grp.rows.length}
+                            incomeUSD={grp.incomeUSD}
+                            expenseUSD={grp.expenseUSD}
+                            netUSD={grp.netUSD}
+                            showIncome={combinedFilter !== "expense"}
+                            showExpense={combinedFilter !== "income"}
+                            activeFilterMonth={combinedMonth}
+                            onSelectMonth={(next) => {
+                              setCombinedMonth(next);
+                              setCombinedVisible(8);
+                            }}
+                          />
+                          <ul className="divide-y divide-border/75">
+                            {grp.rows.map(renderCombinedRow)}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-border">
+                      {combinedVisibleRows.map(renderCombinedRow)}
+                    </ul>
+                  );
+                })()}
+
+                {combinedLedgerRows.length > effectiveCombinedLimit && (
                   <div className="mt-3 flex justify-center gap-2">
                     <Btn
                       type="button"
@@ -1495,17 +1855,19 @@ function Page() {
                     </Btn>
                   </div>
                 )}
-                {combinedVisible > 8 && combinedLedgerRows.length > 8 && (
-                  <div className="mt-2 flex justify-center">
-                    <Btn
-                      type="button"
-                      onClick={() => setCombinedVisible(8)}
-                      className="px-4 py-1.5 text-xs"
-                    >
-                      Show recent 8 only
-                    </Btn>
-                  </div>
-                )}
+                {combinedVisible > 8 &&
+                  combinedLedgerRows.length > 8 &&
+                  combinedVisibleRows.length >= combinedLedgerRows.length && (
+                    <div className="mt-2 flex justify-center">
+                      <Btn
+                        type="button"
+                        onClick={() => setCombinedVisible(8)}
+                        className="px-4 py-1.5 text-xs"
+                      >
+                        Show recent 8 only
+                      </Btn>
+                    </div>
+                  )}
               </>
             )}
           </Glass>

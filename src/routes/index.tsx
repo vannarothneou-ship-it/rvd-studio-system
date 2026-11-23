@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Activity,
+  AlertCircle,
+  AlertTriangle,
   ArrowDownLeft,
   ArrowRight,
   ArrowUpRight,
@@ -898,7 +900,7 @@ function CommandDashboard() {
                 setHealthExpanded(false);
               }}
               className={cn(
-                "font-num inline-flex min-h-[32px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                "font-num inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
                 healthFilter === "all"
                   ? "border-primary bg-primary text-primary-foreground"
                   : "border-border bg-secondary text-muted-foreground hover:text-foreground",
@@ -914,13 +916,13 @@ function CommandDashboard() {
                 setHealthExpanded(false);
               }}
               className={cn(
-                "font-num inline-flex min-h-[32px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                "font-num inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
                 healthFilter === "healthy"
                   ? "border-positive/55 bg-positive/20 text-positive"
                   : "border-border bg-secondary text-muted-foreground hover:border-positive/40 hover:text-positive",
               )}
             >
-              <span className="h-2 w-2 rounded-full bg-positive" />
+              <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-positive" />
               <span>Healthy</span>
               <span>{healthCounts.healthy}</span>
             </button>
@@ -931,13 +933,13 @@ function CommandDashboard() {
                 setHealthExpanded(false);
               }}
               className={cn(
-                "font-num inline-flex min-h-[32px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                "font-num inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
                 healthFilter === "at-risk"
                   ? "border-warning/55 bg-warning/20 text-warning"
                   : "border-border bg-secondary text-muted-foreground hover:border-warning/40 hover:text-warning",
               )}
             >
-              <span className="h-2 w-2 rounded-full bg-warning" />
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-warning" />
               <span>At risk</span>
               <span>{healthCounts["at-risk"]}</span>
             </button>
@@ -948,19 +950,19 @@ function CommandDashboard() {
                 setHealthExpanded(false);
               }}
               className={cn(
-                "font-num inline-flex min-h-[32px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
+                "font-num inline-flex min-h-[36px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors",
                 healthFilter === "delayed"
                   ? "border-destructive/55 bg-destructive/20 text-destructive"
                   : "border-border bg-secondary text-muted-foreground hover:border-destructive/40 hover:text-destructive",
               )}
             >
-              <span className="h-2 w-2 rounded-full bg-destructive" />
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
               <span>Delayed</span>
               <span>{healthCounts.delayed}</span>
             </button>
             <Link
               to="/projects"
-              className="ml-1 inline-flex min-h-[32px] items-center gap-1 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs font-semibold text-primary hover:bg-accent"
+              className="ml-1 inline-flex min-h-[36px] items-center gap-1 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs font-semibold text-primary hover:bg-accent"
             >
               Projects <ArrowRight className="h-3 w-3" />
             </Link>

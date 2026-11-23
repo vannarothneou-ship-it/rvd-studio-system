@@ -166,7 +166,7 @@ export function QuickExpenseDrawer({
     >
       <form onSubmit={commit} className="flex flex-col gap-3.5">
         {/* Hero Amount + Currency Toggle Card */}
-        <div className="rounded-2xl border border-primary/35 bg-gradient-to-br from-primary/12 via-muted/45 to-muted/25 p-3.5">
+        <div className="rounded-2xl border border-primary/35 bg-gradient-to-br from-primary/12 via-muted/45 to-muted/25 p-4">
           <div className="flex items-center justify-between gap-2">
             <span className="label-mono">Amount</span>
             <div className="inline-flex rounded-full border border-border bg-background/60 p-0.5">
@@ -178,7 +178,7 @@ export function QuickExpenseDrawer({
                     setDraft({ ...draft, currency: cur as Currency })
                   }
                   className={cn(
-                    "font-num rounded-full px-3 py-1 text-[0.72rem] font-semibold transition-all duration-150 active:scale-95",
+                    "font-num min-h-[36px] rounded-full px-3.5 text-xs font-semibold transition-all duration-150 active:scale-95",
                     draft.currency === cur
                       ? "bg-primary text-primary-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground",
@@ -190,8 +190,8 @@ export function QuickExpenseDrawer({
             </div>
           </div>
 
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-num text-2xl font-bold text-primary">
+          <div className="mt-2.5 flex items-baseline gap-2.5">
+            <span className="font-num text-3xl font-bold text-primary">
               {draft.currency === "KHR" ? "៛" : "$"}
             </span>
             <input
@@ -205,11 +205,11 @@ export function QuickExpenseDrawer({
                 setAmtText(raw);
                 setDraft({ ...draft, amount: Number(raw) || 0 });
               }}
-              className="font-num w-full bg-transparent text-3xl font-extrabold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/45"
+              className="font-num w-full bg-transparent text-4xl font-extrabold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/45"
             />
           </div>
 
-          <div className="no-scrollbar mt-2.5 flex items-center gap-1.5 overflow-x-auto">
+          <div className="no-scrollbar mt-3 flex items-center gap-2 overflow-x-auto">
             {presets.map((p) => (
               <button
                 key={p}
@@ -218,7 +218,7 @@ export function QuickExpenseDrawer({
                   setAmtText(String(p));
                   setDraft({ ...draft, amount: p });
                 }}
-                className="font-num shrink-0 rounded-full border border-border/80 bg-background/55 px-2.5 py-1 text-[0.7rem] font-semibold text-muted-foreground transition-all hover:border-primary/50 hover:text-foreground active:scale-95"
+                className="font-num min-h-[38px] shrink-0 rounded-full border border-border/80 bg-background/60 px-3.5 text-xs font-semibold text-muted-foreground transition-all hover:border-primary/50 hover:text-foreground active:scale-95"
               >
                 {draft.currency === "KHR"
                   ? `${Math.round(p / 1000)}k`
@@ -240,34 +240,34 @@ export function QuickExpenseDrawer({
                   type="button"
                   onClick={() => setDraft({ ...draft, vendor: m })}
                   className={cn(
-                    "inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-semibold transition-all duration-150 active:scale-95",
+                    "inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-semibold transition-all duration-150 active:scale-95",
                     active
                       ? "bg-primary text-primary-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  <Icon className="h-4 w-4 shrink-0" />
                   <span>{m}</span>
                 </button>
               );
             })}
           </div>
 
-          <label className="relative inline-flex min-h-[46px] cursor-pointer items-center gap-1.5 rounded-2xl border border-border bg-muted/50 px-3 text-xs font-medium text-foreground">
-            <Calendar className="h-3.5 w-3.5 shrink-0 text-primary" />
+          <label className="relative inline-flex min-h-[52px] cursor-pointer items-center gap-1.5 rounded-2xl border border-border bg-muted/50 px-3.5 text-xs font-medium text-foreground">
+            <Calendar className="h-4 w-4 shrink-0 text-primary" />
             <input
               type="date"
               value={draft.date}
               onChange={(e) => setDraft({ ...draft, date: e.target.value })}
-              className="font-num w-[7.2rem] bg-transparent text-xs outline-none"
+              className="font-num w-[7.8rem] bg-transparent text-sm outline-none sm:text-xs"
             />
           </label>
         </div>
 
-        {/* Compact 3-Column Icon Category Grid */}
+        {/* Enlarged 3-Column Icon Category Grid */}
         <div>
-          <span className="label-mono mb-1.5 block">Category</span>
-          <div className="grid grid-cols-3 gap-1.5">
+          <span className="label-mono mb-2 block">Category</span>
+          <div className="grid grid-cols-3 gap-2">
             {PERSONAL_CATEGORIES.map((cat) => {
               const active = draft.category === cat;
               const Icon = categoryIcon(cat);
@@ -277,7 +277,7 @@ export function QuickExpenseDrawer({
                   type="button"
                   onClick={() => setDraft({ ...draft, category: cat })}
                   className={cn(
-                    "flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2 text-center transition-all duration-150 active:scale-95",
+                    "flex min-h-[66px] flex-col items-center justify-center gap-1.5 rounded-2xl border px-2.5 py-2.5 text-center transition-all duration-150 active:scale-95",
                     active
                       ? "border-primary bg-primary/18 text-primary ring-1 ring-primary/40"
                       : "border-border bg-muted/35 text-muted-foreground hover:border-primary/35 hover:text-foreground",
@@ -285,11 +285,11 @@ export function QuickExpenseDrawer({
                 >
                   <Icon
                     className={cn(
-                      "h-4 w-4 shrink-0",
+                      "h-5 w-5 shrink-0",
                       active ? "text-primary" : "text-muted-foreground",
                     )}
                   />
-                  <span className="w-full truncate text-[0.7rem] font-semibold">
+                  <span className="w-full truncate text-xs font-semibold">
                     {shortLabel(cat)}
                   </span>
                 </button>
@@ -301,8 +301,8 @@ export function QuickExpenseDrawer({
         {/* 1-Tap Daily Quick-Picks when adding new expense */}
         {!isExisting && quickPicks.length > 0 && (
           <div className="no-scrollbar -mx-1 flex items-center gap-1.5 overflow-x-auto px-1">
-            <span className="inline-flex shrink-0 items-center gap-1 text-[0.66rem] font-semibold uppercase tracking-wider text-muted-foreground">
-              <Sparkles className="h-3 w-3 text-primary" />
+            <span className="inline-flex shrink-0 items-center gap-1 text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+              <Sparkles className="h-3.5 w-3.5 text-primary" />
               Quick
             </span>
             {quickPicks.map((qp) => (
@@ -321,7 +321,7 @@ export function QuickExpenseDrawer({
                   });
                 }}
                 className={cn(
-                  "shrink-0 rounded-full border px-2.5 py-1 text-[0.7rem] font-medium transition-colors active:scale-95",
+                  "min-h-[36px] shrink-0 rounded-full border px-3 text-xs font-medium transition-colors active:scale-95",
                   draft.description === qp.label
                     ? "border-primary bg-primary/18 text-primary"
                     : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
@@ -339,7 +339,7 @@ export function QuickExpenseDrawer({
           placeholder="Note or merchant (optional)"
           value={draft.description}
           onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-          className="field h-11 rounded-2xl text-sm"
+          className="field h-12 rounded-2xl text-base sm:text-sm"
         />
 
         {/* Aligned Full-Width Bottom Actions */}
@@ -348,16 +348,16 @@ export function QuickExpenseDrawer({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-11 items-center justify-center rounded-2xl border border-border bg-secondary text-sm font-semibold text-foreground transition-all active:scale-95"
+              className="inline-flex h-12 items-center justify-center rounded-2xl border border-border bg-secondary text-sm font-bold text-foreground transition-all active:scale-95"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="inline-flex h-11 items-center justify-center gap-1.5 rounded-2xl bg-primary text-sm font-semibold text-primary-foreground shadow-[0_8px_22px_-8px_var(--primary)] transition-all active:scale-95"
+              className="inline-flex h-12 items-center justify-center gap-1.5 rounded-2xl bg-primary text-sm font-bold text-primary-foreground shadow-[0_8px_22px_-8px_var(--primary)] transition-all active:scale-95"
             >
-              <Check className="h-4 w-4" />
-              Save
+              <Check className="h-4.5 w-4.5" />
+              Save Expense
             </button>
           </div>
           {onDelete && (
@@ -409,6 +409,69 @@ export function QuickIncomeDrawer({
     setConfirmDelete(false);
   }, [item]);
 
+  const itemId = item?.id ?? "";
+  const quickIncomePicks = useMemo(() => {
+    if (!itemId) return [];
+    const defaults = [
+      {
+        label: "Monthly Salary",
+        source: "Salary",
+        amount: 500,
+        currency: "USD" as Currency,
+      },
+      {
+        label: "Studio Draw",
+        source: "Studio Draw",
+        amount: 250,
+        currency: "USD" as Currency,
+      },
+      {
+        label: "Freelance Work",
+        source: "Freelance",
+        amount: 100,
+        currency: "USD" as Currency,
+      },
+      {
+        label: "Bonus",
+        source: "Bonus",
+        amount: 100,
+        currency: "USD" as Currency,
+      },
+    ];
+    const recent = (getDB().personalIncome ?? [])
+      .filter((i) => i.description.trim())
+      .slice(-24)
+      .reverse();
+    const seen = new Set<string>();
+    const picks: {
+      label: string;
+      source: string;
+      amount: number;
+      currency: Currency;
+    }[] = [];
+    for (const i of recent) {
+      const clean = i.description.trim().slice(0, 20);
+      const key = clean.toLowerCase();
+      if (!clean || seen.has(key)) continue;
+      seen.add(key);
+      picks.push({
+        label: clean,
+        source: i.source || "Salary",
+        amount: i.amount,
+        currency: i.currency,
+      });
+      if (picks.length >= 4) break;
+    }
+    for (const def of defaults) {
+      if (picks.length >= 4) break;
+      if (!seen.has(def.label.toLowerCase())) {
+        picks.push(def);
+        seen.add(def.label.toLowerCase());
+      }
+    }
+    return picks;
+  }, [itemId]);
+
   if (!item || !draft) return null;
 
   const isExisting = Boolean(onDelete);
@@ -445,7 +508,7 @@ export function QuickIncomeDrawer({
     >
       <form onSubmit={commit} className="flex flex-col gap-3.5">
         {/* Hero Amount + Currency */}
-        <div className="rounded-2xl border border-positive/35 bg-gradient-to-br from-positive/12 via-muted/45 to-muted/25 p-3.5">
+        <div className="rounded-2xl border border-positive/35 bg-gradient-to-br from-positive/12 via-muted/45 to-muted/25 p-4">
           <div className="flex items-center justify-between gap-2">
             <span className="label-mono">Income Amount</span>
             <div className="inline-flex rounded-full border border-border bg-background/60 p-0.5">
@@ -457,7 +520,7 @@ export function QuickIncomeDrawer({
                     setDraft({ ...draft, currency: cur as Currency })
                   }
                   className={cn(
-                    "font-num rounded-full px-3 py-1 text-[0.72rem] font-semibold transition-all duration-150 active:scale-95",
+                    "font-num min-h-[36px] rounded-full px-3.5 text-xs font-semibold transition-all duration-150 active:scale-95",
                     draft.currency === cur
                       ? "bg-positive text-primary-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground",
@@ -469,8 +532,8 @@ export function QuickIncomeDrawer({
             </div>
           </div>
 
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className="font-num text-2xl font-bold text-positive">
+          <div className="mt-2.5 flex items-baseline gap-2.5">
+            <span className="font-num text-3xl font-bold text-positive">
               {draft.currency === "KHR" ? "៛" : "$"}
             </span>
             <input
@@ -484,11 +547,11 @@ export function QuickIncomeDrawer({
                 setAmtText(raw);
                 setDraft({ ...draft, amount: Number(raw) || 0 });
               }}
-              className="font-num w-full bg-transparent text-3xl font-extrabold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/45"
+              className="font-num w-full bg-transparent text-4xl font-extrabold tracking-tight text-foreground outline-none placeholder:text-muted-foreground/45"
             />
           </div>
 
-          <div className="no-scrollbar mt-2.5 flex items-center gap-1.5 overflow-x-auto">
+          <div className="no-scrollbar mt-3 flex items-center gap-2 overflow-x-auto">
             {presets.map((p) => (
               <button
                 key={p}
@@ -497,7 +560,7 @@ export function QuickIncomeDrawer({
                   setAmtText(String(p));
                   setDraft({ ...draft, amount: p });
                 }}
-                className="font-num shrink-0 rounded-full border border-border/80 bg-background/55 px-2.5 py-1 text-[0.7rem] font-semibold text-muted-foreground transition-all hover:border-positive/50 hover:text-foreground active:scale-95"
+                className="font-num min-h-[38px] shrink-0 rounded-full border border-border/80 bg-background/60 px-3.5 text-xs font-semibold text-muted-foreground transition-all hover:border-positive/50 hover:text-foreground active:scale-95"
               >
                 {draft.currency === "KHR"
                   ? `${Math.round(p / 1000)}k`
@@ -519,34 +582,34 @@ export function QuickIncomeDrawer({
                   type="button"
                   onClick={() => setDraft({ ...draft, accountMethod: m })}
                   className={cn(
-                    "inline-flex min-h-[38px] items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-semibold transition-all duration-150 active:scale-95",
+                    "inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-xl px-3 text-xs font-semibold transition-all duration-150 active:scale-95",
                     active
                       ? "bg-positive text-primary-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  <Icon className="h-4 w-4 shrink-0" />
                   <span>{m}</span>
                 </button>
               );
             })}
           </div>
 
-          <label className="relative inline-flex min-h-[46px] cursor-pointer items-center gap-1.5 rounded-2xl border border-border bg-muted/50 px-3 text-xs font-medium text-foreground">
-            <Calendar className="h-3.5 w-3.5 shrink-0 text-positive" />
+          <label className="relative inline-flex min-h-[52px] cursor-pointer items-center gap-1.5 rounded-2xl border border-border bg-muted/50 px-3.5 text-xs font-medium text-foreground">
+            <Calendar className="h-4 w-4 shrink-0 text-positive" />
             <input
               type="date"
               value={draft.date}
               onChange={(e) => setDraft({ ...draft, date: e.target.value })}
-              className="font-num w-[7.2rem] bg-transparent text-xs outline-none"
+              className="font-num w-[7.8rem] bg-transparent text-sm outline-none sm:text-xs"
             />
           </label>
         </div>
 
-        {/* Compact Source Grid */}
+        {/* Enlarged Source Grid */}
         <div>
-          <span className="label-mono mb-1.5 block">Source</span>
-          <div className="grid grid-cols-3 gap-1.5">
+          <span className="label-mono mb-2 block">Source</span>
+          <div className="grid grid-cols-3 gap-2">
             {PERSONAL_INCOME_SOURCES.map((src) => {
               const active = draft.source === src;
               const Icon = incomeSourceIcon(src);
@@ -556,7 +619,7 @@ export function QuickIncomeDrawer({
                   type="button"
                   onClick={() => setDraft({ ...draft, source: src })}
                   className={cn(
-                    "flex min-h-[58px] flex-col items-center justify-center gap-1 rounded-2xl border px-2 py-2 text-center transition-all duration-150 active:scale-95",
+                    "flex min-h-[66px] flex-col items-center justify-center gap-1.5 rounded-2xl border px-2.5 py-2.5 text-center transition-all duration-150 active:scale-95",
                     active
                       ? "border-positive bg-positive/18 text-positive ring-1 ring-positive/40"
                       : "border-border bg-muted/35 text-muted-foreground hover:border-positive/35 hover:text-foreground",
@@ -564,11 +627,11 @@ export function QuickIncomeDrawer({
                 >
                   <Icon
                     className={cn(
-                      "h-4 w-4 shrink-0",
+                      "h-5 w-5 shrink-0",
                       active ? "text-positive" : "text-muted-foreground",
                     )}
                   />
-                  <span className="w-full truncate text-[0.7rem] font-semibold">
+                  <span className="w-full truncate text-xs font-semibold">
                     {shortLabel(src)}
                   </span>
                 </button>
@@ -577,12 +640,47 @@ export function QuickIncomeDrawer({
           </div>
         </div>
 
+        {/* 1-Tap Quick Income Picks when adding new income */}
+        {!isExisting && quickIncomePicks.length > 0 && (
+          <div className="no-scrollbar -mx-1 flex items-center gap-1.5 overflow-x-auto px-1">
+            <span className="inline-flex shrink-0 items-center gap-1 text-[0.68rem] font-semibold uppercase tracking-wider text-muted-foreground">
+              <Sparkles className="h-3.5 w-3.5 text-positive" />
+              Quick
+            </span>
+            {quickIncomePicks.map((qp) => (
+              <button
+                key={qp.label}
+                type="button"
+                onClick={() => {
+                  const nextAmt = amtText ? draft.amount : qp.amount;
+                  if (!amtText) setAmtText(String(qp.amount));
+                  setDraft({
+                    ...draft,
+                    source: qp.source,
+                    description: qp.label,
+                    currency: amtText ? draft.currency : qp.currency,
+                    amount: nextAmt,
+                  });
+                }}
+                className={cn(
+                  "min-h-[36px] shrink-0 rounded-full border px-3 text-xs font-medium transition-colors active:scale-95",
+                  draft.description === qp.label
+                    ? "border-positive bg-positive/18 text-positive"
+                    : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {qp.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         <input
           type="text"
           placeholder="Note or payer (optional)"
           value={draft.description}
           onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-          className="field h-11 rounded-2xl text-sm"
+          className="field h-12 rounded-2xl text-base sm:text-sm"
         />
 
         {/* Aligned Full-Width Bottom Actions */}
@@ -591,16 +689,16 @@ export function QuickIncomeDrawer({
             <button
               type="button"
               onClick={onClose}
-              className="inline-flex h-11 items-center justify-center rounded-2xl border border-border bg-secondary text-sm font-semibold text-foreground transition-all active:scale-95"
+              className="inline-flex h-12 items-center justify-center rounded-2xl border border-border bg-secondary text-sm font-bold text-foreground transition-all active:scale-95"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="inline-flex h-11 items-center justify-center gap-1.5 rounded-2xl bg-positive text-sm font-semibold text-primary-foreground shadow-[0_8px_22px_-8px_var(--positive)] transition-all active:scale-95"
+              className="inline-flex h-12 items-center justify-center gap-1.5 rounded-2xl bg-positive text-sm font-bold text-primary-foreground shadow-[0_8px_22px_-8px_var(--positive)] transition-all active:scale-95"
             >
-              <Check className="h-4 w-4" />
-              Save
+              <Check className="h-4.5 w-4.5" />
+              Save Income
             </button>
           </div>
           {onDelete && (

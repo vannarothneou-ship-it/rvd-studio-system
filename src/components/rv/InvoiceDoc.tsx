@@ -67,7 +67,6 @@ export function InvoiceDoc({ inv, db }: { inv: Invoice; db: DB }) {
             )}
             {!c?.contact && c?.position && <div>{c.position}</div>}
             {c?.address && <div>{c.address}</div>}
-            {c?.taxId && <div>Tax ID: {c.taxId}</div>}
             {c?.email && <div>E: {c.email}</div>}
             {c?.telegram && <div>TG: {c.telegram}</div>}
             {c?.phone && <div>T: {c.phone}</div>}

@@ -63,7 +63,6 @@ export function buildAgreementClauses(inv: Invoice, db: DB): Clause[] {
       ? `Representative: ${c.contact}${c.position ? ` (${c.position})` : ""}`
       : "",
     c?.address ? `Address: ${c.address}` : "",
-    c?.taxId ? `Tax / Reg ID: ${c.taxId}` : "",
     c?.email ? `Email: ${c.email}` : "",
     c?.telegram ? `Telegram: ${c.telegram}` : "",
     c?.phone ? `Phone: ${c.phone}` : "",
@@ -126,7 +125,7 @@ export function buildAgreementClauses(inv: Invoice, db: DB): Clause[] {
     },
     {
       title: "5. Fees, Payment Schedule & Invoicing",
-      text: `Total Agreed Fee: ${total} (Subtotal: ${subtotal}${inv.discount ? `, Discount: ${inv.discount}%` : ""}).\n\nPayment Terms: ${s.paymentTerms.join(" ")}${inv.showSchedule ? ` Based on the 50/50 schedule, an initial deposit of ${deposit} is due prior to design commencement and the remaining balance of ${deposit} is due upon final delivery prior to release of final production files.` : ""}\n\nPayment Instructions: Payments are payable to ${s.abaName || s.businessName}${s.abaNumber ? `, ABA Account ${s.abaNumber}` : ""} via bank transfer, KHQR, or other agreed studio payment channel referenced on the accompanying Invoice. Applicable government taxes, bank transfer fees, or approved reimbursable expenses are borne by the Client unless stated otherwise.`,
+      text: `Total Agreed Fee: ${total} (Subtotal: ${subtotal}${inv.discount ? `, Discount: ${inv.discount}%` : ""}).\n\nPayment Terms: ${s.paymentTerms.join(" ")}${inv.showSchedule ? ` Based on the 50/50 schedule, an initial deposit of ${deposit} is due prior to design commencement and the remaining balance of ${deposit} is due upon final delivery prior to release of final production files.` : ""}\n\nPayment Instructions: Payments are payable to ${s.abaName || s.businessName}${s.abaNumber ? `, ABA Account ${s.abaNumber}` : ""} via bank transfer, KHQR, or other agreed studio payment channel referenced on the accompanying Invoice. Bank transfer fees or approved reimbursable expenses are borne by the Client unless stated otherwise.`,
     },
     {
       title: "6. Project Timeline, Client Responsibilities & Delays",

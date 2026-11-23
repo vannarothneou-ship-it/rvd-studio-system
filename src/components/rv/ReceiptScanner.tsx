@@ -23,7 +23,6 @@ import {
   Minimize2,
   PenTool,
   Pencil,
-  Plus,
   RotateCcw,
   RotateCw,
   ScanLine,
@@ -37,7 +36,10 @@ import {
   incomeSourceIcon,
   paymentCardIcon,
 } from "@/components/rv/FinanceVisuals";
-import { QuickExpenseDrawer } from "@/components/rv/QuickTxDrawer";
+import {
+  QuickExpenseDrawer,
+  QuickIncomeDrawer,
+} from "@/components/rv/QuickTxDrawer";
 import {
   CARD_METHODS,
   PERSONAL_CATEGORIES,
@@ -206,6 +208,9 @@ export function ReceiptScannerDrawer({
   const learnedRules = useDB((d) => d.learnedReceiptRules ?? []);
   const [autoRecord, setAutoRecord] = useState(true);
   const [scanMode, setScanMode] = useState<ReceiptScanMode>("auto");
+  const [scanDirection, setScanDirection] = useState<
+    "auto" | "expense" | "income"
+  >("auto");
   const [rotationDeg, setRotationDeg] = useState(0);
   const [dragging, setDragging] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -227,6 +232,8 @@ export function ReceiptScannerDrawer({
     confidencePct: number;
   } | null>(null);
   const [manualDraft, setManualDraft] = useState<Expense | null>(null);
+  const [manualIncomeDraft, setManualIncomeDraft] =
+    useState<PersonalIncome | null>(null);
 
   const cameraRef = useRef<HTMLInputElement>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
@@ -252,7 +259,7 @@ export function ReceiptScannerDrawer({
     onClose();
   };
 
-  const openManualAdd = () => {
+  const openManualExpense = () => {
     resetScan();
     onClose();
     setManualDraft({
@@ -266,6 +273,20 @@ export function ReceiptScannerDrawer({
       currency: "USD",
       receipt: "",
       account: "Personal",
+    });
+  };
+
+  const openManualIncome = () => {
+    resetScan();
+    onClose();
+    setManualIncomeDraft({
+      id: uid(),
+      date: today(),
+      source: PERSONAL_INCOME_SOURCES[0] ?? "Salary",
+      accountMethod: "Debit",
+      description: "",
+      amount: 0,
+      currency: "USD",
     });
   };
 
@@ -341,9 +362,22 @@ export function ReceiptScannerDrawer({
           confidencePct: ocrConfidence,
         });
 
+        const resolvedType =
+          scanDirection === "auto" ? result.txType : scanDirection;
+        const resolvedCategory =
+          resolvedType === "income"
+            ? PERSONAL_INCOME_SOURCES.includes(
+                result.category as (typeof PERSONAL_INCOME_SOURCES)[number],
+              )
+              ? result.category
+              : (PERSONAL_INCOME_SOURCES[0] ?? "Salary")
+            : PERSONAL_CATEGORIES.includes(result.category)
+              ? result.category
+              : (PERSONAL_CATEGORIES[0] ?? "Food");
+
         const nextRecord: RecordedRecord = {
           id: prevSavedId ?? uid(),
-          txType: result.txType,
+          txType: resolvedType,
           account: "Personal",
           amount: result.amount,
           currency: result.currency,
@@ -351,7 +385,7 @@ export function ReceiptScannerDrawer({
           merchantOrPayer: result.merchantOrPayer,
           description: result.description,
           method: result.method,
-          category: result.category,
+          category: resolvedCategory,
           reference: result.reference,
           confidence: result.confidence,
           notes: result.notes,
@@ -395,7 +429,7 @@ export function ReceiptScannerDrawer({
         setScanning(false);
       }
     },
-    [autoRecord, record, rotationDeg, scanMode],
+    [autoRecord, record, rotationDeg, scanDirection, scanMode],
   );
 
   // Pre-warm on-device AI worker quietly after drawer animation finishes
@@ -596,46 +630,51 @@ export function ReceiptScannerDrawer({
       <SlideDrawer
         open={open}
         onClose={handleClose}
-        title="Scan Receipt"
-        headerAction={
-          <button
-            type="button"
-            onClick={openManualAdd}
-            className="inline-flex h-9 items-center gap-1 rounded-full border border-border bg-secondary px-3 text-xs font-semibold text-foreground transition-all hover:border-primary/45 hover:bg-accent active:scale-95"
-          >
-            <Plus className="h-3.5 w-3.5 text-primary" />
-            <span>Manual</span>
-          </button>
-        }
+        title="Scan or Quick Log"
+        subtitle="Personal Money · AI OCR & Manual"
         widthClass="max-w-lg"
       >
-        <div className="space-y-3">
-          {/* Compact Single-Row Controls */}
-          <div className="flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => setAutoRecord((a) => !a)}
-              aria-pressed={autoRecord}
-              className={cn(
-                "inline-flex min-h-[34px] items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-all active:scale-95",
-                autoRecord
-                  ? "border-positive/45 bg-positive/15 text-positive"
-                  : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Zap className="h-3.5 w-3.5" />
-              <span>{autoRecord ? "Auto-save" : "Review first"}</span>
-            </button>
+        <div className="space-y-3.5">
+          {/* Controls Bar: Auto-save + OCR Focus + Scan As Direction */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAutoRecord((a) => !a)}
+                aria-pressed={autoRecord}
+                className={cn(
+                  "inline-flex min-h-[40px] items-center gap-1.5 rounded-full border px-3.5 text-xs font-semibold transition-all active:scale-95",
+                  autoRecord
+                    ? "border-positive/45 bg-positive/15 text-positive"
+                    : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Zap className="h-3.5 w-3.5" />
+                <span>{autoRecord ? "Auto-save" : "Review first"}</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={cycleScanMode}
-              title="Tap to cycle OCR focus: Auto, Khmer, Script"
-              className="inline-flex min-h-[34px] items-center gap-1.5 rounded-full border border-border bg-muted/45 px-3 text-xs font-medium text-foreground transition-all hover:border-primary/45 active:scale-95"
-            >
-              <ActiveModeIcon className="h-3.5 w-3.5 text-primary" />
-              <span>{activeModeMeta.label}</span>
-            </button>
+              <button
+                type="button"
+                onClick={cycleScanMode}
+                title="Tap to cycle OCR focus: Auto, Khmer, Script"
+                className="inline-flex min-h-[40px] items-center gap-1.5 rounded-full border border-border bg-muted/45 px-3.5 text-xs font-medium text-foreground transition-all hover:border-primary/45 active:scale-95"
+              >
+                <ActiveModeIcon className="h-3.5 w-3.5 text-primary" />
+                <span>{activeModeMeta.label}</span>
+              </button>
+            </div>
+
+            <SlidingTabs
+              size="xs"
+              layoutGroup="scan-dir-bias"
+              value={scanDirection}
+              onChange={setScanDirection}
+              options={[
+                { id: "auto", label: "Auto" },
+                { id: "expense", label: "Expense" },
+                { id: "income", label: "Income" },
+              ]}
+            />
           </div>
 
           {/* Hidden File Inputs */}
@@ -669,124 +708,168 @@ export function ReceiptScannerDrawer({
             }}
           />
 
-          {/* Clean Capture Card (Idle) */}
+          {/* Clean Capture Card + Prominent Manual Entry (Idle) */}
           {!scanning && !record && (
-            <div
-              onDragOver={(e) => {
-                e.preventDefault();
-                setDragging(true);
-              }}
-              onDragLeave={() => setDragging(false)}
-              onDrop={(e) => {
-                e.preventDefault();
-                setDragging(false);
-                const f = e.dataTransfer.files?.[0];
-                if (f) {
-                  setRotationDeg(0);
-                  void scanFile(f, { rotation: 0 });
-                }
-              }}
-              className={cn(
-                "glass rounded-2xl border border-dashed p-5 text-center transition-colors",
-                dragging
-                  ? "border-primary bg-primary/15"
-                  : "border-primary/40 bg-gradient-to-b from-primary/10 via-muted/25 to-transparent",
-              )}
-            >
-              <div className="mx-auto mb-2.5 grid h-12 w-12 place-items-center rounded-xl border border-primary/35 bg-primary/15 text-primary">
-                <ScanLine className="h-6 w-6" />
-              </div>
-              <h3 className="font-display text-base font-bold text-foreground">
-                Snap or upload receipt
-              </h3>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Supports Khmer, English &amp; handwriting
-              </p>
+            <>
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragging(true);
+                }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragging(false);
+                  const f = e.dataTransfer.files?.[0];
+                  if (f) {
+                    setRotationDeg(0);
+                    void scanFile(f, { rotation: 0 });
+                  }
+                }}
+                className={cn(
+                  "glass rounded-2xl border border-dashed p-5 text-center transition-colors",
+                  dragging
+                    ? "border-primary bg-primary/15"
+                    : "border-primary/40 bg-gradient-to-b from-primary/10 via-muted/25 to-transparent",
+                )}
+              >
+                <div className="mx-auto mb-2.5 grid h-12 w-12 place-items-center rounded-xl border border-primary/35 bg-primary/15 text-primary">
+                  <ScanLine className="h-6 w-6" />
+                </div>
+                <h3 className="font-display text-base font-bold text-foreground">
+                  Snap or upload slip
+                </h3>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Reads receipts, bank transfers &amp; income slips (KH + EN)
+                </p>
 
-              <div className="mt-4 grid grid-cols-2 gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => cameraRef.current?.click()}
-                  className="inline-flex min-h-[52px] items-center justify-center gap-2 rounded-2xl bg-primary px-3 py-3 text-sm font-bold text-primary-foreground shadow-[0_8px_24px_-8px_var(--primary)] transition-transform active:scale-95"
-                >
-                  <Camera className="h-4.5 w-4.5 shrink-0" />
-                  <span>Camera</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => uploadRef.current?.click()}
-                  className="inline-flex min-h-[52px] items-center justify-center gap-2 rounded-2xl border border-border bg-secondary px-3 py-3 text-sm font-bold text-foreground transition-all hover:bg-accent active:scale-95"
-                >
-                  <ImagePlus className="h-4.5 w-4.5 shrink-0 text-primary" />
-                  <span>Photo</span>
-                </button>
-              </div>
-
-              <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => void handlePasteButton()}
-                  className="inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                >
-                  <ClipboardPaste className="h-3.5 w-3.5 text-primary" />
-                  <span>Paste screenshot</span>
-                </button>
-                {learnedRules.length > 0 && (
+                <div className="mt-4 grid grid-cols-2 gap-2.5">
                   <button
                     type="button"
-                    onClick={() => setShowRules((v) => !v)}
-                    className="font-num inline-flex min-h-[36px] items-center justify-center gap-1.5 rounded-full px-3 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    onClick={() => cameraRef.current?.click()}
+                    className="inline-flex min-h-[54px] items-center justify-center gap-2 rounded-2xl bg-primary px-3 py-3 text-sm font-bold text-primary-foreground shadow-[0_8px_24px_-8px_var(--primary)] transition-transform active:scale-95"
                   >
-                    <Sparkles className="h-3.5 w-3.5 text-primary" />
-                    <span>Learned rules · {learnedRules.length}</span>
-                    <ChevronDown
-                      className={cn(
-                        "h-3 w-3 transition-transform",
-                        showRules && "rotate-180",
-                      )}
-                    />
+                    <Camera className="h-5 w-5 shrink-0" />
+                    <span>Camera</span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => uploadRef.current?.click()}
+                    className="inline-flex min-h-[54px] items-center justify-center gap-2 rounded-2xl border border-border bg-secondary px-3 py-3 text-sm font-bold text-foreground transition-all hover:bg-accent active:scale-95"
+                  >
+                    <ImagePlus className="h-5 w-5 shrink-0 text-primary" />
+                    <span>Photo</span>
+                  </button>
+                </div>
+
+                <div className="mt-3 flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void handlePasteButton()}
+                    className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  >
+                    <ClipboardPaste className="h-4 w-4 text-primary" />
+                    <span>Paste screenshot</span>
+                  </button>
+                  {learnedRules.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowRules((v) => !v)}
+                      className="font-num inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    >
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      <span>Learned rules · {learnedRules.length}</span>
+                      <ChevronDown
+                        className={cn(
+                          "h-3.5 w-3.5 transition-transform",
+                          showRules && "rotate-180",
+                        )}
+                      />
+                    </button>
+                  )}
+                </div>
+
+                {showRules && learnedRules.length > 0 && (
+                  <div className="mt-3 max-h-44 overflow-y-auto border-t border-border/60 pt-2.5 text-left">
+                    <div className="divide-y divide-border/50">
+                      {learnedRules.map((rule) => (
+                        <div
+                          key={rule.id}
+                          className="flex items-center justify-between gap-2 py-1.5 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-foreground">
+                              {rule.displayPattern}
+                            </p>
+                            <p className="font-num truncate text-[0.68rem] text-muted-foreground">
+                              {rule.txType === "income" ? "In" : "Out"} ·{" "}
+                              {rule.category} · {rule.method} · {rule.hits}×
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setDB((d) => ({
+                                ...d,
+                                learnedReceiptRules: (
+                                  d.learnedReceiptRules ?? []
+                                ).filter((r) => r.id !== rule.id),
+                              }))
+                            }
+                            aria-label={`Delete rule ${rule.displayPattern}`}
+                            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
 
-              {showRules && learnedRules.length > 0 && (
-                <div className="mt-3 max-h-44 overflow-y-auto border-t border-border/60 pt-2.5 text-left">
-                  <div className="divide-y divide-border/50">
-                    {learnedRules.map((rule) => (
-                      <div
-                        key={rule.id}
-                        className="flex items-center justify-between gap-2 py-1.5 text-xs"
-                      >
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-foreground">
-                            {rule.displayPattern}
-                          </p>
-                          <p className="font-num truncate text-[0.68rem] text-muted-foreground">
-                            {rule.txType === "income" ? "In" : "Out"} ·{" "}
-                            {rule.category} · {rule.method} · {rule.hits}×
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setDB((d) => ({
-                              ...d,
-                              learnedReceiptRules: (
-                                d.learnedReceiptRules ?? []
-                              ).filter((r) => r.id !== rule.id),
-                            }))
-                          }
-                          aria-label={`Delete rule ${rule.displayPattern}`}
-                          className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+              {/* Large Thumb-Friendly Manual Entry Triggers */}
+              <div className="space-y-2">
+                <p className="label-mono px-1">Or log manually</p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={openManualExpense}
+                    className="flex min-h-[68px] items-center gap-3 rounded-2xl border border-border bg-secondary/75 p-3 text-left transition-all hover:border-destructive/45 hover:bg-destructive/8 active:scale-[0.97]"
+                  >
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-destructive/15 text-destructive">
+                      <ArrowUpRight className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-foreground">
+                        Manual Expense
+                      </p>
+                      <p className="truncate text-[0.7rem] text-muted-foreground">
+                        Spending &amp; bills
+                      </p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={openManualIncome}
+                    className="flex min-h-[68px] items-center gap-3 rounded-2xl border border-border bg-secondary/75 p-3 text-left transition-all hover:border-positive/45 hover:bg-positive/10 active:scale-[0.97]"
+                  >
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-positive/15 text-positive">
+                      <ArrowDownLeft className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-foreground">
+                        Manual Income
+                      </p>
+                      <p className="truncate text-[0.7rem] text-muted-foreground">
+                        Salary, draw &amp; pay
+                      </p>
+                    </div>
+                  </button>
                 </div>
-              )}
-            </div>
+              </div>
+            </>
           )}
 
           {/* Scanning Progress */}
@@ -829,20 +912,25 @@ export function ReceiptScannerDrawer({
             <div className="space-y-3 rounded-2xl border border-destructive/40 bg-destructive/10 p-4 text-xs text-destructive">
               <p className="font-semibold">Could not read image</p>
               <p className="leading-relaxed text-foreground/90">{errorMsg}</p>
+              {lastFile && (
+                <Btn
+                  type="button"
+                  variant="gold"
+                  onClick={() => void scanFile(lastFile)}
+                  className="w-full"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  Retry Scan
+                </Btn>
+              )}
               <div className="grid grid-cols-2 gap-2">
-                {lastFile && (
-                  <Btn
-                    type="button"
-                    variant="gold"
-                    onClick={() => void scanFile(lastFile)}
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                    Retry
-                  </Btn>
-                )}
-                <Btn type="button" onClick={openManualAdd}>
-                  <Plus className="h-3.5 w-3.5" />
-                  Manual
+                <Btn type="button" onClick={openManualExpense}>
+                  <ArrowUpRight className="h-3.5 w-3.5 text-destructive" />
+                  Manual Expense
+                </Btn>
+                <Btn type="button" onClick={openManualIncome}>
+                  <ArrowDownLeft className="h-3.5 w-3.5 text-positive" />
+                  Manual Income
                 </Btn>
               </div>
             </div>
@@ -1025,7 +1113,7 @@ export function ReceiptScannerDrawer({
                         { id: "income", label: "In" },
                       ]}
                     />
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
                       {(record.txType === "income"
                         ? PERSONAL_INCOME_METHODS
                         : CARD_METHODS
@@ -1037,7 +1125,7 @@ export function ReceiptScannerDrawer({
                             type="button"
                             onClick={() => updateRecord({ method: m })}
                             className={cn(
-                              "min-h-[30px] rounded-full border px-2.5 text-[0.7rem] font-semibold transition-colors",
+                              "min-h-[36px] rounded-full border px-3 text-xs font-semibold transition-colors",
                               active
                                 ? "border-primary bg-primary text-primary-foreground"
                                 : "border-border bg-card/60 text-muted-foreground hover:text-foreground",
@@ -1052,12 +1140,12 @@ export function ReceiptScannerDrawer({
                   <button
                     type="button"
                     onClick={() => setShowRawText((v) => !v)}
-                    className="inline-flex items-center gap-1 text-[0.7rem] font-medium text-primary hover:underline"
+                    className="inline-flex min-h-[36px] items-center gap-1 px-2 text-xs font-medium text-primary hover:underline"
                   >
                     <span>OCR</span>
                     <ChevronDown
                       className={cn(
-                        "h-3 w-3 transition-transform",
+                        "h-3.5 w-3.5 transition-transform",
                         showRawText && "rotate-180",
                       )}
                     />
@@ -1081,13 +1169,13 @@ export function ReceiptScannerDrawer({
                         type="button"
                         onClick={() => updateRecord({ category: cat })}
                         className={cn(
-                          "inline-flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold transition-colors",
+                          "inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
                           active
                             ? "border-primary bg-primary/20 text-primary"
                             : "border-border/80 bg-card/45 text-muted-foreground hover:text-foreground",
                         )}
                       >
-                        <Icon className="h-3 w-3 shrink-0" />
+                        <Icon className="h-3.5 w-3.5 shrink-0" />
                         <span>{cat}</span>
                       </button>
                     );
@@ -1246,11 +1334,44 @@ export function ReceiptScannerDrawer({
         item={manualDraft}
         onClose={() => setManualDraft(null)}
         onSave={(v) => {
+          const savedItem: Expense = { ...v, account: "Personal" };
           setDB((d) => ({
             ...d,
-            expenses: [...d.expenses, { ...v, account: "Personal" }],
+            expenses: [...d.expenses, savedItem],
           }));
-          toast.success("Expense saved.");
+          toast.success("Expense saved.", {
+            action: {
+              label: "Undo",
+              onClick: () =>
+                setDB((d) => ({
+                  ...d,
+                  expenses: d.expenses.filter((x) => x.id !== savedItem.id),
+                })),
+            },
+          });
+        }}
+      />
+
+      <QuickIncomeDrawer
+        item={manualIncomeDraft}
+        onClose={() => setManualIncomeDraft(null)}
+        onSave={(v) => {
+          setDB((d) => ({
+            ...d,
+            personalIncome: [...(d.personalIncome ?? []), v],
+          }));
+          toast.success("Income saved.", {
+            action: {
+              label: "Undo",
+              onClick: () =>
+                setDB((d) => ({
+                  ...d,
+                  personalIncome: (d.personalIncome ?? []).filter(
+                    (x) => x.id !== v.id,
+                  ),
+                })),
+            },
+          });
         }}
       />
     </>

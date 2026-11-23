@@ -2687,7 +2687,7 @@ export function DashboardCalendarCard({
                       ? "e.g. Prius 2012 Engine Oil & Filter"
                       : reminderDraft.category === "birthday"
                         ? "e.g. Kid's Birthday"
-                        : "e.g. Road Tax / Insurance Renewal"
+                        : "e.g. Car Registration / Insurance Renewal"
                   }
                   value={reminderDraft.title}
                   onChange={(e) =>

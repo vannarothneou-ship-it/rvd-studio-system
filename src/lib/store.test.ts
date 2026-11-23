@@ -16,6 +16,7 @@ import {
   categoryLimit,
   clientDeleteBlocker,
   categoryTotals,
+  collectLedgerMonths,
   combinedCashFlowSeries,
   compactMoney,
   convertDocument,
@@ -25,9 +26,12 @@ import {
   expenseAccount,
   expenseCategoriesFor,
   expenseTotal,
+  formatMonthLong,
+  formatMonthShort,
   getDB,
   getProjectHealth,
   goalAccount,
+  groupLedgerRowsByMonth,
   invoiceStatus,
   invoiceTotals,
   invoiceView,
@@ -901,5 +905,59 @@ describe("project health indicators and 6-stage work pipeline", () => {
     expect(nextWorkStage({ status: "Approved", conceptOnly: true })).toBe(
       "Completed",
     );
+  });
+});
+
+describe("monthly ledger filtering, grouping, and responsive bento mdSpan", () => {
+  it("collects unique YYYY-MM months newest-first and formats month labels", () => {
+    const months = collectLedgerMonths(
+      ["2026-10-03", "2026-11-20", "2026-10-28", "invalid", "2025-12-01"],
+      "2026-11",
+    );
+    expect(months).toEqual(["2026-11", "2026-10", "2025-12"]);
+    expect(formatMonthShort("2026-10")).toBe("Oct 2026");
+    expect(formatMonthLong("2026-10")).toBe("October 2026");
+  });
+
+  it("groups combined and separate income/expense entries by month with net summaries", () => {
+    const rows = [
+      { id: "1", date: "2026-10-25", inUsd: 1200, outUsd: 0 },
+      { id: "2", date: "2026-10-12", inUsd: 0, outUsd: 350 },
+      { id: "3", date: "2026-11-05", inUsd: 500, outUsd: 0 },
+      { id: "4", date: "2026-11-02", inUsd: 0, outUsd: 700 },
+    ];
+    const groups = groupLedgerRowsByMonth(
+      rows,
+      (r) => r.inUsd,
+      (r) => r.outUsd,
+    );
+    expect(groups).toHaveLength(2);
+    expect(groups[0]!.month).toBe("2026-11");
+    expect(groups[0]!.incomeUSD).toBe(500);
+    expect(groups[0]!.expenseUSD).toBe(700);
+    expect(groups[0]!.netUSD).toBe(-200);
+
+    expect(groups[1]!.month).toBe("2026-10");
+    expect(groups[1]!.incomeUSD).toBe(1200);
+    expect(groups[1]!.expenseUSD).toBe(350);
+    expect(groups[1]!.netUSD).toBe(850);
+  });
+
+  it("promotes lone half-width cards to mdSpan 2 to prevent tablet grid orphans", () => {
+    const packed = packBentoItems(
+      [
+        { id: "fullTop", span: 12 },
+        { id: "pairA", span: 6 },
+        { id: "pairB", span: 6 },
+        { id: "solo", span: 6 },
+      ],
+      false,
+    );
+    expect(packed.map((p) => [p.config.id, p.mdSpan])).toEqual([
+      ["fullTop", 2],
+      ["pairA", 1],
+      ["pairB", 1],
+      ["solo", 2],
+    ]);
   });
 });

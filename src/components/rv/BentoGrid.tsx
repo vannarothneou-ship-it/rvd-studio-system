@@ -62,6 +62,7 @@ export interface CustomDashboardTab {
 export interface PackedBentoEntry {
   config: LayoutItemConfig;
   effectiveSpan: number;
+  mdSpan: 1 | 2;
 }
 
 const LAYOUT_STORAGE_KEY = "rv-bento-layouts-v1";
@@ -125,12 +126,22 @@ export function packBentoItems(
     const span = Math.max(4, Math.min(12, item.span));
     const targetRow = rows.find((r) => r.used + span <= 12);
     if (targetRow) {
-      targetRow.entries.push({ config: item, effectiveSpan: span });
+      targetRow.entries.push({
+        config: item,
+        effectiveSpan: span,
+        mdSpan: span >= 8 ? 2 : 1,
+      });
       targetRow.used += span;
     } else {
       rows.push({
         used: span,
-        entries: [{ config: item, effectiveSpan: span }],
+        entries: [
+          {
+            config: item,
+            effectiveSpan: span,
+            mdSpan: span >= 8 ? 2 : 1,
+          },
+        ],
       });
     }
   }
@@ -141,6 +152,7 @@ export function packBentoItems(
       if (gap <= 0 || row.entries.length === 0) continue;
       if (row.entries.length === 1) {
         row.entries[0]!.effectiveSpan = 12;
+        row.entries[0]!.mdSpan = 2;
         row.used = 12;
         continue;
       }
@@ -156,7 +168,24 @@ export function packBentoItems(
     }
   }
 
-  return rows.flatMap((r) => r.entries);
+  const packed = rows.flatMap((r) => r.entries);
+  let mdCol = 0;
+  for (let i = 0; i < packed.length; i++) {
+    const entry = packed[i]!;
+    const next = packed[i + 1];
+    if (entry.effectiveSpan >= 8) {
+      entry.mdSpan = 2;
+      mdCol = 0;
+    } else if (mdCol === 0 && (!next || next.effectiveSpan >= 8)) {
+      entry.mdSpan = 2;
+      mdCol = 0;
+    } else {
+      entry.mdSpan = 1;
+      mdCol = mdCol === 0 ? 1 : 0;
+    }
+  }
+
+  return packed;
 }
 
 function readLayouts(): Record<string, LayoutItemConfig[]> {
@@ -706,6 +735,7 @@ export function EditableBentoGrid({
                 key={entry.config.id}
                 config={entry.config}
                 effectiveSpan={entry.effectiveSpan}
+                mdSpan={entry.mdSpan}
                 title={def.title}
                 editing={editing}
                 isPreviewSlot={isPreviewSlot}
@@ -769,6 +799,7 @@ function spanLabel(span: number): string {
 function BentoSlot({
   config,
   effectiveSpan,
+  mdSpan,
   title,
   editing,
   isPreviewSlot,
@@ -784,6 +815,7 @@ function BentoSlot({
 }: {
   config: LayoutItemConfig;
   effectiveSpan: number;
+  mdSpan: 1 | 2;
   title: string;
   editing: boolean;
   isPreviewSlot: boolean;
@@ -862,10 +894,9 @@ function BentoSlot({
       {...(editing ? listeners : {})}
       {...(editing ? attributes : {})}
       className={cn(
-        "group/bento col-span-1 flex h-full min-w-0 flex-col",
-        effectiveSpan >= 8 && "md:col-span-2",
+        "group/bento col-span-1 flex h-full min-w-0 flex-col transition-[transform,opacity] duration-200",
+        mdSpan === 2 && "md:col-span-2",
         SPAN_CLASS[effectiveSpan] ?? SPAN_CLASS[config.span],
-        editing && "transition-all duration-200",
         editing &&
           !isPreviewSlot &&
           "relative cursor-grab select-none touch-none rounded-3xl border border-dashed border-primary/45 p-1.5 active:cursor-grabbing",

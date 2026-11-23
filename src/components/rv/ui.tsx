@@ -160,7 +160,7 @@ export function SlidingTabs<T extends string>({
             aria-label={opt.label}
             title={hideLabel ? undefined : opt.label}
             className={cn(
-              "relative inline-flex min-h-[34px] shrink-0 items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors duration-150 active:scale-[0.97] sm:min-h-0",
+              "relative inline-flex min-h-[36px] shrink-0 items-center justify-center whitespace-nowrap rounded-md font-medium transition-colors duration-150 active:scale-[0.97] sm:min-h-0",
               stretch && "flex-1",
               hideLabel
                 ? size === "xs"
@@ -179,7 +179,7 @@ export function SlidingTabs<T extends string>({
             {active && (
               <motion.span
                 layoutId={`rv-tab-pill-${groupId}`}
-                transition={{ type: "spring", stiffness: 520, damping: 38 }}
+                transition={{ type: "spring", stiffness: 500, damping: 36 }}
                 aria-hidden="true"
                 className={cn(
                   "absolute inset-0 rounded-md",

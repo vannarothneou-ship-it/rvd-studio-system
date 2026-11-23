@@ -132,7 +132,6 @@ export interface Client {
   position?: string;
   address?: string;
   website?: string;
-  taxId?: string;
   preferredContact?: string;
 }
 export interface Service {
@@ -3164,5 +3163,83 @@ export async function fileToDataUrl(file: File, max = 1200): Promise<string> {
   return c.toDataURL(
     file.type === "image/png" ? "image/png" : "image/jpeg",
     0.82,
+  );
+}
+
+/* ---------- Monthly Ledger Grouping & Filtering ---------- */
+
+export interface MonthlyLedgerGroup<T> {
+  month: string;
+  label: string;
+  shortLabel: string;
+  rows: T[];
+  incomeUSD: number;
+  expenseUSD: number;
+  netUSD: number;
+}
+
+export function formatMonthShort(ym: string): string {
+  if (!/^\d{4}-\d{2}$/.test(ym)) return ym;
+  return new Date(ym + "-01T00:00:00Z").toLocaleDateString("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function formatMonthLong(ym: string): string {
+  if (!/^\d{4}-\d{2}$/.test(ym)) return ym;
+  return new Date(ym + "-01T00:00:00Z").toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function collectLedgerMonths(
+  dates: readonly string[],
+  anchorMonth?: string,
+): string[] {
+  const set = new Set<string>();
+  if (anchorMonth && /^\d{4}-\d{2}$/.test(anchorMonth)) {
+    set.add(anchorMonth);
+  }
+  for (const dt of dates) {
+    const ym = dt.slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(ym)) set.add(ym);
+  }
+  return Array.from(set).sort((a, b) => b.localeCompare(a));
+}
+
+export function groupLedgerRowsByMonth<T extends { date: string }>(
+  rows: readonly T[],
+  getInUSD: (row: T) => number,
+  getOutUSD: (row: T) => number,
+): MonthlyLedgerGroup<T>[] {
+  const map = new Map<string, MonthlyLedgerGroup<T>>();
+  for (const row of rows) {
+    const ym = /^\d{4}-\d{2}/.test(row.date) ? row.date.slice(0, 7) : "unknown";
+    let grp = map.get(ym);
+    if (!grp) {
+      grp = {
+        month: ym,
+        label: ym === "unknown" ? "Undated" : formatMonthLong(ym),
+        shortLabel: ym === "unknown" ? "Undated" : formatMonthShort(ym),
+        rows: [],
+        incomeUSD: 0,
+        expenseUSD: 0,
+        netUSD: 0,
+      };
+      map.set(ym, grp);
+    }
+    grp.rows.push(row);
+    const inn = Math.max(0, getInUSD(row));
+    const out = Math.max(0, getOutUSD(row));
+    grp.incomeUSD += inn;
+    grp.expenseUSD += out;
+    grp.netUSD = grp.incomeUSD - grp.expenseUSD;
+  }
+  return Array.from(map.values()).sort((a, b) =>
+    b.month.localeCompare(a.month),
   );
 }

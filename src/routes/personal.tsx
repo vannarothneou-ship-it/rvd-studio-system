@@ -50,6 +50,10 @@ import {
   type BentoWidgetDef,
 } from "@/components/rv/BentoGrid";
 import { MonthPicker } from "@/components/rv/MonthPicker";
+import {
+  MonthlyGroupHeader,
+  MonthlyLedgerToolbar,
+} from "@/components/rv/MonthlyLedgerControls";
 import { MoneyFlowSankeyCard } from "@/components/rv/MoneyFlowSankey";
 import { CentralAiBrief } from "@/components/rv/CentralAiBrief";
 import {
@@ -60,9 +64,12 @@ import { WorkspaceBalanceCard } from "@/components/rv/WorkspaceBalanceCard";
 import {
   PERSONAL_CATEGORIES,
   PERSONAL_INCOME_SOURCES,
+  collectLedgerMonths,
   compactMoney,
   expenseAccount,
+  formatMonthShort,
   goalAccount,
+  groupLedgerRowsByMonth,
   money,
   periodBreakdownBars,
   personalCategoryTotals,
@@ -124,6 +131,8 @@ function PersonalPage() {
   const [chartLens, setChartLens] = useState<ChartLens>("flow");
   const [month, setMonth] = useState(() => today().slice(0, 7));
   const [ledgerView, setLedgerView] = useState<LedgerView>("all");
+  const [ledgerMonth, setLedgerMonth] = useState<string>("all");
+  const [groupByMonth, setGroupByMonth] = useState(true);
   const [catFilter, setCatFilter] = useState<string>("All");
   const [query, setQuery] = useState("");
   const [quickText, setQuickText] = useState("");
@@ -352,18 +361,30 @@ function PersonalPage() {
         income: PersonalIncome;
       };
 
+  const personalLedgerMonths = useMemo(() => {
+    const dates = [
+      ...db.expenses
+        .filter((e) => expenseAccount(e) === "Personal")
+        .map((e) => e.date),
+      ...(db.personalIncome ?? []).map((i) => i.date),
+    ];
+    return collectLedgerMonths(dates, month);
+  }, [db.expenses, db.personalIncome, month]);
+
   const ledgerRows = useMemo<LedgerRow[]>(() => {
-    const matchesPeriod = (date: string) =>
-      pAgg.dateSet
-        ? pAgg.dateSet.has(date)
-        : pAgg.monthSet.has(date.slice(0, 7));
+    const matchesMonthFilter = (date: string) => {
+      if (ledgerMonth !== "all") return date.startsWith(ledgerMonth);
+      return true;
+    };
 
     const outRows: LedgerRow[] =
       ledgerView === "income"
         ? []
         : db.expenses
             .filter((e) => expenseAccount(e) === "Personal")
-            .filter((e) => (q ? true : matchesPeriod(e.date)))
+            .filter((e) =>
+              q && ledgerMonth === "all" ? true : matchesMonthFilter(e.date),
+            )
             .map((e) => ({
               kind: "expense" as const,
               id: `exp-${e.id}`,
@@ -381,7 +402,9 @@ function PersonalPage() {
       ledgerView === "spending"
         ? []
         : (db.personalIncome ?? [])
-            .filter((inc) => (q ? true : matchesPeriod(inc.date)))
+            .filter((inc) =>
+              q && ledgerMonth === "all" ? true : matchesMonthFilter(inc.date),
+            )
             .map((inc) => ({
               kind: "income" as const,
               id: `inc-${inc.id}`,
@@ -412,14 +435,38 @@ function PersonalPage() {
     db.expenses,
     db.personalIncome,
     ledgerView,
-    pAgg.dateSet,
-    pAgg.monthSet,
+    ledgerMonth,
     catFilter,
     q,
     r,
   ]);
 
-  const visibleRows = ledgerRows.slice(0, visibleCount);
+  const ledgerTotals = useMemo(() => {
+    let incomeUSD = 0;
+    let expenseUSD = 0;
+    for (const row of ledgerRows) {
+      if (row.kind === "income") incomeUSD += row.usd;
+      else expenseUSD += row.usd;
+    }
+    return {
+      incomeUSD,
+      expenseUSD,
+      netUSD: incomeUSD - expenseUSD,
+    };
+  }, [ledgerRows]);
+
+  const effectiveLimit =
+    ledgerMonth !== "all" ? Math.max(visibleCount, 40) : visibleCount;
+  const visibleRows = ledgerRows.slice(0, effectiveLimit);
+  const groupedVisibleRows = useMemo(
+    () =>
+      groupLedgerRowsByMonth(
+        visibleRows,
+        (row) => (row.kind === "income" ? row.usd : 0),
+        (row) => (row.kind === "expense" ? row.usd : 0),
+      ),
+    [visibleRows],
+  );
 
   const deleteLedgerRow = useCallback((row: LedgerRow) => {
     if (row.kind === "income") {
@@ -833,268 +880,361 @@ function PersonalPage() {
         id: "personalLedger",
         title: "Personal income & spending ledger",
         defaultSpan: 12,
-        render: () => (
-          <Glass delay={220}>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="label-mono">
-                  Personal money ledger ·{" "}
-                  {q ? `matching "${query}"` : pAgg.scopeLabel}
-                  {catFilter !== "All" ? ` · ${catFilter}` : ""}
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  {ledgerRows.length}{" "}
-                  {ledgerRows.length === 1 ? "entry" : "entries"} ·{" "}
-                  <span className="text-positive">
-                    +{money(personalInThisMonth)}
-                  </span>{" "}
-                  in this month
-                </p>
+        render: () => {
+          const renderRow = (row: LedgerRow) => {
+            const Icon =
+              row.kind === "income"
+                ? incomeSourceIcon(row.income.source)
+                : expenseItemIcon(row.expense);
+            return (
+              <li key={row.id}>
+                <SwipeRow
+                  onDelete={() => deleteLedgerRow(row)}
+                  onEdit={() => editLedgerRow(row)}
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (row.kind === "income") {
+                        setIncomeDraft(row.income);
+                      } else {
+                        setExpenseDraft(row.expense);
+                      }
+                    }}
+                    className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-muted"
+                  >
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span
+                        className={cn(
+                          "grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-border bg-muted",
+                          row.kind === "income"
+                            ? "text-positive"
+                            : "text-primary",
+                        )}
+                      >
+                        {row.kind === "income" ? (
+                          <ArrowDownLeft className="h-4 w-4" />
+                        ) : (
+                          <Icon className="h-4 w-4" />
+                        )}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                          <span className="truncate">{row.title}</span>
+                        </p>
+                        <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
+                          {row.kind === "income" && (
+                            <Icon className="h-3 w-3 shrink-0 text-positive" />
+                          )}
+                          <span className="truncate">
+                            {shortDate(row.date)} · {row.sub}
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      className={cn(
+                        "font-num flex items-center gap-1 text-sm font-semibold",
+                        row.kind === "income"
+                          ? "text-positive"
+                          : "text-destructive",
+                      )}
+                    >
+                      {row.kind === "income" ? (
+                        <>+{money(row.rawAmount, row.currency)}</>
+                      ) : (
+                        <>
+                          <ArrowUpRight className="hidden h-3 w-3 sm:inline" />
+                          {money(-row.rawAmount, row.currency)}
+                        </>
+                      )}
+                    </span>
+                  </button>
+                </SwipeRow>
+              </li>
+            );
+          };
+
+          return (
+            <Glass delay={220}>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="label-mono">
+                    Personal money ledger ·{" "}
+                    {q
+                      ? `matching "${query}"`
+                      : ledgerMonth === "all"
+                        ? "All months"
+                        : formatMonthShort(ledgerMonth)}
+                    {catFilter !== "All" ? ` · ${catFilter}` : ""}
+                  </p>
+                  <p className="font-num mt-0.5 text-xs text-muted-foreground">
+                    {ledgerRows.length}{" "}
+                    {ledgerRows.length === 1 ? "entry" : "entries"}
+                    {ledgerTotals.incomeUSD > 0 && (
+                      <>
+                        {" "}
+                        ·{" "}
+                        <span className="font-semibold text-positive">
+                          +{money(ledgerTotals.incomeUSD)}
+                        </span>
+                      </>
+                    )}
+                    {ledgerTotals.expenseUSD > 0 && (
+                      <>
+                        {" "}
+                        ·{" "}
+                        <span className="font-semibold text-destructive">
+                          {money(-ledgerTotals.expenseUSD)}
+                        </span>
+                      </>
+                    )}
+                    {ledgerTotals.incomeUSD > 0 &&
+                      ledgerTotals.expenseUSD > 0 && (
+                        <>
+                          {" "}
+                          · Net{" "}
+                          <span
+                            className={cn(
+                              "font-semibold",
+                              ledgerTotals.netUSD >= 0
+                                ? "text-positive"
+                                : "text-destructive",
+                            )}
+                          >
+                            {money(ledgerTotals.netUSD, "USD", true)}
+                          </span>
+                        </>
+                      )}
+                  </p>
+                </div>
+                <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+                  <SlidingTabs
+                    stretch
+                    size="xs"
+                    layoutGroup="pers-ledger-view"
+                    className="w-full sm:w-auto"
+                    value={ledgerView}
+                    onChange={(v) => {
+                      setLedgerView(v);
+                      setCatFilter("All");
+                      setVisibleCount(RECENT_ROWS);
+                    }}
+                    options={[
+                      { id: "all", label: "All" },
+                      { id: "spending", label: "Spending" },
+                      { id: "income", label: "Income" },
+                    ]}
+                  />
+                  <div className="relative min-w-0 flex-1 sm:flex-none">
+                    <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                    <input
+                      type="search"
+                      value={query}
+                      onChange={(e) => {
+                        setQuery(e.target.value);
+                        setVisibleCount(RECENT_ROWS);
+                      }}
+                      placeholder="Search note, card, source…"
+                      className="field w-full py-1.5 pl-8 text-base sm:w-52 sm:text-xs"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
+                    <Btn
+                      type="button"
+                      onClick={() => openNewIncome()}
+                      className="w-full justify-center px-3 py-1.5 text-xs whitespace-nowrap sm:w-auto sm:shrink-0"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Income
+                    </Btn>
+                    <Btn
+                      type="button"
+                      variant="gold"
+                      onClick={() => openNewExpense()}
+                      className="w-full justify-center px-3 py-1.5 text-xs whitespace-nowrap sm:w-auto sm:shrink-0"
+                    >
+                      <Plus className="h-3 w-3" />
+                      Spending
+                    </Btn>
+                  </div>
+                </div>
               </div>
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
-                <SlidingTabs
-                  stretch
-                  size="xs"
-                  layoutGroup="pers-ledger-view"
-                  className="w-full sm:w-auto"
-                  value={ledgerView}
-                  onChange={(v) => {
-                    setLedgerView(v);
+
+              <MonthlyLedgerToolbar
+                months={personalLedgerMonths}
+                selectedMonth={ledgerMonth}
+                onSelectMonth={(next) => {
+                  setLedgerMonth(next);
+                  setVisibleCount(RECENT_ROWS);
+                }}
+                groupByMonth={groupByMonth}
+                onToggleGroupByMonth={() => setGroupByMonth((g) => !g)}
+                className="mb-3"
+              />
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  submitQuickPersonal();
+                }}
+                className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-border/80 bg-muted/35 p-2"
+              >
+                <Sparkles className="ml-1 h-3.5 w-3.5 shrink-0 text-primary" />
+                <input
+                  value={quickText}
+                  onChange={(e) => setQuickText(e.target.value)}
+                  placeholder='Quick log: "$4.50 iced latte", "20000r ptt fuel", "+$450 freelance"…'
+                  aria-label="Quick log personal expense or income"
+                  className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground sm:text-xs"
+                />
+                {parsedQuick && (
+                  <span
+                    className={cn(
+                      "font-num shrink-0 text-[0.7rem] font-semibold",
+                      parsedQuick.kind === "income"
+                        ? "text-positive"
+                        : "text-foreground",
+                    )}
+                  >
+                    {parsedQuick.kind === "income"
+                      ? `+${money(parsedQuick.data.amount, parsedQuick.data.currency)} · ${parsedQuick.data.source}`
+                      : `${money(-parsedQuick.data.amount, parsedQuick.data.currency)} · ${parsedQuick.data.category}`}
+                  </span>
+                )}
+                <Btn
+                  type="submit"
+                  variant="gold"
+                  disabled={!parsedQuick}
+                  className="min-h-[34px] shrink-0 px-3 py-1 text-xs disabled:opacity-40"
+                >
+                  Log
+                </Btn>
+              </form>
+
+              <div className="no-scrollbar mb-3 flex flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0">
+                <button
+                  type="button"
+                  onClick={() => {
                     setCatFilter("All");
                     setVisibleCount(RECENT_ROWS);
                   }}
-                  options={[
-                    { id: "all", label: "All" },
-                    { id: "spending", label: "Spending" },
-                    { id: "income", label: "Income" },
-                  ]}
-                />
-                <div className="relative min-w-0 flex-1 sm:flex-none">
-                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-                  <input
-                    type="search"
-                    value={query}
-                    onChange={(e) => {
-                      setQuery(e.target.value);
-                      setVisibleCount(RECENT_ROWS);
-                    }}
-                    placeholder="Search note, card, source…"
-                    className="field w-full py-1.5 pl-8 text-base sm:w-52 sm:text-xs"
-                  />
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center">
-                  <Btn
-                    type="button"
-                    onClick={() => openNewIncome()}
-                    className="w-full justify-center px-3 py-1.5 text-xs whitespace-nowrap sm:w-auto sm:shrink-0"
-                  >
-                    <Plus className="h-3 w-3" />
-                    Income
-                  </Btn>
-                  <Btn
-                    type="button"
-                    variant="gold"
-                    onClick={() => openNewExpense()}
-                    className="w-full justify-center px-3 py-1.5 text-xs whitespace-nowrap sm:w-auto sm:shrink-0"
-                  >
-                    <Plus className="h-3 w-3" />
-                    Spending
-                  </Btn>
-                </div>
-              </div>
-            </div>
-
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                submitQuickPersonal();
-              }}
-              className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-border/80 bg-muted/35 p-2"
-            >
-              <Sparkles className="ml-1 h-3.5 w-3.5 shrink-0 text-primary" />
-              <input
-                value={quickText}
-                onChange={(e) => setQuickText(e.target.value)}
-                placeholder='Quick log: "$4.50 iced latte", "20000r ptt fuel", "+$450 freelance"…'
-                aria-label="Quick log personal expense or income"
-                className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground sm:text-xs"
-              />
-              {parsedQuick && (
-                <span
                   className={cn(
-                    "font-num shrink-0 text-[0.7rem] font-semibold",
-                    parsedQuick.kind === "income"
-                      ? "text-positive"
-                      : "text-foreground",
+                    "rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
+                    catFilter === "All"
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border text-muted-foreground hover:text-foreground",
                   )}
                 >
-                  {parsedQuick.kind === "income"
-                    ? `+${money(parsedQuick.data.amount, parsedQuick.data.currency)} · ${parsedQuick.data.source}`
-                    : `${money(-parsedQuick.data.amount, parsedQuick.data.currency)} · ${parsedQuick.data.category}`}
-                </span>
-              )}
-              <Btn
-                type="submit"
-                variant="gold"
-                disabled={!parsedQuick}
-                className="min-h-[34px] shrink-0 px-3 py-1 text-xs disabled:opacity-40"
-              >
-                Log
-              </Btn>
-            </form>
+                  All
+                </button>
+                {filterOptions.map((c) => {
+                  const Icon = PERSONAL_INCOME_SOURCES.includes(
+                    c as (typeof PERSONAL_INCOME_SOURCES)[number],
+                  )
+                    ? incomeSourceIcon(c)
+                    : categoryIcon(c);
+                  return (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => {
+                        setCatFilter(catFilter === c ? "All" : c);
+                        setVisibleCount(RECENT_ROWS);
+                      }}
+                      className={cn(
+                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
+                        catFilter === c
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <Icon className="h-3 w-3 shrink-0" />
+                      <span>{c}</span>
+                    </button>
+                  );
+                })}
+              </div>
 
-            <div className="no-scrollbar mb-3 flex flex-nowrap gap-1.5 overflow-x-auto pb-1 sm:flex-wrap sm:pb-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setCatFilter("All");
-                  setVisibleCount(RECENT_ROWS);
-                }}
-                className={cn(
-                  "rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
-                  catFilter === "All"
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border text-muted-foreground hover:text-foreground",
-                )}
-              >
-                All
-              </button>
-              {filterOptions.map((c) => {
-                const Icon = PERSONAL_INCOME_SOURCES.includes(
-                  c as (typeof PERSONAL_INCOME_SOURCES)[number],
-                )
-                  ? incomeSourceIcon(c)
-                  : categoryIcon(c);
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => {
-                      setCatFilter(catFilter === c ? "All" : c);
-                      setVisibleCount(RECENT_ROWS);
-                    }}
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
-                      catFilter === c
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    <Icon className="h-3 w-3 shrink-0" />
-                    <span>{c}</span>
-                  </button>
-                );
-              })}
-            </div>
-
-            {visibleRows.length === 0 ? (
-              <Empty>
-                {ledgerView === "income"
-                  ? "No personal income recorded yet — click + Income to log your salary, studio draw, or side income."
-                  : "No personal entries match this filter."}
-              </Empty>
-            ) : (
-              <>
-                <ul className="divide-y divide-border">
-                  {visibleRows.map((row) => {
-                    const Icon =
-                      row.kind === "income"
-                        ? incomeSourceIcon(row.income.source)
-                        : expenseItemIcon(row.expense);
-                    return (
-                      <li key={row.id}>
-                        <SwipeRow
-                          onDelete={() => deleteLedgerRow(row)}
-                          onEdit={() => editLedgerRow(row)}
-                        >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (row.kind === "income") {
-                                setIncomeDraft(row.income);
-                              } else {
-                                setExpenseDraft(row.expense);
-                              }
+              {visibleRows.length === 0 ? (
+                <Empty>
+                  {ledgerView === "income"
+                    ? `No personal income recorded${ledgerMonth !== "all" ? ` in ${formatMonthShort(ledgerMonth)}` : ""} — tap + Income to log salary, draw, or side pay.`
+                    : `No personal entries match this filter${ledgerMonth !== "all" ? ` in ${formatMonthShort(ledgerMonth)}` : ""}.`}
+                </Empty>
+              ) : (
+                <>
+                  {groupByMonth ? (
+                    <div className="space-y-3">
+                      {groupedVisibleRows.map((grp) => (
+                        <div key={grp.month} className="space-y-1.5">
+                          <MonthlyGroupHeader
+                            month={grp.month}
+                            label={grp.label}
+                            count={grp.rows.length}
+                            incomeUSD={grp.incomeUSD}
+                            expenseUSD={grp.expenseUSD}
+                            netUSD={grp.netUSD}
+                            showIncome={ledgerView !== "spending"}
+                            showExpense={ledgerView !== "income"}
+                            activeFilterMonth={ledgerMonth}
+                            onSelectMonth={(next) => {
+                              setLedgerMonth(next);
+                              setVisibleCount(RECENT_ROWS);
                             }}
-                            className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-xl px-2 py-3 text-left transition-colors hover:bg-muted"
-                          >
-                            <div className="flex min-w-0 items-center gap-3">
-                              <span
-                                className={cn(
-                                  "grid h-8 w-8 shrink-0 place-items-center rounded-xl border border-border bg-muted",
-                                  row.kind === "income"
-                                    ? "text-positive"
-                                    : "text-primary",
-                                )}
-                              >
-                                {row.kind === "income" ? (
-                                  <ArrowDownLeft className="h-4 w-4" />
-                                ) : (
-                                  <Icon className="h-4 w-4" />
-                                )}
-                              </span>
-                              <div className="min-w-0">
-                                <p className="flex items-center gap-1.5 truncate text-sm font-medium">
-                                  <span className="truncate">{row.title}</span>
-                                </p>
-                                <p className="flex items-center gap-1.5 truncate text-xs text-muted-foreground">
-                                  {row.kind === "income" && (
-                                    <Icon className="h-3 w-3 shrink-0 text-positive" />
-                                  )}
-                                  <span className="truncate">
-                                    {shortDate(row.date)} · {row.sub}
-                                  </span>
-                                </p>
-                              </div>
-                            </div>
-                            <span
-                              className={cn(
-                                "font-num flex items-center gap-1 text-sm",
-                                row.kind === "income"
-                                  ? "text-positive"
-                                  : "text-destructive",
-                              )}
-                            >
-                              {row.kind === "income" ? (
-                                <>+{money(row.rawAmount, row.currency)}</>
-                              ) : (
-                                <>
-                                  <ArrowUpRight className="hidden h-3 w-3 sm:inline" />
-                                  {money(-row.rawAmount, row.currency)}
-                                </>
-                              )}
-                            </span>
-                          </button>
-                        </SwipeRow>
-                      </li>
-                    );
-                  })}
-                </ul>
-                {ledgerRows.length > RECENT_ROWS && (
-                  <div className="mt-3 flex justify-center">
-                    {ledgerRows.length > visibleRows.length ? (
+                          />
+                          <ul className="divide-y divide-border/75">
+                            {grp.rows.map(renderRow)}
+                          </ul>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <ul className="divide-y divide-border">
+                      {visibleRows.map(renderRow)}
+                    </ul>
+                  )}
+
+                  {ledgerRows.length > effectiveLimit && (
+                    <div className="mt-3 flex justify-center gap-2">
+                      <Btn
+                        onClick={() =>
+                          setVisibleCount(
+                            Math.min(ledgerRows.length, effectiveLimit + 20),
+                          )
+                        }
+                        className="gap-1.5 px-4 py-1.5 text-xs"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Show more ({ledgerRows.length - visibleRows.length}{" "}
+                        left)
+                      </Btn>
                       <Btn
                         onClick={() => setVisibleCount(ledgerRows.length)}
                         className="gap-1.5 px-4 py-1.5 text-xs"
                       >
-                        <Eye className="h-3.5 w-3.5" />
                         Show all ({ledgerRows.length})
                       </Btn>
-                    ) : (
-                      <Btn
-                        onClick={() => setVisibleCount(RECENT_ROWS)}
-                        className="gap-1.5 px-4 py-1.5 text-xs"
-                      >
-                        <EyeOff className="h-3.5 w-3.5" />
-                        Show recent {RECENT_ROWS} only
-                      </Btn>
+                    </div>
+                  )}
+                  {visibleCount > RECENT_ROWS &&
+                    ledgerRows.length > RECENT_ROWS &&
+                    visibleRows.length >= ledgerRows.length && (
+                      <div className="mt-3 flex justify-center">
+                        <Btn
+                          onClick={() => setVisibleCount(RECENT_ROWS)}
+                          className="gap-1.5 px-4 py-1.5 text-xs"
+                        >
+                          <EyeOff className="h-3.5 w-3.5" />
+                          Show recent {RECENT_ROWS} only
+                        </Btn>
+                      </div>
                     )}
-                  </div>
-                )}
-              </>
-            )}
-          </Glass>
-        ),
+                </>
+              )}
+            </Glass>
+          );
+        },
       },
     ],
     [
@@ -1120,10 +1260,15 @@ function PersonalPage() {
       query,
       catFilter,
       ledgerRows,
-      personalInThisMonth,
+      ledgerTotals,
+      personalLedgerMonths,
+      ledgerMonth,
+      groupByMonth,
       ledgerView,
       filterOptions,
       visibleRows,
+      groupedVisibleRows,
+      effectiveLimit,
       visibleCount,
       openNewExpense,
       openNewIncome,
@@ -1183,6 +1328,10 @@ function PersonalPage() {
             value={month}
             onChange={(next) => {
               setMonth(next);
+              setLedgerMonth(next);
+              if (personalRange === "today") {
+                setPersonalRange("1m");
+              }
               setVisibleCount(RECENT_ROWS);
             }}
           />

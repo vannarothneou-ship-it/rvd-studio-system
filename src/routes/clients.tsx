@@ -78,7 +78,6 @@ const fields: Field<Client>[] = [
   { k: "email", label: "Email" },
   { k: "telegram", label: "Telegram" },
   { k: "website", label: "Website" },
-  { k: "taxId", label: "Tax / registration ID" },
   { k: "address", label: "Billing address", wide: true },
   {
     k: "preferredContact",
