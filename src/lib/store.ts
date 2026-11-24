@@ -561,7 +561,13 @@ export interface DB {
 
 export const uid = () =>
   Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
-export const today = () => new Date().toISOString().slice(0, 10);
+export const today = () => {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 export const addDays = (d: string, n: number) => {
   const x = new Date(d + "T00:00:00Z");
   x.setUTCDate(x.getUTCDate() + n);
