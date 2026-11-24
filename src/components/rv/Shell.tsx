@@ -193,7 +193,6 @@ function ShellInner({ children }: { children: ReactNode }) {
   const [light, setLight] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [topHidden, setTopHidden] = useState(false);
-  const [bottomHidden, setBottomHidden] = useState(false);
   const lastScrollYRef = useRef(0);
   const persistStatus = usePersistStatus();
 
@@ -208,7 +207,6 @@ function ShellInner({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setTopHidden(false);
-    setBottomHidden(false);
     lastScrollYRef.current =
       typeof window !== "undefined" ? Math.max(0, window.scrollY) : 0;
   }, [path]);
@@ -229,7 +227,6 @@ function ShellInner({ children }: { children: ReactNode }) {
 
         if (y <= 12) {
           setTopHidden(false);
-          setBottomHidden(false);
           lastScrollYRef.current = y;
           return;
         }
@@ -243,12 +240,10 @@ function ShellInner({ children }: { children: ReactNode }) {
         if (delta > 6 && y > 16) {
           // Scroll down: hide top navigation, keep/reveal bottom dock
           setTopHidden(true);
-          setBottomHidden(false);
           lastScrollYRef.current = y;
         } else if (delta < -6) {
-          // Scroll up: reveal top navigation, hide bottom dock
+          // Keep the primary dock available; reveal the compact header on scroll up.
           setTopHidden(false);
-          setBottomHidden(true);
           lastScrollYRef.current = y;
         } else if (Math.abs(delta) > 2) {
           lastScrollYRef.current = y;
@@ -495,18 +490,15 @@ function ShellInner({ children }: { children: ReactNode }) {
       {/* Mobile Floating Frosted Glass Bottom Dock (hides on scroll up, reappears on scroll down) */}
       <nav
         aria-label="Mobile navigation"
-        onFocusCapture={() => setBottomHidden(false)}
         className={cn(
           "no-print pointer-events-none fixed inset-x-0 bottom-0 z-40 px-3 pt-2 pb-[max(0.65rem,env(safe-area-inset-bottom))] transition-[opacity,transform] duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform sm:hidden",
-          bottomHidden
-            ? "translate-y-[125%] opacity-0"
-            : "translate-y-0 opacity-100",
+          "translate-y-0 opacity-100",
         )}
       >
         <div
           className={cn(
             "mx-auto grid max-w-md grid-cols-5 items-center gap-1 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-strong)] px-2 py-1.5 shadow-[0_14px_34px_-12px_oklch(0_0_0/52%),inset_0_1px_0_oklch(1_0_0/12%)] backdrop-blur-2xl backdrop-saturate-150",
-            bottomHidden ? "pointer-events-none" : "pointer-events-auto",
+            "pointer-events-auto",
           )}
         >
           <Link
