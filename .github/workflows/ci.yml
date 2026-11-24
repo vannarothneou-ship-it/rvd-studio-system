@@ -34,6 +34,9 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      - name: TypeScript typecheck
+        run: bun run typecheck
+
       - name: Unit tests
         run: bun run test
 
