@@ -19,14 +19,21 @@ import {
   X,
 } from "lucide-react";
 import { Portal } from "@/components/rv/ui";
-import { useReceiptScanner } from "@/components/rv/ReceiptScanner";
+import { useReceiptScanner } from "@/components/rv/ReceiptScannerContext";
 import {
   askCentralDB,
   buildQuickWorkTask,
   computeCentralIntelligence,
   parseQuickCommand,
 } from "@/lib/ai-central-engine";
-import { documentKind, setDB, uid, useDB } from "@/lib/store";
+import {
+  documentKind,
+  safeKhrRate,
+  setDB,
+  stampFxSnapshot,
+  uid,
+  useDB,
+} from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 interface QuickNavAction {
@@ -178,19 +185,24 @@ export function CommandPalette({
 
   const executeParsedCommand = () => {
     if (!parsedCommand) return;
+    const rate = safeKhrRate(db.settings.khrRate);
     if (parsedCommand.kind === "expense") {
-      const created = {
-        id: uid(),
-        date: parsedCommand.data.date,
-        projectId: "",
-        category: parsedCommand.data.category,
-        vendor: parsedCommand.data.vendor,
-        description: parsedCommand.data.description,
-        amount: parsedCommand.data.amount,
-        currency: parsedCommand.data.currency,
-        receipt: "",
-        account: parsedCommand.data.account,
-      };
+      const created = stampFxSnapshot(
+        {
+          id: uid(),
+          date: parsedCommand.data.date,
+          projectId: "",
+          category: parsedCommand.data.category,
+          vendor: parsedCommand.data.vendor,
+          description: parsedCommand.data.description,
+          amount: parsedCommand.data.amount,
+          currency: parsedCommand.data.currency,
+          receipt: "",
+          account: parsedCommand.data.account,
+        },
+        rate,
+        false,
+      );
       setDB((d) => ({ ...d, expenses: [created, ...d.expenses] }));
       toast.success(parsedCommand.summary, {
         action: {
@@ -203,15 +215,19 @@ export function CommandPalette({
         },
       });
     } else if (parsedCommand.kind === "income") {
-      const created = {
-        id: uid(),
-        date: parsedCommand.data.date,
-        source: parsedCommand.data.source,
-        accountMethod: parsedCommand.data.accountMethod,
-        description: parsedCommand.data.description,
-        amount: parsedCommand.data.amount,
-        currency: parsedCommand.data.currency,
-      };
+      const created = stampFxSnapshot(
+        {
+          id: uid(),
+          date: parsedCommand.data.date,
+          source: parsedCommand.data.source,
+          accountMethod: parsedCommand.data.accountMethod,
+          description: parsedCommand.data.description,
+          amount: parsedCommand.data.amount,
+          currency: parsedCommand.data.currency,
+        },
+        rate,
+        false,
+      );
       setDB((d) => ({
         ...d,
         personalIncome: [created, ...(d.personalIncome ?? [])],

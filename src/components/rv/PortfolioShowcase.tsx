@@ -194,7 +194,7 @@ export function PortfolioGalleryCard({
                 setSlideIdx((i) => i - 1);
               }}
               aria-label="Previous mockup"
-              className="absolute left-2 top-1/2 z-10 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full border border-white/20 bg-black/55 text-white opacity-90 backdrop-blur-md transition-all hover:bg-black/80 sm:opacity-0 sm:group-hover:opacity-100"
+              className="absolute left-2 top-1/2 z-10 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg border border-white/20 bg-black/65 text-white opacity-90 transition-all hover:bg-black/85 sm:opacity-0 sm:group-hover:opacity-100"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
@@ -205,11 +205,11 @@ export function PortfolioGalleryCard({
                 setSlideIdx((i) => i + 1);
               }}
               aria-label="Next mockup"
-              className="absolute right-2 top-1/2 z-10 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-full border border-white/20 bg-black/55 text-white opacity-90 backdrop-blur-md transition-all hover:bg-black/80 sm:opacity-0 sm:group-hover:opacity-100"
+              className="absolute right-2 top-1/2 z-10 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg border border-white/20 bg-black/65 text-white opacity-90 transition-all hover:bg-black/85 sm:opacity-0 sm:group-hover:opacity-100"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
-            <span className="font-num pointer-events-none absolute left-2.5 top-2.5 z-10 rounded-full border border-white/15 bg-black/55 px-2 py-0.5 text-[0.65rem] font-semibold text-white backdrop-blur-md">
+            <span className="font-num pointer-events-none absolute left-2.5 top-2.5 z-10 rounded-md border border-white/15 bg-black/65 px-2 py-0.5 text-[0.65rem] font-semibold text-white">
               {safeIdx + 1} / {slideCount}
             </span>
           </>
@@ -233,10 +233,10 @@ export function PortfolioGalleryCard({
               : "Feature in Portfolio Summary"
           }
           className={cn(
-            "absolute right-2.5 top-2.5 z-10 grid h-7 w-7 place-items-center rounded-full border backdrop-blur-md transition-all",
+            "absolute right-2.5 top-2.5 z-10 grid h-8 w-8 place-items-center rounded-lg border transition-all",
             item.featured
               ? "border-primary/60 bg-primary text-primary-foreground shadow-sm"
-              : "border-white/15 bg-black/45 text-white/80 opacity-0 hover:text-white group-hover:opacity-100",
+              : "border-white/15 bg-black/55 text-white/80 opacity-0 hover:text-white group-hover:opacity-100",
           )}
         >
           <Star
@@ -397,10 +397,10 @@ export function PortfolioGallerySection({
                   type="button"
                   onClick={() => setIncludeTextOnlyInGrid((v) => !v)}
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                    "inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
                     includeTextOnlyInGrid
                       ? "border-primary bg-primary/15 text-primary"
-                      : "border-border text-muted-foreground hover:text-foreground",
+                      : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                   )}
                 >
                   <span>
@@ -490,7 +490,7 @@ export function PortfolioGallerySection({
                 </p>
               </div>
             </div>
-            <span className="shrink-0 rounded-full border border-primary/40 bg-background/60 px-3 py-1 text-[0.7rem] font-semibold text-primary">
+            <span className="shrink-0 rounded-lg border border-primary/40 bg-card px-3 py-1 text-[0.7rem] font-semibold text-primary">
               Drop or Browse Files
             </span>
           </div>

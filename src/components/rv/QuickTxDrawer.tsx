@@ -6,7 +6,7 @@ import {
   categoryIcon,
   incomeSourceIcon,
   paymentCardIcon,
-} from "@/components/rv/FinanceVisuals";
+} from "@/components/rv/FinanceIcons";
 import {
   CARD_METHODS,
   EXPENSE_CATEGORIES,
@@ -226,7 +226,7 @@ export function QuickExpenseDrawer({
         <div className="rounded-2xl border border-primary/35 bg-gradient-to-br from-primary/12 via-muted/45 to-muted/25 p-4">
           <div className="flex items-center justify-between gap-2">
             <span className="label-mono">Amount</span>
-            <div className="inline-flex rounded-full border border-border bg-background/60 p-0.5">
+            <div className="inline-flex rounded-xl border border-border bg-background/60 p-0.5">
               {(["USD", "KHR"] as const).map((cur) => (
                 <button
                   key={cur}
@@ -235,7 +235,7 @@ export function QuickExpenseDrawer({
                     setDraft({ ...draft, currency: cur as Currency })
                   }
                   className={cn(
-                    "font-num min-h-[36px] rounded-full px-3.5 text-xs font-semibold transition-all duration-150 active:scale-95",
+                    "font-num min-h-[36px] rounded-lg px-3.5 text-xs font-semibold transition-all duration-150 active:scale-95",
                     draft.currency === cur
                       ? "bg-primary text-primary-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground",
@@ -275,7 +275,7 @@ export function QuickExpenseDrawer({
                   setAmtText(String(p));
                   setDraft({ ...draft, amount: p });
                 }}
-                className="font-num min-h-[38px] shrink-0 rounded-full border border-border/80 bg-background/60 px-3.5 text-xs font-semibold text-muted-foreground transition-all hover:border-primary/50 hover:text-foreground active:scale-95"
+                className="font-num min-h-[38px] shrink-0 rounded-lg border border-border/80 bg-background/60 px-3.5 text-xs font-semibold text-muted-foreground transition-all hover:border-primary/50 hover:text-foreground active:scale-95"
               >
                 {draft.currency === "KHR"
                   ? `${Math.round(p / 1000)}k`
@@ -400,7 +400,7 @@ export function QuickExpenseDrawer({
                   });
                 }}
                 className={cn(
-                  "min-h-[36px] shrink-0 rounded-full border px-3 text-xs font-medium transition-colors active:scale-95",
+                  "min-h-[36px] shrink-0 rounded-lg border px-3 text-xs font-medium transition-colors active:scale-95",
                   draft.description === qp.label
                     ? "border-primary bg-primary/18 text-primary"
                     : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
@@ -599,7 +599,7 @@ export function QuickIncomeDrawer({
         <div className="rounded-2xl border border-positive/35 bg-gradient-to-br from-positive/12 via-muted/45 to-muted/25 p-4">
           <div className="flex items-center justify-between gap-2">
             <span className="label-mono">Income Amount</span>
-            <div className="inline-flex rounded-full border border-border bg-background/60 p-0.5">
+            <div className="inline-flex rounded-xl border border-border bg-background/60 p-0.5">
               {(["USD", "KHR"] as const).map((cur) => (
                 <button
                   key={cur}
@@ -608,7 +608,7 @@ export function QuickIncomeDrawer({
                     setDraft({ ...draft, currency: cur as Currency })
                   }
                   className={cn(
-                    "font-num min-h-[36px] rounded-full px-3.5 text-xs font-semibold transition-all duration-150 active:scale-95",
+                    "font-num min-h-[36px] rounded-lg px-3.5 text-xs font-semibold transition-all duration-150 active:scale-95",
                     draft.currency === cur
                       ? "bg-positive text-primary-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground",
@@ -648,7 +648,7 @@ export function QuickIncomeDrawer({
                   setAmtText(String(p));
                   setDraft({ ...draft, amount: p });
                 }}
-                className="font-num min-h-[38px] shrink-0 rounded-full border border-border/80 bg-background/60 px-3.5 text-xs font-semibold text-muted-foreground transition-all hover:border-positive/50 hover:text-foreground active:scale-95"
+                className="font-num min-h-[38px] shrink-0 rounded-lg border border-border/80 bg-background/60 px-3.5 text-xs font-semibold text-muted-foreground transition-all hover:border-positive/50 hover:text-foreground active:scale-95"
               >
                 {draft.currency === "KHR"
                   ? `${Math.round(p / 1000)}k`
@@ -751,7 +751,7 @@ export function QuickIncomeDrawer({
                   });
                 }}
                 className={cn(
-                  "min-h-[36px] shrink-0 rounded-full border px-3 text-xs font-medium transition-colors active:scale-95",
+                  "min-h-[36px] shrink-0 rounded-lg border px-3 text-xs font-medium transition-colors active:scale-95",
                   draft.description === qp.label
                     ? "border-positive bg-positive/18 text-positive"
                     : "border-border bg-muted/45 text-muted-foreground hover:text-foreground",
@@ -885,7 +885,7 @@ export function QuickStudioIncomeDrawer({
         <div className="rounded-2xl border border-positive/35 bg-gradient-to-br from-positive/12 via-muted/45 to-muted/25 p-4">
           <div className="flex items-center justify-between gap-2">
             <span className="label-mono">Amount Received</span>
-            <div className="inline-flex rounded-full border border-border bg-background/60 p-0.5">
+            <div className="inline-flex rounded-xl border border-border bg-background/60 p-0.5">
               {(["USD", "KHR"] as const).map((cur) => (
                 <button
                   key={cur}
@@ -894,7 +894,7 @@ export function QuickStudioIncomeDrawer({
                     setDraft({ ...draft, currency: cur as Currency })
                   }
                   className={cn(
-                    "font-num min-h-[36px] rounded-full px-3.5 text-xs font-semibold transition-all duration-150 active:scale-95",
+                    "font-num min-h-[36px] rounded-lg px-3.5 text-xs font-semibold transition-all duration-150 active:scale-95",
                     draft.currency === cur
                       ? "bg-positive text-primary-foreground shadow-xs"
                       : "text-muted-foreground hover:text-foreground",
@@ -934,7 +934,7 @@ export function QuickStudioIncomeDrawer({
                   setAmtText(String(p));
                   setDraft({ ...draft, amount: p });
                 }}
-                className="font-num min-h-[38px] shrink-0 rounded-full border border-border/80 bg-background/60 px-3.5 text-xs font-semibold text-muted-foreground transition-all hover:border-positive/50 hover:text-foreground active:scale-95"
+                className="font-num min-h-[38px] shrink-0 rounded-lg border border-border/80 bg-background/60 px-3.5 text-xs font-semibold text-muted-foreground transition-all hover:border-positive/50 hover:text-foreground active:scale-95"
               >
                 {draft.currency === "KHR"
                   ? `${Math.round(p / 1000)}k`

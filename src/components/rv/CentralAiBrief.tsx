@@ -14,7 +14,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { Glass, SlidingTabs } from "@/components/rv/ui";
-import { categoryIcon } from "@/components/rv/FinanceVisuals";
+import { categoryIcon } from "@/components/rv/FinanceIcons";
 import {
   askCentralDB,
   computeCentralIntelligence,
@@ -37,6 +37,7 @@ const QUICK_PROMPTS = [
   "Overdue A/R?",
   "Project health?",
   "Top spending?",
+  "Studio spend?",
   "Runway & burn",
   "Prius ODO & reminders",
 ];
@@ -290,7 +291,7 @@ export function CentralAiBrief({
                     <button
                       type="button"
                       onClick={() => onInspectCategory?.(categoryTarget)}
-                      className="inline-flex min-h-[38px] shrink-0 items-center justify-center gap-1 self-start rounded-full border border-border bg-secondary/75 px-3.5 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent sm:self-center"
+                      className="inline-flex min-h-[38px] shrink-0 items-center justify-center gap-1 self-start rounded-lg border border-border bg-secondary/75 px-3.5 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent sm:self-center"
                     >
                       <span>{ins.actionLabel ?? "Inspect"}</span>
                       <ArrowRight className="h-3.5 w-3.5 text-primary" />
@@ -298,7 +299,7 @@ export function CentralAiBrief({
                   ) : ins.actionTo ? (
                     <Link
                       to={ins.actionTo}
-                      className="inline-flex min-h-[38px] shrink-0 items-center justify-center gap-1 self-start rounded-full border border-border bg-secondary/75 px-3.5 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent sm:self-center"
+                      className="inline-flex min-h-[38px] shrink-0 items-center justify-center gap-1 self-start rounded-lg border border-border bg-secondary/75 px-3.5 text-xs font-medium text-foreground transition-colors hover:border-primary/45 hover:bg-accent sm:self-center"
                     >
                       <span>{ins.actionLabel ?? "Open"}</span>
                       <ArrowRight className="h-3.5 w-3.5 text-primary" />
@@ -317,11 +318,12 @@ export function CentralAiBrief({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="text-xs font-semibold text-foreground">
-                Cash trajectory · {horizonDays}-day simulation
+                Cash trajectory estimate · {horizonDays}-day projection
               </p>
               {activePoint && (
                 <p className="font-num mt-0.5 text-xs text-muted-foreground">
-                  {shortDate(activePoint.date)} ({activePoint.label}) · Baseline{" "}
+                  {shortDate(activePoint.date)} ({activePoint.label}) · Est.
+                  baseline{" "}
                   <span className="font-semibold text-foreground">
                     {mask(money(activePoint.baselineUSD))}
                   </span>{" "}
@@ -517,7 +519,7 @@ export function CentralAiBrief({
           {/* Scenario Outcome + Live Goal ETAs */}
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 pt-3 text-xs">
             <span className="text-muted-foreground">
-              +{horizonDays}d liquidity uplift
+              Estimated +{horizonDays}d liquidity uplift (planning projection)
             </span>
             <span className="font-num font-bold text-positive">
               {mask(money(scenario.deltaUSD, "USD", true))}
@@ -548,7 +550,7 @@ export function CentralAiBrief({
                     {g.etaMonths === 0
                       ? "Funded"
                       : g.etaMonths !== null
-                        ? `~${g.etaMonths} mo`
+                        ? `Est. ~${g.etaMonths} mo`
                         : `${g.pct}%`}
                   </span>
                 </div>
@@ -679,7 +681,7 @@ export function CentralAiBrief({
                   setAskedQuery(q);
                 }}
                 className={cn(
-                  "min-h-[34px] rounded-full border px-3 text-xs font-medium transition-colors",
+                  "min-h-[36px] rounded-lg border px-3 text-xs font-medium transition-colors",
                   askedQuery === q
                     ? "border-primary bg-primary/15 text-primary"
                     : "border-border bg-secondary/70 text-muted-foreground hover:text-foreground",

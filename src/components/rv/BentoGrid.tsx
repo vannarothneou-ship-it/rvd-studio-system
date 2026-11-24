@@ -521,7 +521,7 @@ export function EditLayoutButton({
         {...handlers}
         aria-pressed={editing}
         className={cn(
-          "ios-tap inline-flex min-h-[36px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+          "ios-tap inline-flex min-h-[38px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-medium transition-colors",
           editing
             ? "border-primary bg-primary text-primary-foreground shadow-sm"
             : "border-border bg-secondary/75 text-muted-foreground hover:border-primary/50 hover:text-foreground",
@@ -697,7 +697,7 @@ export function EditableBentoGrid({
             onClick={toggleEdit}
             aria-label="Rearrange bento cards"
             {...arrangeTipHandlers}
-            className="ios-tap inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-[var(--glass-border)] bg-[var(--glass)] px-2.5 text-[0.7rem] font-medium text-muted-foreground backdrop-blur-md transition-colors hover:border-primary/45 hover:text-foreground"
+            className="ios-tap inline-flex min-h-[36px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border bg-card px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/45 hover:text-foreground"
           >
             <LayoutGrid className="h-3.5 w-3.5 text-primary" />
             <span>Arrange</span>
@@ -707,14 +707,20 @@ export function EditableBentoGrid({
       )}
 
       {editing && (
-        <div className="glass-strong mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-primary/40 px-4 py-3 rise">
+        <div
+          data-no-swipe
+          className="mb-4 flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-primary/40 bg-card px-3.5 py-3 rise sm:gap-3 sm:px-4"
+        >
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="inline-flex items-center gap-1.5 font-semibold text-primary">
               <LayoutGrid className="h-3.5 w-3.5" />
               Layout editor
             </span>
-            <span className="text-muted-foreground">
-              Drag card or tap ↑/↓ to reorder · Resize width · Pair ½+½
+            <span className="text-muted-foreground sm:hidden">
+              Drag handle or tap ↑/↓ to reorder
+            </span>
+            <span className="hidden text-muted-foreground sm:inline">
+              Drag handle or tap ↑/↓ to reorder · Resize width · Pair ½+½
             </span>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -726,7 +732,7 @@ export function EditableBentoGrid({
                   key={h.id}
                   type="button"
                   onClick={() => showWidget(h.id)}
-                  className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20"
+                  className="inline-flex min-h-[34px] shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-xs font-medium text-primary hover:bg-primary/20"
                 >
                   <Plus className="h-3 w-3" />
                   <Eye className="h-3 w-3" />
@@ -744,7 +750,7 @@ export function EditableBentoGrid({
                   description: "No empty gaps. Resize a card to teach it.",
                 });
               }}
-              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground"
+              className="inline-flex min-h-[34px] shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-primary bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground"
               title="Arrange every card into gap-free rows, using your past resizes"
             >
               <Wand2 className="h-3 w-3" />
@@ -754,7 +760,7 @@ export function EditableBentoGrid({
               type="button"
               onClick={() => setAutoFill(!autoFill)}
               className={cn(
-                "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                "inline-flex min-h-[34px] shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-3 py-1 text-xs font-medium transition-colors",
                 autoFill
                   ? "border-primary/50 bg-primary/15 text-primary"
                   : "border-border text-muted-foreground hover:text-foreground",
@@ -767,7 +773,7 @@ export function EditableBentoGrid({
             <button
               type="button"
               onClick={resetLayout}
-              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="inline-flex min-h-[34px] shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-border px-3 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <RotateCcw className="h-3 w-3" />
               Reset
@@ -775,7 +781,7 @@ export function EditableBentoGrid({
             <button
               type="button"
               onClick={doneEdit}
-              className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground"
+              className="inline-flex min-h-[34px] shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-primary px-3 py-1 text-xs font-semibold text-primary-foreground"
             >
               <Check className="h-3 w-3" />
               Done
@@ -847,7 +853,7 @@ export function EditableBentoGrid({
                   <GripVertical className="h-4 w-4" />
                   {activeWidget.title}
                 </span>
-                <span className="font-num rounded-full bg-primary/15 px-2 py-0.5 text-[0.65rem] text-primary">
+                <span className="font-num rounded-md bg-primary/15 px-2 py-0.5 text-[0.65rem] text-primary">
                   {activePacked.effectiveSpan}/12
                 </span>
               </div>
@@ -927,6 +933,7 @@ function BentoSlot({
     attributes,
     listeners,
     setNodeRef: setDragRef,
+    setActivatorNodeRef,
   } = useDraggable({
     id: config.id,
     disabled: !editing,
@@ -983,15 +990,13 @@ function BentoSlot({
       ref={setRefs}
       layout={isDragging ? false : "position"}
       transition={{ type: "spring", stiffness: 460, damping: 36 }}
-      {...(editing ? listeners : {})}
-      {...(editing ? attributes : {})}
       className={cn(
         "group/bento col-span-1 flex h-full min-w-0 flex-col transition-[opacity,border-color] duration-200",
         mdSpan === 2 && "md:col-span-2",
         SPAN_CLASS[effectiveSpan] ?? SPAN_CLASS[config.span],
         editing &&
           !isPreviewSlot &&
-          "relative cursor-grab select-none touch-none rounded-3xl border border-dashed border-primary/45 p-1.5 active:cursor-grabbing",
+          "relative rounded-3xl border border-dashed border-primary/45 p-1.5",
         editing &&
           isOver &&
           !isPreviewSlot &&
@@ -1006,8 +1011,8 @@ function BentoSlot({
           <div className="pointer-events-none absolute inset-0 opacity-20">
             {children}
           </div>
-          <div className="relative z-10 flex flex-col items-center rounded-2xl border border-primary/50 bg-background/85 px-4 py-3 shadow-lg backdrop-blur-md">
-            <span className="font-num rounded-full bg-primary/20 px-3 py-1 text-xs font-semibold text-primary">
+          <div className="relative z-10 flex flex-col items-center rounded-xl border border-primary/50 bg-background/90 px-4 py-3 shadow-lg">
+            <span className="font-num rounded-md bg-primary/20 px-3 py-1 text-xs font-semibold text-primary">
               Drop preview · {title}
             </span>
             <span className="mt-1.5 text-xs tabular-nums text-muted-foreground">
@@ -1018,28 +1023,41 @@ function BentoSlot({
       ) : (
         <>
           {editing && (
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-border bg-background/90 px-3 py-1.5 backdrop-blur-md">
-              <div className="inline-flex min-w-0 items-center gap-1.5 text-xs font-medium text-foreground">
-                <GripVertical className="h-3.5 w-3.5 shrink-0 text-primary" />
+            <div
+              data-no-swipe
+              className="mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-background/95 px-2.5 py-1.5 sm:px-3"
+            >
+              <div className="inline-flex min-w-0 flex-1 items-center gap-1.5 text-xs font-medium text-foreground">
+                <button
+                  ref={setActivatorNodeRef}
+                  type="button"
+                  {...listeners}
+                  {...attributes}
+                  aria-label={`Drag to reorder ${title}`}
+                  title="Hold and drag to reorder card"
+                  className="grid h-8 w-8 shrink-0 cursor-grab touch-none select-none place-items-center rounded-lg bg-primary/10 text-primary transition-colors hover:bg-primary/20 active:cursor-grabbing"
+                >
+                  <GripVertical className="h-4 w-4" />
+                </button>
                 <span className="truncate">{title}</span>
                 {autoExpanded && (
-                  <span className="font-num shrink-0 rounded-full bg-primary/15 px-1.5 py-0.5 text-[0.6rem] text-primary">
+                  <span className="font-num hidden shrink-0 rounded-md bg-primary/15 px-1.5 py-0.5 text-[0.6rem] text-primary md:inline-flex">
                     fill {effectiveSpan}/12
                   </span>
                 )}
               </div>
               <div
-                className="flex flex-wrap shrink-0 items-center gap-1"
+                className="flex shrink-0 flex-wrap items-center gap-1"
                 onPointerDown={(e) => e.stopPropagation()}
               >
-                <div className="mr-0.5 flex items-center gap-0.5 rounded-full border border-border/80 bg-muted/60 p-0.5">
+                <div className="mr-0.5 flex items-center gap-0.5 rounded-lg border border-border/80 bg-muted/60 p-0.5">
                   <button
                     type="button"
                     disabled={!canMoveUp}
                     onClick={onMoveUp}
                     aria-label={`Move ${title} up`}
                     title="Move card earlier"
-                    className="grid h-7 w-7 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-30"
+                    className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-30"
                   >
                     <ArrowUp className="h-3 w-3" />
                   </button>
@@ -1049,7 +1067,7 @@ function BentoSlot({
                     onClick={onMoveDown}
                     aria-label={`Move ${title} down`}
                     title="Move card later"
-                    className="grid h-7 w-7 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-30"
+                    className="grid h-7 w-7 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-30"
                   >
                     <ArrowDown className="h-3 w-3" />
                   </button>
@@ -1059,38 +1077,42 @@ function BentoSlot({
                     type="button"
                     onClick={onPair}
                     title="Combine 2 cards side by side (½ + ½)"
-                    className="font-num mr-0.5 inline-flex min-h-[30px] shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[0.65rem] font-medium text-primary hover:bg-primary/20"
+                    className="font-num mr-0.5 hidden min-h-[30px] shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-primary/40 bg-primary/10 px-2 py-0.5 text-[0.65rem] font-medium text-primary hover:bg-primary/20 md:inline-flex"
                   >
                     <Columns2 className="h-3 w-3" />
                     Pair ½+½
                   </button>
                 )}
-                {SPAN_CHOICES.map((c) => {
-                  const active =
-                    config.span === c.span ||
-                    (c.span === 6 && (config.span === 5 || config.span === 7));
-                  return (
-                    <button
-                      key={c.span}
-                      type="button"
-                      onClick={() => onSpan(c.span)}
-                      title={`Resize target to ${c.label}`}
-                      className={cn(
-                        "font-num min-h-[30px] shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[0.65rem] transition-colors",
-                        active
-                          ? "bg-primary text-primary-foreground"
-                          : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                      )}
-                    >
-                      {c.label}
-                    </button>
-                  );
-                })}
+                <div className="hidden items-center gap-1 md:flex">
+                  {SPAN_CHOICES.map((c) => {
+                    const active =
+                      config.span === c.span ||
+                      (c.span === 6 &&
+                        (config.span === 5 || config.span === 7));
+                    return (
+                      <button
+                        key={c.span}
+                        type="button"
+                        onClick={() => onSpan(c.span)}
+                        title={`Resize target to ${c.label}`}
+                        className={cn(
+                          "font-num min-h-[30px] shrink-0 whitespace-nowrap rounded-lg px-2 py-0.5 text-[0.65rem] transition-colors",
+                          active
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                        )}
+                      >
+                        {c.label}
+                      </button>
+                    );
+                  })}
+                </div>
                 <button
                   type="button"
                   onClick={onHide}
+                  aria-label={`Hide ${title}`}
                   title={`Hide ${title}`}
-                  className="ml-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                  className="ml-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
                 >
                   <EyeOff className="h-3.5 w-3.5" />
                 </button>
@@ -1117,7 +1139,7 @@ function BentoSlot({
                 <span className="h-12 w-1.5 rounded-full bg-primary/45 transition-all group-hover/edge:h-16 group-hover/edge:bg-primary" />
               </button>
               {isResizing && (
-                <div className="font-num pointer-events-none absolute right-4 top-12 z-30 rounded-full border border-primary bg-background/95 px-2.5 py-1 text-[0.7rem] font-semibold text-primary shadow-xl">
+                <div className="font-num pointer-events-none absolute right-4 top-12 z-30 rounded-lg border border-primary bg-background/95 px-2.5 py-1 text-[0.7rem] font-semibold text-primary shadow-xl">
                   Width: {spanLabel(effectiveSpan)} ({effectiveSpan}/12)
                 </div>
               )}

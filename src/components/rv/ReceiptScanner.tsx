@@ -1,13 +1,4 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   AlertTriangle,
@@ -39,7 +30,7 @@ import {
   categoryIcon,
   incomeSourceIcon,
   paymentCardIcon,
-} from "@/components/rv/FinanceVisuals";
+} from "@/components/rv/FinanceIcons";
 import {
   QuickExpenseDrawer,
   QuickIncomeDrawer,
@@ -85,17 +76,10 @@ import {
 } from "@/lib/local-receipt-ai";
 import { cn } from "@/lib/utils";
 
-interface ScannerContextValue {
-  openScanner: (defaultAccount?: Account) => void;
-}
-
-const ScannerContext = createContext<ScannerContextValue>({
-  openScanner: () => {},
-});
-
-export function useReceiptScanner() {
-  return useContext(ScannerContext);
-}
+export {
+  ReceiptScannerProvider,
+  useReceiptScanner,
+} from "@/components/rv/ReceiptScannerContext";
 
 interface RecordedRecord {
   id: string;
@@ -333,29 +317,6 @@ const SCAN_MODES: {
   { id: "khm+eng", label: "Khmer", icon: Languages },
   { id: "handwriting", label: "Script", icon: PenTool },
 ];
-
-export function ReceiptScannerProvider({ children }: { children: ReactNode }) {
-  const [open, setOpen] = useState(false);
-  const [defaultAccount, setDefaultAccount] = useState<Account>("Personal");
-
-  const openScanner = useCallback((acct: Account = "Personal") => {
-    setDefaultAccount(acct);
-    setOpen(true);
-  }, []);
-
-  const value = useMemo(() => ({ openScanner }), [openScanner]);
-
-  return (
-    <ScannerContext.Provider value={value}>
-      {children}
-      <ReceiptScannerDrawer
-        open={open}
-        defaultAccount={defaultAccount}
-        onClose={() => setOpen(false)}
-      />
-    </ScannerContext.Provider>
-  );
-}
 
 export function ReceiptScannerDrawer({
   open,
@@ -1037,7 +998,7 @@ export function ReceiptScannerDrawer({
                 type="button"
                 onClick={cycleScanMode}
                 title="Tap to cycle OCR focus: Auto, Khmer, Script"
-                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full border border-border bg-muted/45 px-3 text-xs font-medium text-foreground transition-all hover:border-primary/45 active:scale-95"
+                className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-border bg-muted/45 px-3 text-xs font-medium text-foreground transition-all hover:border-primary/45 active:scale-95"
               >
                 <ActiveModeIcon className="h-3.5 w-3.5 text-primary" />
                 <span>{activeModeMeta.label}</span>
@@ -1154,7 +1115,7 @@ export function ReceiptScannerDrawer({
                   <button
                     type="button"
                     onClick={() => void handlePasteButton()}
-                    className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                    className="inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                   >
                     <ClipboardPaste className="h-4 w-4 text-primary" />
                     <span>Paste screenshot</span>
@@ -1163,7 +1124,7 @@ export function ReceiptScannerDrawer({
                     <button
                       type="button"
                       onClick={() => setShowRules((v) => !v)}
-                      className="font-num inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-full px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                      className="font-num inline-flex min-h-[40px] items-center justify-center gap-1.5 rounded-lg px-3.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                     >
                       <Sparkles className="h-4 w-4 text-primary" />
                       <span>Learned rules · {learnedRules.length}</span>
@@ -1205,7 +1166,7 @@ export function ReceiptScannerDrawer({
                               }))
                             }
                             aria-label={`Delete rule ${rule.displayPattern}`}
-                            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
@@ -1349,7 +1310,7 @@ export function ReceiptScannerDrawer({
                         type="button"
                         onClick={handleRotateAndRescan}
                         aria-label="Rotate 90 degrees and rescan"
-                        className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-black/65 px-2.5 py-1 text-[0.68rem] font-medium text-white backdrop-blur-md transition-transform active:scale-95"
+                        className="inline-flex items-center gap-1 rounded-lg border border-white/20 bg-black/65 px-2.5 py-1 text-[0.68rem] font-medium text-white backdrop-blur-md transition-transform active:scale-95"
                       >
                         <RotateCw className="h-3 w-3" />
                         <span>Rotate</span>
@@ -1361,7 +1322,7 @@ export function ReceiptScannerDrawer({
                       aria-label={
                         expandImage ? "Compact preview" : "Expand preview"
                       }
-                      className="inline-flex items-center gap-1 rounded-full border border-white/20 bg-black/65 px-2.5 py-1 text-[0.68rem] font-medium text-white backdrop-blur-md transition-transform active:scale-95"
+                      className="inline-flex items-center gap-1 rounded-lg border border-white/20 bg-black/65 px-2.5 py-1 text-[0.68rem] font-medium text-white backdrop-blur-md transition-transform active:scale-95"
                     >
                       {expandImage ? (
                         <>
@@ -1637,7 +1598,7 @@ export function ReceiptScannerDrawer({
                             type="button"
                             onClick={() => updateRecord({ method: m })}
                             className={cn(
-                              "min-h-[34px] rounded-full border px-2.5 text-xs font-semibold transition-colors",
+                              "min-h-[34px] rounded-lg border px-2.5 text-xs font-semibold transition-colors",
                               active
                                 ? "border-primary bg-primary text-primary-foreground"
                                 : "border-border bg-card/60 text-muted-foreground hover:text-foreground",
@@ -1746,7 +1707,7 @@ export function ReceiptScannerDrawer({
                         type="button"
                         onClick={() => updateRecord({ category: cat })}
                         className={cn(
-                          "inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors",
+                          "inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-lg border px-3 py-1 text-xs font-semibold transition-colors",
                           active
                             ? "border-primary bg-primary/20 text-primary"
                             : "border-border/80 bg-card/45 text-muted-foreground hover:text-foreground",
@@ -1768,7 +1729,7 @@ export function ReceiptScannerDrawer({
                     <button
                       type="button"
                       onClick={handleReparseRaw}
-                      className="rounded-full bg-primary px-2.5 py-1 text-[0.68rem] font-semibold text-primary-foreground transition-opacity hover:opacity-90"
+                      className="rounded-lg bg-primary px-2.5 py-1 text-[0.68rem] font-semibold text-primary-foreground transition-opacity hover:opacity-90"
                     >
                       Re-parse
                     </button>

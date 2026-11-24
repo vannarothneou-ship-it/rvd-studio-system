@@ -20,5 +20,16 @@ describe("App routing", () => {
     expect(router.matchRoutes("/work").at(-1)?.routeId).toBe("/work");
     expect(router.matchRoutes("/personal").at(-1)?.routeId).toBe("/personal");
     expect(router.matchRoutes("/finance").at(-1)?.routeId).toBe("/finance");
+    expect(router.matchRoutes("/clients").at(-1)?.routeId).toBe("/clients");
+    expect(router.matchRoutes("/projects").at(-1)?.routeId).toBe("/projects");
+    expect(router.matchRoutes("/invoices").at(-1)?.routeId).toBe("/invoices");
+    expect(router.matchRoutes("/invoices/new").at(-1)?.routeId).toBe(
+      "/invoices/$id",
+    );
+    expect(router.matchRoutes("/services").at(-1)?.routeId).toBe("/services");
+    expect(router.matchRoutes("/settings").at(-1)?.routeId).toBe("/settings");
+    expect(router.matchRoutes("/print/sample-id").at(-1)?.routeId).toBe(
+      "/print/$id",
+    );
   });
 });

@@ -577,7 +577,7 @@ function PersonalPage() {
                 }
               />
             </div>
-            <div className="grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
+            <div className="grid grid-cols-3 gap-3 border-t border-border/70 pt-3.5">
               <Stat
                 label="Income"
                 value={compactMoney(personalInRangeTotal)}
@@ -645,7 +645,7 @@ function PersonalPage() {
                   </div>
                 </div>
 
-                <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
+                <div className="mb-3 grid grid-cols-3 gap-3 border-y border-border/70 py-3">
                   <Stat
                     icon={ArrowDownLeft}
                     label="In"
@@ -976,10 +976,10 @@ function PersonalPage() {
                     setVisibleCount(RECENT_ROWS);
                   }}
                   className={cn(
-                    "rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
+                    "min-h-[34px] rounded-lg border px-2.5 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors",
                     catFilter === "All"
                       ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border text-muted-foreground hover:text-foreground",
+                      : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                   )}
                 >
                   All
@@ -999,13 +999,13 @@ function PersonalPage() {
                         setVisibleCount(RECENT_ROWS);
                       }}
                       className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
+                        "inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors",
                         catFilter === c
                           ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border text-muted-foreground hover:text-foreground",
+                          : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                       )}
                     >
-                      <Icon className="h-3 w-3 shrink-0" />
+                      <Icon className="h-3.5 w-3.5 shrink-0" />
                       <span>{c}</span>
                     </button>
                   );

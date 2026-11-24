@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   ArrowRight,
@@ -34,18 +34,33 @@ import {
   SlidingTabs,
   Stat,
 } from "@/components/rv/ui";
-import { CaseStudyBuilder } from "@/components/rv/CaseStudyBuilder";
 import { nextCode, upsert } from "@/components/rv/Crud";
 import {
   DesignMediaUploader,
   MediaCountBadge,
   MediaLightboxViewer,
 } from "@/components/rv/DesignMediaTools";
-import {
-  PortfolioGallerySection,
-  PortfolioSummaryView,
-} from "@/components/rv/PortfolioShowcase";
-import { WorkTasksCalendar } from "@/components/rv/WorkTasksCalendar";
+
+const LazyCaseStudyBuilder = lazy(() =>
+  import("@/components/rv/CaseStudyBuilder").then((m) => ({
+    default: m.CaseStudyBuilder,
+  })),
+);
+const LazyPortfolioSummaryView = lazy(() =>
+  import("@/components/rv/PortfolioShowcase").then((m) => ({
+    default: m.PortfolioSummaryView,
+  })),
+);
+const LazyPortfolioGallerySection = lazy(() =>
+  import("@/components/rv/PortfolioShowcase").then((m) => ({
+    default: m.PortfolioGallerySection,
+  })),
+);
+const LazyWorkTasksCalendar = lazy(() =>
+  import("@/components/rv/WorkTasksCalendar").then((m) => ({
+    default: m.WorkTasksCalendar,
+  })),
+);
 import { SwipeRow } from "@/components/rv/SwipeRow";
 import {
   workProjectMeta,
@@ -1148,32 +1163,40 @@ function WorkPage() {
           </Glass>
 
           {tasksView === "calendar" ? (
-            <WorkTasksCalendar
-              tasks={filteredTasks}
-              projectNames={projectNames}
-              activeProject={projectFilter}
-              onCreateOnRange={(startDate, dueDate) =>
-                setEditingTask(
-                  blankTask({
-                    status: "Design",
+            <Suspense
+              fallback={
+                <Glass className="p-6 text-center text-xs text-muted-foreground">
+                  Loading work calendar…
+                </Glass>
+              }
+            >
+              <LazyWorkTasksCalendar
+                tasks={filteredTasks}
+                projectNames={projectNames}
+                activeProject={projectFilter}
+                onCreateOnRange={(startDate, dueDate) =>
+                  setEditingTask(
+                    blankTask({
+                      status: "Design",
+                      startDate,
+                      dueDate,
+                      projectName:
+                        projectFilter !== "All"
+                          ? projectFilter
+                          : (projectNames[0] ?? "DBG"),
+                    }),
+                  )
+                }
+                onSelectTask={(task) => setEditingTask(task)}
+                onRescheduleTask={(task, startDate, dueDate) => {
+                  saveTask({
+                    ...task,
                     startDate,
                     dueDate,
-                    projectName:
-                      projectFilter !== "All"
-                        ? projectFilter
-                        : (projectNames[0] ?? "DBG"),
-                  }),
-                )
-              }
-              onSelectTask={(task) => setEditingTask(task)}
-              onRescheduleTask={(task, startDate, dueDate) => {
-                saveTask({
-                  ...task,
-                  startDate,
-                  dueDate,
-                });
-              }}
-            />
+                  });
+                }}
+              />
+            </Suspense>
           ) : tasksView === "projects" ? (
             <div className="grid gap-4 lg:grid-cols-2">
               {tasksGroupedByProject.map(([projName, groupTasks]) => {
@@ -1310,52 +1333,60 @@ function WorkPage() {
       )}
 
       {tab === "summary" && (
-        <PortfolioSummaryView
-          headline={
-            db.settings.portfolioHeadline || "Visual & Brand Design Portfolio"
+        <Suspense
+          fallback={
+            <Glass className="p-6 text-center text-xs text-muted-foreground">
+              Loading portfolio summary…
+            </Glass>
           }
-          bio={
-            db.settings.portfolioBio ||
-            "Selected commercial branding, packaging, campaign visuals, and spatial design delivered across full-time teams and independent studio engagements."
-          }
-          ownerName={db.settings.ownerName}
-          items={output.items}
-          byType={output.byType}
-          byProjectGroup={output.byProjectGroup}
-          monthlyTrend={output.monthlyTrend}
-          totalArtworks={output.totalArtworks}
-          completedTotal={output.completedTotal}
-          activeTotal={output.activeTotal}
-          mediaCount={output.mediaCount}
-          workCompleted={output.workCompleted}
-          studioCompleted={output.studioCompleted}
-          onSaveBio={(portfolioHeadline, portfolioBio) => {
-            setDB((d) => ({
-              ...d,
-              settings: {
-                ...d.settings,
-                portfolioHeadline,
-                portfolioBio,
-              },
-            }));
-            toast.success("Updated Portfolio Summary intro");
-          }}
-          onOpenPreviewOrAttach={openItemPreviewOrAttach}
-          onManage={openItemManage}
-          onToggleFeatured={toggleItemFeatured}
-          onJumpToGalleryProject={(grp) => {
-            setOutProjectFilter(grp);
-            setTab("gallery");
-          }}
-          onJumpToWorkProject={(grp) => {
-            setProjectFilter(grp);
-            setTab("tasks");
-          }}
-          onOpenCaseStudy={(it) => setCaseStudyItem(it)}
-          onCreateCaseStudyFromFiles={() =>
-            caseStudyFilesInputRef.current?.click()
-          }
-        />
+        >
+          <LazyPortfolioSummaryView
+            headline={
+              db.settings.portfolioHeadline || "Visual & Brand Design Portfolio"
+            }
+            bio={
+              db.settings.portfolioBio ||
+              "Selected commercial branding, packaging, campaign visuals, and spatial design delivered across full-time teams and independent studio engagements."
+            }
+            ownerName={db.settings.ownerName}
+            items={output.items}
+            byType={output.byType}
+            byProjectGroup={output.byProjectGroup}
+            monthlyTrend={output.monthlyTrend}
+            totalArtworks={output.totalArtworks}
+            completedTotal={output.completedTotal}
+            activeTotal={output.activeTotal}
+            mediaCount={output.mediaCount}
+            workCompleted={output.workCompleted}
+            studioCompleted={output.studioCompleted}
+            onSaveBio={(portfolioHeadline, portfolioBio) => {
+              setDB((d) => ({
+                ...d,
+                settings: {
+                  ...d.settings,
+                  portfolioHeadline,
+                  portfolioBio,
+                },
+              }));
+              toast.success("Updated Portfolio Summary intro");
+            }}
+            onOpenPreviewOrAttach={openItemPreviewOrAttach}
+            onManage={openItemManage}
+            onToggleFeatured={toggleItemFeatured}
+            onJumpToGalleryProject={(grp) => {
+              setOutProjectFilter(grp);
+              setTab("gallery");
+            }}
+            onJumpToWorkProject={(grp) => {
+              setProjectFilter(grp);
+              setTab("tasks");
+            }}
+            onOpenCaseStudy={(it) => setCaseStudyItem(it)}
+            onCreateCaseStudyFromFiles={() =>
+              caseStudyFilesInputRef.current?.click()
+            }
+          />
+        </Suspense>
       )}
 
       {tab === "gallery" && (
@@ -1432,22 +1463,30 @@ function WorkPage() {
             </div>
           </Glass>
 
-          <PortfolioGallerySection
-            items={filteredShowcase}
-            onOpenPreviewOrAttach={openItemPreviewOrAttach}
-            onManage={openItemManage}
-            onToggleFeatured={toggleItemFeatured}
-            onAddNewCompleted={() =>
-              setEditingTask(blankTask({ status: "Completed" }))
+          <Suspense
+            fallback={
+              <Glass className="p-6 text-center text-xs text-muted-foreground">
+                Loading gallery…
+              </Glass>
             }
-            onOpenCaseStudy={(it) => setCaseStudyItem(it)}
-            onCreateCaseStudyFromFiles={() =>
-              caseStudyFilesInputRef.current?.click()
-            }
-            onDropFilesForCaseStudy={(files) =>
-              void handleAutoCaseStudyFromFiles(files)
-            }
-          />
+          >
+            <LazyPortfolioGallerySection
+              items={filteredShowcase}
+              onOpenPreviewOrAttach={openItemPreviewOrAttach}
+              onManage={openItemManage}
+              onToggleFeatured={toggleItemFeatured}
+              onAddNewCompleted={() =>
+                setEditingTask(blankTask({ status: "Completed" }))
+              }
+              onOpenCaseStudy={(it) => setCaseStudyItem(it)}
+              onCreateCaseStudyFromFiles={() =>
+                caseStudyFilesInputRef.current?.click()
+              }
+              onDropFilesForCaseStudy={(files) =>
+                void handleAutoCaseStudyFromFiles(files)
+              }
+            />
+          </Suspense>
         </div>
       )}
 
@@ -1657,43 +1696,49 @@ function WorkPage() {
       />
 
       {/* Interactive Case Study Studio Drawer */}
-      <CaseStudyBuilder
-        item={caseStudyItem}
-        existingDoc={
-          caseStudyItem
-            ? db.caseStudies?.[
+      {caseStudyItem && (
+        <Suspense fallback={null}>
+          <LazyCaseStudyBuilder
+            item={caseStudyItem}
+            existingDoc={
+              db.caseStudies?.[
                 caseStudyKey(caseStudyItem.source, caseStudyItem.id)
               ]
-            : undefined
-        }
-        ownerName={db.settings.ownerName}
-        onClose={() => setCaseStudyItem(null)}
-        onSave={(doc, updatedMedia) => {
-          setDB((d) => {
-            const next = saveCaseStudy(d, doc);
-            if (caseStudyItem?.source === "work") {
-              return {
-                ...next,
-                workTasks: (next.workTasks ?? []).map((t) =>
-                  t.id === caseStudyItem.id ? { ...t, media: updatedMedia } : t,
-                ),
-              };
             }
-            if (caseStudyItem?.source === "studio") {
-              return {
-                ...next,
-                projects: next.projects.map((p) =>
-                  p.id === caseStudyItem.id ? { ...p, media: updatedMedia } : p,
-                ),
-              };
-            }
-            return next;
-          });
-          setCaseStudyItem((prev) =>
-            prev ? { ...prev, media: updatedMedia } : prev,
-          );
-        }}
-      />
+            ownerName={db.settings.ownerName}
+            onClose={() => setCaseStudyItem(null)}
+            onSave={(doc, updatedMedia) => {
+              setDB((d) => {
+                const next = saveCaseStudy(d, doc);
+                if (caseStudyItem?.source === "work") {
+                  return {
+                    ...next,
+                    workTasks: (next.workTasks ?? []).map((t) =>
+                      t.id === caseStudyItem.id
+                        ? { ...t, media: updatedMedia }
+                        : t,
+                    ),
+                  };
+                }
+                if (caseStudyItem?.source === "studio") {
+                  return {
+                    ...next,
+                    projects: next.projects.map((p) =>
+                      p.id === caseStudyItem.id
+                        ? { ...p, media: updatedMedia }
+                        : p,
+                    ),
+                  };
+                }
+                return next;
+              });
+              setCaseStudyItem((prev) =>
+                prev ? { ...prev, media: updatedMedia } : prev,
+              );
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* Lightbox Viewer */}
       <MediaLightboxViewer

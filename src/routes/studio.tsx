@@ -47,7 +47,7 @@ import {
   type BentoWidgetDef,
 } from "@/components/rv/BentoGrid";
 import { WorkspaceBalanceCard } from "@/components/rv/WorkspaceBalanceCard";
-import { useReceiptScanner } from "@/components/rv/ReceiptScanner";
+import { useReceiptScanner } from "@/components/rv/ReceiptScannerContext";
 import { QuickStudioIncomeDrawer } from "@/components/rv/QuickTxDrawer";
 import {
   EXPENSE_CATEGORIES,
@@ -497,7 +497,7 @@ function StudioDashboard() {
                   Documents →
                 </Link>
               </div>
-              <div className="mb-3 grid grid-cols-2 gap-2.5 rounded-xl border border-border/70 bg-muted/40 p-3 text-xs text-muted-foreground">
+              <div className="mb-3 grid grid-cols-2 gap-2.5 border-y border-border/70 py-3 text-xs text-muted-foreground">
                 <div>
                   <span className="font-num block text-base font-bold text-foreground">
                     {
@@ -590,7 +590,7 @@ function StudioDashboard() {
                 valueLabel="Studio cumulative net"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-3 border-t border-border/70 pt-3.5 sm:grid-cols-3">
               <Link to="/invoices" className="ios-tap">
                 <Stat
                   label="Open A/R"
@@ -681,7 +681,7 @@ function StudioDashboard() {
                   }))}
                 />
               </div>
-              <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
+              <div className="mb-3 grid grid-cols-3 gap-3 border-y border-border/70 py-3">
                 <Stat
                   icon={ArrowDownLeft}
                   label="In"
@@ -1029,7 +1029,7 @@ function StudioDashboard() {
                 <Link
                   key={st}
                   to="/projects"
-                  className="ios-card-tap rounded-2xl border border-border bg-muted p-4"
+                  className="ios-card-tap rounded-xl border border-border bg-secondary/50 p-4"
                 >
                   <p className="label-mono">{st}</p>
                   <p className="font-num text-3xl font-extrabold">
@@ -1039,7 +1039,7 @@ function StudioDashboard() {
               ))}
               <Link
                 to="/projects"
-                className="ios-card-tap rounded-2xl border border-primary/50 bg-primary/15 p-4 text-primary"
+                className="ios-card-tap rounded-xl border border-primary/45 bg-primary/12 p-4 text-primary"
               >
                 <p className="label-mono text-primary">Ready to close</p>
                 <p className="font-num text-3xl font-extrabold">
@@ -1241,7 +1241,7 @@ function StudioDashboard() {
             <Link
               to="/invoices/$id"
               params={{ id: "new" }}
-              className="ios-tap inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-xs hover:bg-[var(--primary-hover,var(--primary))] sm:min-h-[38px]"
+              className="ios-tap inline-flex min-h-[42px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-xs hover:bg-[var(--primary-hover,var(--primary))] sm:min-h-[38px]"
             >
               <Plus className="h-4 w-4" />
               New invoice
@@ -1262,10 +1262,10 @@ function StudioDashboard() {
               setEditingLayout(false);
             }}
             className={cn(
-              "rounded-full border px-3.5 py-1.5 text-xs font-medium whitespace-nowrap shrink-0 transition-colors",
+              "min-h-[36px] rounded-lg border px-3.5 py-1.5 text-xs font-medium whitespace-nowrap shrink-0 transition-colors",
               activeTab === "overview"
-                ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                : "border-border bg-muted/60 text-muted-foreground hover:text-foreground",
+                ? "border-primary bg-primary text-primary-foreground shadow-xs"
+                : "border-border bg-secondary text-muted-foreground hover:text-foreground",
             )}
           >
             Studio Overview
@@ -1274,10 +1274,10 @@ function StudioDashboard() {
             <div
               key={tab.id}
               className={cn(
-                "inline-flex shrink-0 items-center rounded-full border text-xs font-medium transition-colors",
+                "inline-flex min-h-[36px] shrink-0 items-center rounded-lg border text-xs font-medium transition-colors",
                 activeTab === tab.id
-                  ? "border-primary bg-primary text-primary-foreground shadow-sm"
-                  : "border-border bg-muted/60 text-muted-foreground hover:text-foreground",
+                  ? "border-primary bg-primary text-primary-foreground shadow-xs"
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
               )}
             >
               <button
@@ -1298,7 +1298,7 @@ function StudioDashboard() {
                   if (activeTab === tab.id) setActiveTab("overview");
                 }}
                 className={cn(
-                  "mr-1.5 rounded-full p-1 transition-colors",
+                  "mr-1.5 rounded-md p-1 transition-colors",
                   activeTab === tab.id
                     ? "hover:bg-black/15"
                     : "hover:bg-destructive/15 hover:text-destructive",
@@ -1311,7 +1311,7 @@ function StudioDashboard() {
           <button
             type="button"
             onClick={() => setNewTabOpen(true)}
-            className="inline-flex items-center gap-1 rounded-full border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/60 hover:text-foreground"
+            className="inline-flex min-h-[36px] items-center gap-1 rounded-lg border border-dashed border-border px-3 py-1.5 text-xs text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/60 hover:text-foreground"
           >
             <Plus className="h-3.5 w-3.5" />
             New tab
@@ -1471,7 +1471,7 @@ function StudioDashboard() {
                     </div>
                     <span
                       className={cn(
-                        "font-num mt-0.5 shrink-0 rounded-full border px-2 py-0.5 text-[0.65rem]",
+                        "font-num mt-0.5 shrink-0 rounded-md border px-2 py-0.5 text-[0.68rem] font-medium",
                         picked
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border text-muted-foreground",

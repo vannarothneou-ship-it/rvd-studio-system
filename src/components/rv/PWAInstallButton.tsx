@@ -25,7 +25,7 @@ export function PWAInstallButton({
         onClick={() => void install()}
         aria-label="Install RothVan Ledger app"
         className={cn(
-          "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-secondary/80 text-xs font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-accent",
+          "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-border bg-secondary/80 text-xs font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-accent",
           compact ? "h-9 px-2.5" : "px-3 py-2",
           className,
         )}
@@ -44,7 +44,7 @@ export function PWAInstallButton({
           onClick={() => setShowIOSGuide(true)}
           aria-label="Install on iPhone or iPad"
           className={cn(
-            "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-border bg-secondary/80 text-xs font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-accent",
+            "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-border bg-secondary/80 text-xs font-medium text-foreground transition-colors hover:border-primary/50 hover:bg-accent",
             compact ? "h-9 px-2.5" : "px-3 py-2",
             className,
           )}
@@ -88,7 +88,7 @@ export function PWAInstallButton({
                     type="button"
                     onClick={() => setShowIOSGuide(false)}
                     aria-label="Close install instructions"
-                    className="grid h-8 w-8 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                    className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
                     <X className="h-4 w-4" />
                   </button>
@@ -149,7 +149,7 @@ export function OfflineIndicator() {
     <div
       role="status"
       aria-live="polite"
-      className="fixed bottom-20 left-3 z-50 flex items-center gap-2 rounded-full border border-primary/40 bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg backdrop-blur-md sm:bottom-4"
+      className="fixed bottom-20 left-3 z-50 flex items-center gap-2 rounded-xl border border-primary/40 bg-background/95 px-3 py-1.5 text-xs font-medium text-foreground shadow-lg backdrop-blur-md sm:bottom-4"
     >
       <span className="h-2 w-2 animate-pulse rounded-full bg-primary" />
       <span>Offline Mode — Cached workspace ready</span>

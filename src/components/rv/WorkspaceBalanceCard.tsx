@@ -1,6 +1,6 @@
 import { Briefcase, Eye, EyeOff, Layers, Wallet } from "lucide-react";
 import { Glass, Stat } from "@/components/rv/ui";
-import { AnimatedNumber } from "@/components/rv/FinanceVisuals";
+import { AnimatedNumber } from "@/components/rv/FinanceIcons";
 import {
   compactMoney,
   designOutputSummary,
@@ -98,7 +98,7 @@ export function WorkspaceBalanceCard({
               }
               aria-pressed={!showAmounts}
               title={showAmounts ? "Hide amounts" : "Show amounts"}
-              className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-muted-foreground transition-colors hover:text-foreground"
             >
               {showAmounts ? (
                 <Eye className="h-3.5 w-3.5" />
@@ -174,7 +174,7 @@ export function WorkspaceBalanceCard({
             }
             aria-pressed={!showAmounts}
             title={showAmounts ? "Hide amounts" : "Show amounts"}
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-muted-foreground transition-colors hover:text-foreground"
           >
             {showAmounts ? (
               <Eye className="h-3.5 w-3.5" />

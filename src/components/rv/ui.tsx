@@ -86,7 +86,7 @@ export function useHoldTip(label: string) {
                 ? "translate(-50%, 0)"
                 : "translate(-50%, -100%)",
             }}
-            className="pointer-events-none z-[200] animate-in fade-in zoom-in-95 whitespace-nowrap rounded-full border border-[var(--glass-border)] bg-popover px-2.5 py-1 text-[0.7rem] font-medium text-popover-foreground shadow-lg backdrop-blur-xl duration-150"
+            className="pointer-events-none z-[200] animate-in fade-in zoom-in-95 whitespace-nowrap rounded-lg border border-border bg-popover px-2.5 py-1 text-[0.7rem] font-medium text-popover-foreground shadow-md duration-150"
           >
             {label}
           </span>,
@@ -243,14 +243,9 @@ export function PageHeader({
   action?: ReactNode;
 }) {
   return (
-    <header
-      className={cn(
-        "rise mb-3 flex-col gap-2.5 sm:mb-4 sm:flex sm:flex-row sm:items-center sm:justify-between sm:gap-4",
-        action ? "flex" : "hidden sm:flex",
-      )}
-    >
+    <header className="rise mb-3 flex flex-col gap-2.5 sm:mb-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
       <div className="min-w-0">
-        <h1 className="truncate font-display text-2xl font-bold tracking-[-0.03em] text-foreground sm:text-3xl">
+        <h1 className="truncate font-display text-xl font-bold tracking-[-0.025em] text-foreground sm:text-3xl">
           {title}
         </h1>
       </div>
@@ -274,7 +269,7 @@ export function Btn({
     <button
       {...p}
       className={cn(
-        "ios-tap inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-full px-4 py-2 text-sm font-medium transition-[transform,background-color,border-color,color,opacity] duration-150 disabled:opacity-50 sm:min-h-[38px]",
+        "ios-tap inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-4 py-2 text-sm font-medium transition-[transform,background-color,border-color,color,opacity] duration-150 disabled:opacity-50 sm:min-h-[38px]",
         variant === "gold" &&
           "bg-primary text-primary-foreground shadow-xs hover:bg-[var(--primary-hover,var(--primary))]",
         variant === "ghost" &&
@@ -346,7 +341,7 @@ export function Modal({
       <div
         onClick={(e) => e.stopPropagation()}
         className={cn(
-          "max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl border border-[var(--glass-border)] bg-popover p-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl backdrop-blur-2xl backdrop-saturate-150 animate-in slide-in-from-bottom-8 sm:rounded-xl sm:p-6",
+          "max-h-[92dvh] w-full overflow-y-auto rounded-t-2xl border border-border bg-popover p-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-2xl animate-in slide-in-from-bottom-8 sm:rounded-2xl sm:p-6",
           wide ? "sm:max-w-3xl" : "sm:max-w-lg",
         )}
       >
@@ -413,11 +408,11 @@ export function SlideDrawer({
       />
       <aside
         className={cn(
-          "drawer-in relative z-10 mt-[env(safe-area-inset-top)] flex h-[calc(100dvh-env(safe-area-inset-top)-0.75rem)] w-full flex-col rounded-t-2xl border-t border-[var(--glass-border)] bg-popover shadow-2xl backdrop-blur-2xl backdrop-saturate-150 sm:mt-0 sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0 sm:pt-[env(safe-area-inset-top)]",
+          "drawer-in relative z-10 mt-[env(safe-area-inset-top)] flex h-[calc(100dvh-env(safe-area-inset-top)-0.75rem)] w-full flex-col rounded-t-2xl border-t border-border bg-popover shadow-2xl sm:mt-0 sm:h-full sm:max-h-none sm:rounded-none sm:border-t-0 sm:pt-[env(safe-area-inset-top)]",
           widthClass,
           side === "left"
-            ? "sm:border-r sm:border-[var(--glass-border)]"
-            : "sm:border-l sm:border-[var(--glass-border)]",
+            ? "sm:border-r sm:border-border"
+            : "sm:border-l sm:border-border",
         )}
       >
         <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-border sm:hidden" />

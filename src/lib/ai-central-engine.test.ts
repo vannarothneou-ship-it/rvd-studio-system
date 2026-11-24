@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   askCentralDB,
   computeCentralIntelligence,
+  parseQuickCommand,
   simulateCashScenario,
 } from "./ai-central-engine";
 import { getDB, type DB } from "./store";
@@ -102,6 +103,18 @@ function makeTestDb(): DB {
         receipt: "",
         account: "Personal",
       },
+      {
+        id: "e3",
+        date: "2026-11-14",
+        projectId: "",
+        category: "Software and subscriptions",
+        vendor: "Debit",
+        description: "Adobe CC",
+        amount: 35,
+        currency: "USD",
+        receipt: "",
+        account: "Studio",
+      },
     ],
     categoryLimits: {
       "Personal:Food": 300,
@@ -194,5 +207,60 @@ describe("ai-central-engine", () => {
     const cards = askCentralDB(db, snap, "Debit vs Credit card split");
     expect(cards.answer).toContain("$320.00 on Debit");
     expect(cards.answer).toContain("$80.00 on Credit");
+
+    expect(snap.studioMonthTotalUSD).toBe(35);
+    expect(snap.studioTopCategories[0]?.category).toBe(
+      "Software and subscriptions",
+    );
+
+    const studioSpend = askCentralDB(db, snap, "What is my studio spending?");
+    expect(studioSpend.answer).toContain("$35.00");
+    expect(studioSpend.answer).toContain("Software and subscriptions");
+
+    const schedule = askCentralDB(db, snap, "What is upcoming this week?");
+    expect(schedule.answer).toContain("1 unpaid invoice");
+  });
+
+  it("parses quick commands for Studio expenses, KHR expenses, income, and work tasks", () => {
+    const db = makeTestDb();
+
+    const studioCmd = parseQuickCommand(
+      "spent $29 studio figma",
+      db,
+      "2026-11-19",
+    );
+    expect(studioCmd?.kind).toBe("expense");
+    if (studioCmd?.kind === "expense") {
+      expect(studioCmd.data.account).toBe("Studio");
+      expect(studioCmd.data.amount).toBe(29);
+      expect(studioCmd.data.category).toBe("Software and subscriptions");
+    }
+
+    const khrCmd = parseQuickCommand("20000r ptt fuel", db, "2026-11-19");
+    expect(khrCmd?.kind).toBe("expense");
+    if (khrCmd?.kind === "expense") {
+      expect(khrCmd.data.currency).toBe("KHR");
+      expect(khrCmd.data.amount).toBe(20000);
+      expect(khrCmd.data.category).toBe("Prius 2012");
+    }
+
+    const incCmd = parseQuickCommand("+$500 freelance", db, "2026-11-19");
+    expect(incCmd?.kind).toBe("income");
+    if (incCmd?.kind === "income") {
+      expect(incCmd.data.amount).toBe(500);
+      expect(incCmd.data.source).toBe("Freelance");
+    }
+
+    const taskCmd = parseQuickCommand(
+      "task DBG banner tomorrow 3 pcs",
+      db,
+      "2026-11-19",
+    );
+    expect(taskCmd?.kind).toBe("work-task");
+    if (taskCmd?.kind === "work-task") {
+      expect(taskCmd.data.projectName).toBe("DBG");
+      expect(taskCmd.data.artworkCount).toBe(3);
+      expect(taskCmd.data.dueDate).toBe("2026-11-20");
+    }
   });
 });

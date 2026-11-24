@@ -44,8 +44,10 @@ export function EditModal<T extends { id: string }>({
   footerExtra?: (v: T, patch: (p: Partial<T>) => void) => ReactNode;
 }) {
   const [v, setV] = useState<T | null>(item);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => {
     setV(item);
+    setConfirmDelete(false);
   }, [item]);
 
   if (!item || !v) return null;
@@ -85,7 +87,7 @@ export function EditModal<T extends { id: string }>({
                     className="h-20 w-20 rounded-lg object-cover"
                   />
                 ) : null}
-                <label className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-full border border-border bg-secondary px-3.5 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent active:scale-95">
+                <label className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-secondary px-3.5 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent active:scale-95">
                   <Upload className="h-3.5 w-3.5 shrink-0 text-primary" />
                   <span>{val ? "Replace image" : "Upload image"}</span>
                   <input
@@ -208,20 +210,34 @@ export function EditModal<T extends { id: string }>({
           )}
         </div>
       ) : null}
-      <div className="col-span-2 mt-2 flex justify-between gap-2 border-t border-border/70 pt-3">
+      <div className="col-span-2 mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-border/70 pt-3">
         {onDelete ? (
-          <Btn
-            type="button"
-            variant="danger"
-            onClick={() => {
-              if (confirm("Delete this?")) {
-                const deleted = onDelete(v);
-                if (deleted !== false) onClose();
-              }
-            }}
-          >
-            Delete
-          </Btn>
+          confirmDelete ? (
+            <div className="flex items-center gap-2">
+              <Btn
+                type="button"
+                variant="danger"
+                onClick={() => {
+                  setConfirmDelete(false);
+                  const deleted = onDelete(v);
+                  if (deleted !== false) onClose();
+                }}
+              >
+                Confirm delete?
+              </Btn>
+              <Btn type="button" onClick={() => setConfirmDelete(false)}>
+                Keep
+              </Btn>
+            </div>
+          ) : (
+            <Btn
+              type="button"
+              variant="danger"
+              onClick={() => setConfirmDelete(true)}
+            >
+              Delete
+            </Btn>
+          )
         ) : (
           <span />
         )}

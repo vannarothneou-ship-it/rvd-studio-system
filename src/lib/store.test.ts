@@ -14,6 +14,7 @@ import {
   cashFlowSeries,
   cashReceived,
   categoryLimit,
+  clientBillingStats,
   clientDeleteBlocker,
   categoryTotals,
   collectLedgerMonths,
@@ -1251,5 +1252,83 @@ describe("Phase 1 FX immutability, financial separation, migration & persistence
       Storage.prototype.setItem = origSetItem;
       resetDB();
     }
+  });
+
+  it("excludes Draft invoices and non-invoice documents from client billed and owed stats", () => {
+    const base = getDB();
+    const clientId = "client-billing-parity";
+    const testDb = {
+      ...base,
+      invoices: [
+        inv({
+          id: "inv-draft",
+          kind: "Invoice",
+          clientId,
+          sent: false,
+          items: [
+            {
+              id: "i1",
+              description: "Draft work",
+              scope: "",
+              timeline: "",
+              qty: 1,
+              price: 500,
+            },
+          ],
+        }),
+        inv({
+          id: "quote-accepted",
+          kind: "Quotation",
+          clientId,
+          sent: true,
+          response: "Accepted",
+          items: [
+            {
+              id: "i2",
+              description: "Accepted quote",
+              scope: "",
+              timeline: "",
+              qty: 1,
+              price: 800,
+            },
+          ],
+        }),
+        inv({
+          id: "inv-sent",
+          kind: "Invoice",
+          clientId,
+          sent: true,
+          items: [
+            {
+              id: "i3",
+              description: "Issued work",
+              scope: "",
+              timeline: "",
+              qty: 1,
+              price: 300,
+            },
+          ],
+        }),
+      ],
+      payments: [
+        {
+          id: "pay-partial",
+          invoiceId: "inv-sent",
+          date: "2026-03-10",
+          amount: 100,
+          currency: "USD" as const,
+          method: "ABA",
+          reference: "",
+        },
+      ],
+      projects: [],
+    };
+
+    const stats = clientBillingStats(testDb).get(clientId);
+    expect(stats).toEqual({
+      billed: 300,
+      owed: 200,
+      projects: 0,
+    });
   });
 });

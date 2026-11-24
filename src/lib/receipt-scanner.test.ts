@@ -37,14 +37,23 @@ describe("handleScanReceiptRequest security & validation", () => {
     expect(res.status).toBe(405);
   });
 
-  it("rejects disallowed cross-origin requests with 403", async () => {
-    const res = await handleScanReceiptRequest(
+  it("rejects disallowed cross-origin requests with 403 and allows configured APP_URL", async () => {
+    const blocked = await handleScanReceiptRequest(
       buildScanRequest(
         { imageBase64: VALID_PNG_BASE64, mimeType: "image/png" },
         { origin: "https://evil.example.com" },
       ),
     );
-    expect(res.status).toBe(403);
+    expect(blocked.status).toBe(403);
+
+    const allowedByAppUrl = await handleScanReceiptRequest(
+      buildScanRequest(
+        { imageBase64: VALID_PNG_BASE64, mimeType: "image/png" },
+        { origin: "https://studio-app.example.run.app" },
+      ),
+      { APP_URL: "https://studio-app.example.run.app", GEMINI_API_KEY: "" },
+    );
+    expect(allowedByAppUrl.status).toBe(503);
   });
 
   it("enforces SCAN_API_TOKEN when configured on the server", async () => {

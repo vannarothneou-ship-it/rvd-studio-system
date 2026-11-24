@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -15,8 +15,13 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Btn, Glass, SlidingTabs } from "@/components/rv/ui";
-import { D3MoneyFlowChart } from "@/components/rv/D3MoneyFlowChart";
-import { categoryIcon } from "@/components/rv/FinanceVisuals";
+import { categoryIcon } from "@/components/rv/FinanceIcons";
+
+const LazyD3MoneyFlowChart = lazy(() =>
+  import("@/components/rv/D3MoneyFlowChart").then((m) => ({
+    default: m.D3MoneyFlowChart,
+  })),
+);
 import {
   buildMoneyFlowData,
   shortFlowLabel,
@@ -579,7 +584,7 @@ export function MoneyFlowSankeyCard({
                           setHoveredId((cur) => (cur === s.id ? null : s.id))
                         }
                         className={cn(
-                          "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
+                          "inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs transition-colors",
                           hoveredId === s.id
                             ? "border-primary bg-primary/15 text-foreground"
                             : "border-border bg-muted/40 text-foreground",
@@ -924,19 +929,27 @@ export function MoneyFlowSankeyCard({
             )}
 
             {chartType !== "river" && (
-              <D3MoneyFlowChart
-                chartType={chartType}
-                range={range}
-                pieData={pieData}
-                buckets={flow.buckets}
-                timelinePoints={flow.timelinePoints}
-                hasIncome={flow.hasIncome}
-                totalSpend={flow.totalSpend}
-                formatMoney={(n) => fmt(n, false)}
-                formatCompact={(n) => fmt(n, true)}
-                onSelectCategory={onSelectCategory}
-                onHoverId={setHoveredId}
-              />
+              <Suspense
+                fallback={
+                  <div className="grid min-h-[240px] place-items-center rounded-xl border border-border/60 bg-muted/20 text-xs text-muted-foreground">
+                    Loading chart…
+                  </div>
+                }
+              >
+                <LazyD3MoneyFlowChart
+                  chartType={chartType}
+                  range={range}
+                  pieData={pieData}
+                  buckets={flow.buckets}
+                  timelinePoints={flow.timelinePoints}
+                  hasIncome={flow.hasIncome}
+                  totalSpend={flow.totalSpend}
+                  formatMoney={(n) => fmt(n, false)}
+                  formatCompact={(n) => fmt(n, true)}
+                  onSelectCategory={onSelectCategory}
+                  onHoverId={setHoveredId}
+                />
+              </Suspense>
             )}
           </div>
 

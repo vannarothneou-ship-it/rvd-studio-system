@@ -3006,6 +3006,37 @@ export function workspaceBalances(db: DB, period = today().slice(0, 7)) {
   };
 }
 
+export function clientBillingStats(
+  db: DB,
+): Map<string, { billed: number; owed: number; projects: number }> {
+  const map = new Map<
+    string,
+    { billed: number; owed: number; projects: number }
+  >();
+  const ensure = (id: string) => {
+    let cur = map.get(id);
+    if (!cur) {
+      cur = { billed: 0, owed: 0, projects: 0 };
+      map.set(id, cur);
+    }
+    return cur;
+  };
+  for (const i of db.invoices) {
+    if (!i.clientId) continue;
+    const v = invoiceView(i, db);
+    const cur = ensure(i.clientId);
+    if (v.status !== "Draft") {
+      cur.billed += v.totalUSD;
+      cur.owed += v.balanceUSD;
+    }
+  }
+  for (const p of db.projects) {
+    if (!p.clientId) continue;
+    ensure(p.clientId).projects += 1;
+  }
+  return map;
+}
+
 export function inferStudioDesignType(
   project: Project,
   service?: Service,

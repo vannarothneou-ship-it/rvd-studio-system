@@ -160,6 +160,7 @@ function Editor() {
   const [tab, setTab] = useState<"form" | "preview">("form");
   const [payOpen, setPayOpen] = useState(false);
   const [newClient, setNewClient] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [followNote, setFollowNote] = useState("");
   const kind = documentKind(draft);
   type SectionKey =
@@ -191,6 +192,7 @@ function Editor() {
   useEffect(() => {
     if (prevResetKeyRef.current === resetKey) return;
     prevResetKeyRef.current = resetKey;
+    setConfirmDelete(false);
     if (id === "new") {
       setDraft(makeNew(search));
     } else if (stored) {
@@ -311,7 +313,10 @@ function Editor() {
     nav({ to: "/invoices/$id", params: { id: copy.id } });
   };
   const del = () => {
-    if (!confirm("Delete this document and its payments?")) return;
+    const snap = getDB();
+    const deletedDoc = snap.invoices.find((i) => i.id === draft.id) ?? draft;
+    const deletedPays = snap.payments.filter((p) => p.invoiceId === draft.id);
+    setConfirmDelete(false);
     setDB((d) =>
       reconcileProjects({
         ...d,
@@ -319,6 +324,28 @@ function Editor() {
         payments: d.payments.filter((p) => p.invoiceId !== draft.id),
       }),
     );
+    toast.success(`Deleted ${deletedDoc.no || "document"}`, {
+      action: {
+        label: "Undo",
+        onClick: () => {
+          setDB((d) =>
+            reconcileProjects({
+              ...d,
+              invoices: d.invoices.some((i) => i.id === deletedDoc.id)
+                ? d.invoices
+                : [...d.invoices, deletedDoc],
+              payments: [
+                ...d.payments,
+                ...deletedPays.filter(
+                  (dp) => !d.payments.some((ep) => ep.id === dp.id),
+                ),
+              ],
+            }),
+          );
+          toast.success(`Restored ${deletedDoc.no || "document"}`);
+        },
+      },
+    });
     nav({ to: "/invoices" });
   };
 
@@ -359,7 +386,7 @@ function Editor() {
             type="button"
             onClick={() => toggleSection(section)}
             className={cn(
-              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.7rem] font-medium transition-colors",
+              "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[0.7rem] font-medium transition-colors",
               isOpen
                 ? "border-border bg-muted/60 text-muted-foreground hover:text-foreground"
                 : "border-primary/40 bg-primary/12 text-primary hover:bg-primary/20",
@@ -406,7 +433,7 @@ function Editor() {
                 type="button"
                 onClick={() => toggleSection(key)}
                 className={cn(
-                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[0.7rem] font-medium transition-colors",
+                  "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[0.7rem] font-medium transition-colors",
                   active
                     ? "border-primary/50 bg-primary/15 text-primary"
                     : "border-border bg-muted/40 text-muted-foreground hover:text-foreground",
@@ -425,7 +452,7 @@ function Editor() {
         <button
           type="button"
           onClick={() => setAllSections(anyClosed)}
-          className="shrink-0 rounded-full border border-border px-2.5 py-1 text-[0.7rem] font-medium text-muted-foreground hover:border-primary/40 hover:text-foreground"
+          className="shrink-0 rounded-lg border border-border px-2.5 py-1 text-[0.7rem] font-medium text-muted-foreground hover:border-primary/40 hover:text-foreground"
         >
           {anyClosed ? "Show all" : "Hide all"}
         </button>
@@ -1248,7 +1275,7 @@ function Editor() {
                           : {}),
                       }}
                       className={cn(
-                        "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors",
+                        "inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors",
                         t === kind
                           ? "border-primary/50 bg-primary/15 text-primary hover:bg-primary/25"
                           : "border-border bg-muted/50 text-muted-foreground hover:border-primary/40 hover:text-foreground",
@@ -1279,35 +1306,35 @@ function Editor() {
             <div className="flex flex-wrap items-center gap-1.5 border-l border-border/60 pl-2">
               <Link
                 to="/invoices"
-                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
+                className="inline-flex min-h-[32px] items-center gap-1 rounded-lg border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
               >
                 <FileText className="h-3 w-3" />
                 Documents
               </Link>
               <Link
                 to="/projects"
-                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
+                className="inline-flex min-h-[32px] items-center gap-1 rounded-lg border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
               >
                 <FolderKanban className="h-3 w-3" />
                 Projects
               </Link>
               <Link
                 to="/clients"
-                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
+                className="inline-flex min-h-[32px] items-center gap-1 rounded-lg border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
               >
                 <Users className="h-3 w-3" />
                 Clients
               </Link>
               <Link
                 to="/services"
-                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
+                className="inline-flex min-h-[32px] items-center gap-1 rounded-lg border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
               >
                 <Layers className="h-3 w-3" />
                 Services
               </Link>
               <Link
                 to="/finance"
-                className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2.5 py-1 text-xs text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
+                className="inline-flex min-h-[32px] items-center gap-1 rounded-lg border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground whitespace-nowrap shrink-0 transition-colors hover:border-primary/50 hover:text-foreground"
               >
                 <Briefcase className="h-3 w-3" />
                 Finance
@@ -1325,7 +1352,7 @@ function Editor() {
             {project ? (
               <Link
                 to="/projects"
-                className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-1 hover:bg-accent"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary px-2.5 py-1 hover:bg-accent"
               >
                 <span className="font-num text-foreground">{project.code}</span>
                 <span className="text-muted-foreground">{project.name}</span>
@@ -1345,7 +1372,7 @@ function Editor() {
                       key={d.id}
                       to="/invoices/$id"
                       params={{ id: d.id }}
-                      className="font-num rounded-full border border-border px-2.5 py-0.5 text-[0.7rem] text-muted-foreground hover:border-primary hover:text-foreground"
+                      className="font-num rounded-md border border-border bg-secondary px-2.5 py-0.5 text-[0.7rem] text-muted-foreground hover:border-primary hover:text-foreground"
                     >
                       {documentKind(d)}: {d.no}
                     </Link>
@@ -1495,11 +1522,24 @@ function Editor() {
             />
           </div>
         )}
-        {!isNew && (
-          <Btn variant="danger" onClick={del}>
-            <Trash2 className="h-4 w-4" />
-          </Btn>
-        )}
+        {!isNew &&
+          (confirmDelete ? (
+            <div className="flex items-center gap-1.5">
+              <Btn variant="danger" onClick={del}>
+                Confirm delete?
+              </Btn>
+              <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+            </div>
+          ) : (
+            <Btn
+              variant="danger"
+              onClick={() => setConfirmDelete(true)}
+              aria-label="Delete document"
+              title="Delete document"
+            >
+              <Trash2 className="h-4 w-4" />
+            </Btn>
+          ))}
       </div>
       {draft.sourceId && (
         <Link
@@ -1566,10 +1606,10 @@ function Editor() {
                 }
               }}
               className={cn(
-                "rounded-full border px-3 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors",
+                "min-h-[34px] rounded-lg border px-3 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors",
                 isNew && t === kind
                   ? "border-primary bg-primary text-primary-foreground"
-                  : "border-border bg-muted/50 text-muted-foreground hover:border-primary/40 hover:text-foreground",
+                  : "border-border bg-secondary text-muted-foreground hover:border-primary/40 hover:text-foreground",
               )}
             >
               {isNew ? t : `+ New ${t}`}

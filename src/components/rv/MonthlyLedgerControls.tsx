@@ -29,7 +29,7 @@ export function MonthlyLedgerToolbar({
           type="button"
           onClick={() => onSelectMonth("all")}
           className={cn(
-            "inline-flex min-h-[34px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-[0.72rem] font-semibold transition-colors active:scale-95",
+            "inline-flex min-h-[36px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 text-xs font-semibold transition-colors active:scale-95",
             selectedMonth === "all"
               ? "border-primary bg-primary text-primary-foreground shadow-xs"
               : "border-border bg-secondary/75 text-muted-foreground hover:text-foreground",
@@ -47,7 +47,7 @@ export function MonthlyLedgerToolbar({
               type="button"
               onClick={() => onSelectMonth(active ? "all" : ym)}
               className={cn(
-                "font-num inline-flex min-h-[34px] shrink-0 items-center whitespace-nowrap rounded-full border px-3 text-[0.72rem] font-medium transition-colors active:scale-95",
+                "font-num inline-flex min-h-[36px] shrink-0 items-center whitespace-nowrap rounded-lg border px-3 text-xs font-medium transition-colors active:scale-95",
                 active
                   ? "border-primary bg-primary text-primary-foreground shadow-xs"
                   : "border-border bg-muted/45 text-muted-foreground hover:border-primary/40 hover:text-foreground",
@@ -64,7 +64,7 @@ export function MonthlyLedgerToolbar({
         onClick={onToggleGroupByMonth}
         aria-pressed={groupByMonth}
         className={cn(
-          "inline-flex min-h-[34px] shrink-0 items-center justify-center gap-1.5 self-start whitespace-nowrap rounded-full border px-3 text-[0.72rem] font-semibold transition-colors active:scale-95 sm:self-auto",
+          "inline-flex min-h-[36px] shrink-0 items-center justify-center gap-1.5 self-start whitespace-nowrap rounded-lg border px-3 text-xs font-semibold transition-colors active:scale-95 sm:self-auto",
           groupByMonth
             ? "border-primary/50 bg-primary/15 text-primary"
             : "border-border bg-secondary/75 text-muted-foreground hover:text-foreground",
@@ -109,7 +109,7 @@ export function MonthlyGroupHeader({
     showIncome && showExpense && incomeUSD > 0 && expenseUSD > 0;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border/70 bg-muted/50 px-3 py-2">
+    <div className="flex flex-wrap items-center justify-between gap-2 border-y border-border/70 bg-muted/35 px-3 py-2">
       <div className="flex min-w-0 items-center gap-2">
         {onSelectMonth && month !== "unknown" ? (
           <button

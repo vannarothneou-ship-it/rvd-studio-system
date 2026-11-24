@@ -858,7 +858,7 @@ export function CaseStudyBuilder({
               type="button"
               onClick={onClose}
               aria-label="Close Case Study Studio"
-              className="grid h-9 w-9 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
             >
               <X className="h-4 w-4" />
             </button>
@@ -923,7 +923,7 @@ export function CaseStudyBuilder({
                           type="button"
                           onClick={() => setDoc({ ...doc, theme: id })}
                           className={cn(
-                            "rounded-full border px-2.5 py-1 text-[0.7rem] font-medium transition-colors",
+                            "rounded-lg border px-2.5 py-1 text-[0.7rem] font-medium transition-colors",
                             doc.theme === id
                               ? "border-primary bg-primary text-primary-foreground"
                               : "border-border text-muted-foreground hover:text-foreground",
@@ -951,7 +951,7 @@ export function CaseStudyBuilder({
                           type="button"
                           onClick={() => setDoc({ ...doc, aspect: id })}
                           className={cn(
-                            "font-num rounded-full border px-2.5 py-1 text-[0.7rem] font-medium transition-colors",
+                            "font-num rounded-lg border px-2.5 py-1 text-[0.7rem] font-medium transition-colors",
                             doc.aspect === id
                               ? "border-primary bg-primary text-primary-foreground"
                               : "border-border text-muted-foreground hover:text-foreground",
@@ -973,7 +973,7 @@ export function CaseStudyBuilder({
                     <button
                       type="button"
                       onClick={handleAutoArrange}
-                      className="inline-flex items-center gap-1 rounded-full border border-primary/40 bg-primary/12 px-2.5 py-1 text-[0.7rem] font-semibold text-primary hover:bg-primary hover:text-primary-foreground"
+                      className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/12 px-2.5 py-1 text-[0.7rem] font-semibold text-primary hover:bg-primary hover:text-primary-foreground"
                     >
                       <Sparkles className="h-3 w-3" />
                       Auto-Build Template

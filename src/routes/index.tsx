@@ -66,7 +66,7 @@ import {
   type BentoWidgetDef,
 } from "@/components/rv/BentoGrid";
 import { SwipeRow } from "@/components/rv/SwipeRow";
-import { useReceiptScanner } from "@/components/rv/ReceiptScanner";
+import { useReceiptScanner } from "@/components/rv/ReceiptScannerContext";
 import {
   DEFAULT_WORK_PROJECTS,
   DESIGN_TYPES,
@@ -697,7 +697,7 @@ function CommandDashboard() {
                       </Link>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
+                    <div className="grid grid-cols-2 gap-3 border-t border-border/70 pt-3.5">
                       <Stat
                         icon={ArrowDownLeft}
                         label="In"
@@ -788,7 +788,7 @@ function CommandDashboard() {
                       </Link>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
+                    <div className="grid grid-cols-2 gap-3 border-t border-border/70 pt-3.5">
                       <Stat
                         icon={Wallet}
                         label="Wallet"
@@ -892,7 +892,7 @@ function CommandDashboard() {
                       </Link>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3.5">
+                    <div className="grid grid-cols-2 gap-3 border-t border-border/70 pt-3.5">
                       <Stat
                         icon={CheckCircle2}
                         label="Done"
@@ -1003,7 +1003,7 @@ function CommandDashboard() {
                       />
                     </div>
 
-                    <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
+                    <div className="mb-3 grid grid-cols-3 gap-3 border-y border-border/70 py-3">
                       <Stat
                         icon={ArrowDownLeft}
                         label="In"
@@ -1326,7 +1326,7 @@ function CommandDashboard() {
                         <Link
                           key={project.id}
                           to="/projects"
-                          className="ios-card-tap flex items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 p-3 hover:border-primary/50 hover:bg-muted/70"
+                          className="ios-card-tap flex items-center justify-between gap-3 rounded-lg border border-border bg-secondary/40 p-3 hover:border-primary/50 hover:bg-secondary/75"
                         >
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-1.5">

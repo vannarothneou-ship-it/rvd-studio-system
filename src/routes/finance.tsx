@@ -791,7 +791,7 @@ function Page() {
                 valueLabel="Studio cumulative net"
               />
             </div>
-            <div className="grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
+            <div className="grid grid-cols-3 gap-3 border-t border-border/70 pt-3.5">
               <Link to="/invoices" className="ios-tap">
                 <Stat
                   label="Open A/R"
@@ -866,7 +866,7 @@ function Page() {
                   />
                 </div>
 
-                <div className="mb-3 grid grid-cols-3 gap-3 rounded-xl border border-border/70 bg-muted/40 p-3">
+                <div className="mb-3 grid grid-cols-3 gap-3 border-y border-border/70 py-3">
                   <Stat
                     icon={ArrowDownLeft}
                     label="Cash in"
@@ -988,8 +988,8 @@ function Page() {
               />
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="rounded-xl border border-border/75 bg-muted/35 p-3">
+            <div className="grid gap-4 border-t border-border/70 pt-3.5 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
                 <Stat
                   label="Cash Received"
                   value={compactMoney(studioSummary.cashReceivedUSD)}
@@ -1002,7 +1002,7 @@ function Page() {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-border/75 bg-muted/35 p-3">
+              <div>
                 <Stat
                   label="Revenue Invoiced"
                   value={compactMoney(studioSummary.revenueInvoicedUSD)}
@@ -1016,7 +1016,7 @@ function Page() {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-border/75 bg-muted/35 p-3">
+              <div>
                 <Stat
                   label="Direct vs Operating Costs"
                   value={compactMoney(studioSummary.totalExpensesUSD)}
@@ -1029,7 +1029,7 @@ function Page() {
                 </p>
               </div>
 
-              <div className="rounded-xl border border-border/75 bg-muted/35 p-3">
+              <div>
                 <Stat
                   label="Estimated Project Profit"
                   value={compactMoney(
@@ -1197,7 +1197,7 @@ function Page() {
                             : "Show all payments"
                         }
                         title={showAllPayments ? "Show recent 8" : "Show all"}
-                        className="grid h-8 w-8 shrink-0 place-items-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                        className="grid h-9 w-9 shrink-0 place-items-center rounded-lg border border-border bg-secondary text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                       >
                         {showAllPayments ? (
                           <EyeOff className="h-3.5 w-3.5" />
@@ -1385,10 +1385,10 @@ function Page() {
                     setVisibleCount(8);
                   }}
                   className={cn(
-                    "rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
+                    "min-h-[34px] rounded-lg border px-2.5 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors",
                     catFilter === "All"
                       ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border text-muted-foreground hover:text-foreground",
+                      : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                   )}
                 >
                   All
@@ -1404,13 +1404,13 @@ function Page() {
                         setVisibleCount(8);
                       }}
                       className={cn(
-                        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[0.7rem] whitespace-nowrap shrink-0 transition-colors",
+                        "inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium whitespace-nowrap shrink-0 transition-colors",
                         catFilter === c
                           ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border text-muted-foreground hover:text-foreground",
+                          : "border-border bg-secondary text-muted-foreground hover:text-foreground",
                       )}
                     >
-                      <CatIcon className="h-3 w-3 shrink-0" />
+                      <CatIcon className="h-3.5 w-3.5 shrink-0" />
                       <span>{c}</span>
                     </button>
                   );
@@ -1824,8 +1824,8 @@ function Page() {
                   Side-by-side comparison across all time
                 </p>
 
-                <div className="mt-4 space-y-3">
-                  <div className="rounded-2xl border border-border/80 bg-muted/40 p-3.5">
+                <div className="mt-4 space-y-4 border-t border-border/70 pt-3.5">
+                  <div>
                     <div className="flex items-center justify-between">
                       <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
                         <Briefcase className="h-3.5 w-3.5 text-primary" />
@@ -1866,7 +1866,7 @@ function Page() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-border/80 bg-muted/40 p-3.5">
+                  <div className="border-t border-border/70 pt-3.5">
                     <div className="flex items-center justify-between">
                       <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-foreground">
                         <Wallet className="h-3.5 w-3.5 text-positive" />

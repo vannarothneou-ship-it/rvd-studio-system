@@ -490,7 +490,7 @@ export function WorkTasksCalendar({
                     setMobileMonth(next);
                     setVisibleYear(Number(next.slice(0, 4)));
                   }}
-                  className="grid h-9 w-9 place-items-center rounded-full border border-border bg-secondary text-foreground active:scale-95"
+                  className="grid h-9 w-9 place-items-center rounded-lg border border-border bg-secondary text-foreground active:scale-95"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </button>
@@ -502,7 +502,7 @@ export function WorkTasksCalendar({
                     setMobileMonth(next);
                     setVisibleYear(Number(next.slice(0, 4)));
                   }}
-                  className="grid h-9 w-9 place-items-center rounded-full border border-border bg-secondary text-foreground active:scale-95"
+                  className="grid h-9 w-9 place-items-center rounded-lg border border-border bg-secondary text-foreground active:scale-95"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </button>
@@ -513,7 +513,7 @@ export function WorkTasksCalendar({
                     setVisibleYear(Number(todayStr.slice(0, 4)));
                     setSelectedMobileDate(todayStr);
                   }}
-                  className="min-h-[36px] rounded-full border border-border bg-secondary px-3 text-xs font-semibold text-foreground active:scale-95"
+                  className="min-h-[36px] rounded-lg border border-border bg-secondary px-3 text-xs font-semibold text-foreground active:scale-95"
                 >
                   Today
                 </button>
@@ -589,7 +589,7 @@ export function WorkTasksCalendar({
                   onClick={() =>
                     onCreateOnRange(selectedMobileDate, selectedMobileDate)
                   }
-                  className="inline-flex min-h-[34px] items-center gap-1 rounded-full bg-primary px-3 text-[0.7rem] font-semibold text-primary-foreground"
+                  className="inline-flex min-h-[34px] items-center gap-1 rounded-lg bg-primary px-3 text-[0.7rem] font-semibold text-primary-foreground"
                 >
                   <Plus className="h-3 w-3" />
                   <span>Add task</span>

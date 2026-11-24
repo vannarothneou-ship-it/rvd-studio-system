@@ -8,7 +8,7 @@ import {
 } from "react";
 import * as d3 from "d3";
 import { ArrowDownLeft, ArrowUpRight, Sparkles, Wallet } from "lucide-react";
-import { categoryIcon } from "@/components/rv/FinanceVisuals";
+import { categoryIcon } from "@/components/rv/FinanceIcons";
 import {
   shortFlowLabel,
   type MoneyFlowBucket,

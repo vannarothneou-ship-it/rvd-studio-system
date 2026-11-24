@@ -28,9 +28,9 @@ import {
   CLIENT_SOURCES,
   CLIENT_STATUSES,
   CLIENT_TYPES,
+  clientBillingStats,
   clientDeleteBlocker,
   compactMoney,
-  invoiceView,
   money,
   setDB,
   uid,
@@ -96,32 +96,7 @@ function Page() {
   const [editingLayout, setEditingLayout] = useState(false);
   const [edit, setEdit] = useState<Client | null>(null);
 
-  const statsMap = useMemo(() => {
-    const map = new Map<
-      string,
-      { billed: number; owed: number; projects: number }
-    >();
-    const ensure = (id: string) => {
-      let cur = map.get(id);
-      if (!cur) {
-        cur = { billed: 0, owed: 0, projects: 0 };
-        map.set(id, cur);
-      }
-      return cur;
-    };
-    for (const i of db.invoices) {
-      if (!i.clientId) continue;
-      const v = invoiceView(i, db);
-      const cur = ensure(i.clientId);
-      cur.billed += v.totalUSD;
-      if (v.status !== "Draft") cur.owed += v.balanceUSD;
-    }
-    for (const p of db.projects) {
-      if (!p.clientId) continue;
-      ensure(p.clientId).projects += 1;
-    }
-    return map;
-  }, [db]);
+  const statsMap = useMemo(() => clientBillingStats(db), [db]);
 
   const stats = useCallback(
     (c: Client) => statsMap.get(c.id) ?? { billed: 0, owed: 0, projects: 0 },

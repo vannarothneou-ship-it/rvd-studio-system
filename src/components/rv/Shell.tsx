@@ -1,6 +1,7 @@
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   AlertTriangle,
+  Briefcase,
   FileText,
   FolderKanban,
   Moon,
@@ -11,8 +12,14 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
-import { CommandPalette } from "@/components/rv/CommandPalette";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   WorkspaceSwitcher,
   type WorkspaceMode,
@@ -24,11 +31,18 @@ import {
 import {
   ReceiptScannerProvider,
   useReceiptScanner,
-} from "@/components/rv/ReceiptScanner";
+} from "@/components/rv/ReceiptScannerContext";
+
+const LazyCommandPalette = lazy(() =>
+  import("@/components/rv/CommandPalette").then((m) => ({
+    default: m.CommandPalette,
+  })),
+);
 import { retryPersistDB, usePersistStatus } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const studioNav = [
+  { to: "/studio", label: "Overview", icon: Briefcase },
   { to: "/clients", label: "Clients", icon: Users },
   { to: "/projects", label: "Projects", icon: FolderKanban },
   { to: "/invoices", label: "Invoices", icon: FileText },
@@ -192,9 +206,27 @@ function ShellInner({ children }: { children: ReactNode }) {
 
   const [light, setLight] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
-  const [topHidden, setTopHidden] = useState(false);
-  const lastScrollYRef = useRef(0);
+  const [paletteMounted, setPaletteMounted] = useState(false);
   const persistStatus = usePersistStatus();
+
+  const togglePalette = (next?: boolean) => {
+    setPaletteMounted(true);
+    setPaletteOpen((prev) => (typeof next === "boolean" ? next : !prev));
+  };
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        togglePalette();
+      } else if (e.key === "Escape" && paletteOpen) {
+        e.preventDefault();
+        setPaletteOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [paletteOpen]);
 
   useEffect(() => {
     setLight(localStorage.getItem("rv-theme") === "light");
@@ -203,60 +235,11 @@ function ShellInner({ children }: { children: ReactNode }) {
   useEffect(() => {
     document.documentElement.classList.toggle("light", light);
     localStorage.setItem("rv-theme", light ? "light" : "dark");
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) {
+      meta.setAttribute("content", light ? "#f6f7f9" : "#101218");
+    }
   }, [light]);
-
-  useEffect(() => {
-    setTopHidden(false);
-    lastScrollYRef.current =
-      typeof window !== "undefined" ? Math.max(0, window.scrollY) : 0;
-  }, [path]);
-
-  useEffect(() => {
-    let rafId = 0;
-    const onScroll = () => {
-      if (rafId) return;
-      rafId = window.requestAnimationFrame(() => {
-        rafId = 0;
-        const y = Math.max(0, window.scrollY);
-        const prev = lastScrollYRef.current;
-        const delta = y - prev;
-        const maxScroll = Math.max(
-          0,
-          document.documentElement.scrollHeight - window.innerHeight,
-        );
-
-        if (y <= 12) {
-          setTopHidden(false);
-          lastScrollYRef.current = y;
-          return;
-        }
-
-        // Ignore tiny rubber-band jitter at bottom edge
-        if (maxScroll > 60 && y >= maxScroll - 6 && delta < 0 && delta > -14) {
-          lastScrollYRef.current = y;
-          return;
-        }
-
-        if (delta > 6 && y > 16) {
-          // Scroll down: hide top navigation, keep/reveal bottom dock
-          setTopHidden(true);
-          lastScrollYRef.current = y;
-        } else if (delta < -6) {
-          // Keep the primary dock available; reveal the compact header on scroll up.
-          setTopHidden(false);
-          lastScrollYRef.current = y;
-        } else if (Math.abs(delta) > 2) {
-          lastScrollYRef.current = y;
-        }
-      });
-    };
-
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => {
-      if (rafId) window.cancelAnimationFrame(rafId);
-      window.removeEventListener("scroll", onScroll);
-    };
-  }, []);
 
   const isDashboard = path === "/";
   const isPersonal = path.startsWith("/personal");
@@ -284,7 +267,8 @@ function ShellInner({ children }: { children: ReactNode }) {
     }
   };
 
-  const active = (to: string) => path.startsWith(to);
+  const active = (to: string) =>
+    to === "/studio" ? path === "/studio" : path.startsWith(to);
 
   const pageLabel = isDashboard
     ? "Dashboard"
@@ -390,100 +374,55 @@ function ShellInner({ children }: { children: ReactNode }) {
       onTouchEnd={handleTouchEnd}
       className="min-h-screen pb-[calc(6.25rem+env(safe-area-inset-bottom))] sm:pb-12"
     >
-      {/* Mobile Floating Frosted Glass Header (hides on scroll down, reappears on scroll up) */}
-      <header
-        onFocusCapture={() => setTopHidden(false)}
-        className={cn(
-          "no-print pointer-events-none sticky top-0 z-40 w-full px-3 pt-[max(0.5rem,env(safe-area-inset-top))] pb-1.5 transition-[opacity,transform] duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform sm:hidden",
-          topHidden
-            ? "-translate-y-[120%] opacity-0"
-            : "translate-y-0 opacity-100",
-        )}
-      >
-        <div
-          className={cn(
-            "mx-auto rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-strong)] px-3 py-1.5 shadow-[var(--shadow-glass)] backdrop-blur-2xl backdrop-saturate-150",
-            topHidden ? "pointer-events-none" : "pointer-events-auto",
-          )}
-        >
-          <div className="flex h-10 w-full items-center justify-between gap-2">
-            <Link to="/" className="ios-tap flex min-w-0 items-center gap-2.5">
-              <img
-                src="/apple-touch-icon.png"
-                alt="RothVan"
-                className="h-7 w-7 shrink-0 rounded-lg border border-border object-cover shadow-xs"
-              />
-              <div className="min-w-0">
-                <span className="block truncate font-display text-sm font-bold tracking-tight text-foreground">
-                  {pageLabel}
-                </span>
-              </div>
-            </Link>
+      {/* Compact Persistent Mobile Top Bar */}
+      <header className="no-print sticky top-0 z-40 w-full border-b border-border bg-[var(--glass-strong)] px-3 pt-[max(0.35rem,env(safe-area-inset-top))] backdrop-blur-xl sm:hidden">
+        <div className="mx-auto flex h-11 w-full items-center justify-between gap-2">
+          <Link to="/" className="ios-tap flex min-w-0 items-center gap-2">
+            <img
+              src="/apple-touch-icon.png"
+              alt="RothVan"
+              className="h-7 w-7 shrink-0 rounded-lg border border-border object-cover"
+            />
+            <span className="truncate font-display text-sm font-bold tracking-tight text-foreground">
+              {pageLabel}
+            </span>
+          </Link>
 
-            <div className="flex shrink-0 items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setPaletteOpen(true)}
-                aria-label="Quick command & search"
-                className="grid h-9 w-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:scale-95"
-              >
-                <Search className="h-4 w-4" />
-              </button>
-              <PWAInstallButton compact />
-              <button
-                type="button"
-                onClick={() => setLight(!light)}
-                aria-label="Toggle theme"
-                className="grid h-9 w-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:scale-95"
-              >
-                {light ? (
-                  <Moon className="h-4 w-4" />
-                ) : (
-                  <Sun className="h-4 w-4 text-primary" />
-                )}
-              </button>
-              <Link
-                to="/settings"
-                aria-label="Settings"
-                className={cn(
-                  "ios-tap grid h-9 w-9 place-items-center rounded-xl transition-colors",
-                  isSettings
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                )}
-              >
-                <Settings className="h-4 w-4" />
-              </Link>
-            </div>
-          </div>
-
-          {isStudio && (
-            <nav
-              aria-label="Studio sections"
-              className="no-scrollbar mt-1.5 flex items-center gap-1 overflow-x-auto border-t border-border/70 pt-1.5"
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => togglePalette(true)}
+              aria-label="Quick command & search"
+              className="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:scale-95"
             >
-              {studioNav.map((it) => {
-                const Icon = it.icon;
-                const on = active(it.to);
-                return (
-                  <Link
-                    key={it.to}
-                    to={it.to}
-                    aria-current={on ? "page" : undefined}
-                    className={cn(
-                      "ios-tap inline-flex min-h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-[0.72rem] font-medium transition-colors",
-                      on
-                        ? "bg-primary/18 text-primary"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5" />
-                    {it.label}
-                  </Link>
-                );
-              })}
-            </nav>
-          )}
+              <Search className="h-4 w-4" />
+            </button>
+            <PWAInstallButton compact />
+            <button
+              type="button"
+              onClick={() => setLight(!light)}
+              aria-label="Toggle theme"
+              className="grid h-9 w-9 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:scale-95"
+            >
+              {light ? (
+                <Moon className="h-4 w-4" />
+              ) : (
+                <Sun className="h-4 w-4 text-primary" />
+              )}
+            </button>
+            <Link
+              to="/settings"
+              aria-label="Settings"
+              className={cn(
+                "ios-tap grid h-9 w-9 place-items-center rounded-lg transition-colors",
+                isSettings
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-accent hover:text-foreground",
+              )}
+            >
+              <Settings className="h-4 w-4" />
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -578,22 +517,9 @@ function ShellInner({ children }: { children: ReactNode }) {
         </div>
       </nav>
 
-      {/* Desktop Floating Frosted Glass Top Navigation (hides on scroll down, reappears on scroll up) */}
-      <nav
-        onFocusCapture={() => setTopHidden(false)}
-        className={cn(
-          "no-print pointer-events-none sticky top-0 z-40 hidden w-full px-4 pt-3 pb-2 transition-[opacity,transform] duration-250 ease-[cubic-bezier(0.32,0.72,0,1)] will-change-transform sm:block",
-          topHidden
-            ? "-translate-y-[120%] opacity-0"
-            : "translate-y-0 opacity-100",
-        )}
-      >
-        <div
-          className={cn(
-            "mx-auto flex max-w-6xl items-center justify-between gap-4 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-strong)] px-3.5 py-2 shadow-[var(--shadow-glass)] backdrop-blur-2xl backdrop-saturate-150",
-            topHidden ? "pointer-events-none" : "pointer-events-auto",
-          )}
-        >
+      {/* Desktop Sticky Top Navigation */}
+      <nav className="no-print sticky top-0 z-40 hidden w-full border-b border-border bg-[var(--glass-strong)] px-4 py-2 backdrop-blur-xl sm:block">
+        <div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
           {/* Zone 1: Workspace Switcher */}
           <div className="shrink-0">
             <WorkspaceSwitcher
@@ -605,26 +531,28 @@ function ShellInner({ children }: { children: ReactNode }) {
           {/* Zone 2: Studio Links */}
           <div className="no-scrollbar flex min-w-0 flex-1 items-center justify-center gap-1 overflow-x-auto px-2">
             {isStudio ? (
-              studioNav.map((it) => {
-                const Icon = it.icon;
-                const on = active(it.to);
-                return (
-                  <Link
-                    key={it.to}
-                    to={it.to}
-                    aria-current={on ? "page" : undefined}
-                    className={cn(
-                      "ios-tap inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
-                      on
-                        ? "bg-primary/18 text-primary"
-                        : "text-muted-foreground hover:bg-accent hover:text-foreground",
-                    )}
-                  >
-                    <Icon className="h-3.5 w-3.5 shrink-0" />
-                    <span>{it.label}</span>
-                  </Link>
-                );
-              })
+              studioNav
+                .filter((it) => it.to !== "/studio")
+                .map((it) => {
+                  const Icon = it.icon;
+                  const on = active(it.to);
+                  return (
+                    <Link
+                      key={it.to}
+                      to={it.to}
+                      aria-current={on ? "page" : undefined}
+                      className={cn(
+                        "ios-tap inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-xs font-medium transition-colors",
+                        on
+                          ? "bg-primary/15 text-primary"
+                          : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                      )}
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0" />
+                      <span>{it.label}</span>
+                    </Link>
+                  );
+                })
             ) : (
               <span className="hidden truncate text-xs text-muted-foreground lg:inline">
                 {isPersonal
@@ -640,7 +568,7 @@ function ShellInner({ children }: { children: ReactNode }) {
           <div className="flex shrink-0 items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setPaletteOpen(true)}
+              onClick={() => togglePalette(true)}
               aria-label="Quick command bar (⌘K)"
               className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-xl border border-border/80 bg-secondary/70 px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/45 hover:text-foreground"
             >
@@ -690,7 +618,7 @@ function ShellInner({ children }: { children: ReactNode }) {
       <main
         key={path}
         className={cn(
-          "mx-auto max-w-6xl px-3 pt-1.5 sm:px-4 sm:pt-3",
+          "mx-auto max-w-6xl px-3 pt-2.5 sm:px-4 sm:pt-4",
           swipeDir > 0
             ? "page-enter-next"
             : swipeDir < 0
@@ -698,10 +626,37 @@ function ShellInner({ children }: { children: ReactNode }) {
               : "page-enter",
         )}
       >
+        {isStudio && (
+          <nav
+            aria-label="Studio sections"
+            className="no-scrollbar no-print mb-3 flex items-center gap-1 overflow-x-auto border-b border-border/70 pb-2.5 sm:hidden"
+          >
+            {studioNav.map((it) => {
+              const Icon = it.icon;
+              const on = active(it.to);
+              return (
+                <Link
+                  key={it.to}
+                  to={it.to}
+                  aria-current={on ? "page" : undefined}
+                  className={cn(
+                    "ios-tap inline-flex min-h-[36px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-xs font-medium transition-colors",
+                    on
+                      ? "bg-primary text-primary-foreground"
+                      : "border border-border bg-secondary text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  <span>{it.label}</span>
+                </Link>
+              );
+            })}
+          </nav>
+        )}
         {persistStatus.lastError && (
           <div
             role="alert"
-            className="no-print mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-destructive/45 bg-destructive/12 px-4 py-3 text-xs text-foreground"
+            className="no-print mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-destructive/45 bg-destructive/10 px-4 py-3 text-xs text-foreground"
           >
             <div className="flex min-w-0 items-start gap-2.5">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
@@ -720,13 +675,13 @@ function ShellInner({ children }: { children: ReactNode }) {
               <button
                 type="button"
                 onClick={() => retryPersistDB()}
-                className="inline-flex min-h-[32px] items-center rounded-full border border-border bg-background px-3 font-medium hover:bg-accent"
+                className="inline-flex min-h-[36px] items-center rounded-lg border border-border bg-background px-3 font-medium hover:bg-accent"
               >
                 Retry Save
               </button>
               <Link
                 to="/settings"
-                className="inline-flex min-h-[32px] items-center rounded-full bg-primary px-3 font-medium text-primary-foreground hover:opacity-90"
+                className="inline-flex min-h-[36px] items-center rounded-lg bg-primary px-3 font-medium text-primary-foreground hover:opacity-90"
               >
                 Backup &amp; Storage
               </Link>
@@ -736,11 +691,18 @@ function ShellInner({ children }: { children: ReactNode }) {
         {children}
       </main>
       <OfflineIndicator />
-      <CommandPalette
-        open={paletteOpen}
-        onOpenChange={setPaletteOpen}
-        isStudioContext={isStudio}
-      />
+      {paletteMounted && (
+        <Suspense fallback={null}>
+          <LazyCommandPalette
+            open={paletteOpen}
+            onOpenChange={(next) => {
+              if (next) setPaletteMounted(true);
+              setPaletteOpen(next);
+            }}
+            isStudioContext={isStudio}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }

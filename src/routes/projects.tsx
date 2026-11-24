@@ -958,21 +958,21 @@ function Page() {
                     <button
                       type="button"
                       onClick={() => setAllBoardsVisibility(false)}
-                      className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                      className="min-h-[34px] rounded-lg border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
                     >
                       Show all
                     </button>
                     <button
                       type="button"
                       onClick={() => setAllBoardsVisibility(true)}
-                      className="rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                      className="min-h-[34px] rounded-lg border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
                     >
                       Active (5)
                     </button>
                     <button
                       type="button"
                       onClick={resetBoardConfigs}
-                      className="inline-flex items-center gap-1 rounded-full border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+                      className="inline-flex min-h-[34px] items-center gap-1 rounded-lg border border-border bg-secondary px-2.5 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-foreground"
                     >
                       <RotateCcw className="h-3 w-3" />
                       Reset
@@ -1029,10 +1029,10 @@ function Page() {
                             }
                             aria-label={`${cfg.visible ? "Hide" : "Show"} ${cfg.title} board`}
                             className={cn(
-                              "inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[0.68rem] font-medium transition-colors",
+                              "inline-flex min-h-[30px] shrink-0 items-center gap-1 rounded-md border px-2 py-0.5 text-[0.68rem] font-medium transition-colors",
                               cfg.visible
                                 ? "border-primary/40 bg-primary/15 text-primary"
-                                : "border-border bg-background/60 text-muted-foreground hover:text-foreground",
+                                : "border-border bg-card text-muted-foreground hover:text-foreground",
                             )}
                           >
                             {cfg.visible ? (
@@ -1804,7 +1804,7 @@ function Page() {
                         to="/invoices/$id"
                         params={{ id: d.id }}
                         onClick={() => setEdit(null)}
-                        className="font-num inline-flex items-center gap-1 rounded-full border border-border bg-background/60 px-2.5 py-1 hover:border-primary"
+                        className="font-num inline-flex min-h-[32px] items-center gap-1 rounded-lg border border-border bg-card px-2.5 py-1 hover:border-primary"
                       >
                         <FileText className="h-3 w-3 text-primary" />
                         {documentKind(d)} · {d.no}
@@ -2248,7 +2248,7 @@ function ProjectTimelineView({
         {/* Timeline Controls */}
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="inline-flex items-center gap-1 rounded-full border border-border bg-muted p-1">
+            <div className="inline-flex items-center gap-1 rounded-lg border border-border bg-secondary p-1">
               <button
                 type="button"
                 onClick={() =>
@@ -2257,14 +2257,14 @@ function ProjectTimelineView({
                   )
                 }
                 aria-label="Previous period"
-                className="rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
               <button
                 type="button"
                 onClick={() => setAnchorStart(addDays(todayStr, -10))}
-                className="rounded-full px-2.5 py-1 text-xs font-medium text-foreground hover:bg-accent"
+                className="rounded-md px-2.5 py-1 text-xs font-medium text-foreground hover:bg-accent"
               >
                 Today
               </button>
@@ -2276,7 +2276,7 @@ function ProjectTimelineView({
                   )
                 }
                 aria-label="Next period"
-                className="rounded-full p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
+                className="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
@@ -2369,7 +2369,7 @@ function ProjectTimelineView({
                   {showTodayLine && (
                     <span
                       style={{ left: `${todayPct}%` }}
-                      className="font-num absolute top-1 z-10 -translate-x-1/2 rounded-full bg-primary px-1.5 py-0.5 text-[0.58rem] font-bold text-primary-foreground"
+                      className="font-num absolute top-1 z-10 -translate-x-1/2 rounded-md bg-primary px-1.5 py-0.5 text-[0.58rem] font-bold text-primary-foreground"
                     >
                       Today
                     </span>
@@ -2508,7 +2508,7 @@ function ProjectTimelineView({
                                 : color.headerBorder,
                             }}
                             title={`${p.code} ${p.name} · ${p.status} (${shortDate(startIso)} – ${shortDate(dueIso)}) · ${compactMoney(p.quote)}`}
-                            className="group absolute top-1/2 z-20 flex h-7 -translate-y-1/2 items-center overflow-hidden rounded-full border px-2.5 text-left shadow-sm transition-transform hover:scale-[1.015]"
+                            className="group absolute top-1/2 z-20 flex h-7 -translate-y-1/2 items-center overflow-hidden rounded-lg border px-2.5 text-left shadow-sm transition-transform hover:scale-[1.015]"
                           >
                             {/* Progress Fill */}
                             <span
@@ -2548,7 +2548,7 @@ function ProjectTimelineView({
                             onClick={() =>
                               setAnchorStart(addDays(startIso, -4))
                             }
-                            className="font-num absolute right-2 top-1/2 -translate-y-1/2 rounded-full border border-border/70 bg-muted/60 px-2.5 py-0.5 text-[0.65rem] text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                            className="font-num absolute right-2 top-1/2 -translate-y-1/2 rounded-md border border-border/70 bg-secondary px-2.5 py-0.5 text-[0.65rem] text-muted-foreground hover:border-primary/50 hover:text-foreground"
                           >
                             {rawRight <= 0 ? "← " : ""}
                             {shortDate(startIso)} – {shortDate(dueIso)}

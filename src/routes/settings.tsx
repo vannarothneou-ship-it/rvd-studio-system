@@ -100,6 +100,7 @@ function Page() {
   const [canUndoRestore, setCanUndoRestore] = useState(() =>
     hasPreRestoreSnapshot(),
   );
+  const [confirmReset, setConfirmReset] = useState(false);
   const [rateDraft, setRateDraft] = useState(() => String(s.khrRate));
   useEffect(() => {
     setRateDraft(String(s.khrRate));
@@ -140,7 +141,7 @@ function Page() {
           )}
         </div>
         <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-          <label className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-full border border-border bg-secondary px-3.5 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent active:scale-95">
+          <label className="inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-xl border border-border bg-secondary px-3.5 py-2 text-xs font-medium text-foreground transition-colors hover:bg-accent active:scale-95">
             <Upload className="h-3.5 w-3.5 shrink-0 text-primary" />
             <span>{s[k] ? "Replace" : "Upload"}</span>
             <input
@@ -157,7 +158,7 @@ function Page() {
           {s[k] && (
             <button
               type="button"
-              className="inline-flex min-h-[36px] items-center rounded-full px-2.5 text-xs font-medium text-destructive hover:bg-destructive/10"
+              className="inline-flex min-h-[36px] items-center rounded-lg px-2.5 text-xs font-medium text-destructive hover:bg-destructive/10"
               onClick={() => set(k, "")}
             >
               Remove
@@ -328,6 +329,32 @@ function Page() {
     }
   };
 
+  const handleResetSampleData = () => {
+    const snapshotSaved = savePreRestoreSnapshot();
+    const canUndo = snapshotSaved || hasPreRestoreSnapshot();
+    setCanUndoRestore(canUndo);
+    resetDB();
+    setConfirmReset(false);
+    void refreshHealth();
+    toast.message("Sample data restored.", {
+      ...(canUndo
+        ? {
+            action: {
+              label: "Undo",
+              onClick: () => {
+                if (restorePreRestoreSnapshot()) {
+                  void refreshHealth();
+                  toast.success("Restored previous database.");
+                } else {
+                  toast.error("Could not recover pre-reset snapshot.");
+                }
+              },
+            },
+          }
+        : {}),
+    });
+  };
+
   const totalRecords =
     db.expenses.length +
     (db.personalIncome?.length ?? 0) +
@@ -368,7 +395,7 @@ function Page() {
           </p>
         </div>
 
-        <div className="mb-3 grid grid-cols-2 gap-2.5 rounded-2xl bg-muted/35 p-3 sm:grid-cols-4">
+        <div className="mb-3 grid grid-cols-2 gap-3 border-y border-border/70 py-3 sm:grid-cols-4">
           <Stat label="Expenses" value={String(db.expenses.length)} />
           <Stat
             label="Income"
@@ -460,7 +487,7 @@ function Page() {
             <Download className="h-4 w-4 shrink-0" />
             <span>Download Database</span>
           </Btn>
-          <label className="inline-flex min-h-[42px] w-full cursor-pointer items-center justify-center gap-2 rounded-full border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground transition-all hover:bg-accent active:scale-95 sm:min-h-[38px]">
+          <label className="inline-flex min-h-[42px] w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-border bg-secondary px-4 py-2 text-sm font-medium text-foreground transition-all hover:bg-accent active:scale-95 sm:min-h-[38px]">
             <Upload className="h-4 w-4 shrink-0 text-primary" />
             <span>Upload Backup</span>
             <input
@@ -474,20 +501,36 @@ function Page() {
               }}
             />
           </label>
-          <Btn
-            type="button"
-            variant="danger"
-            onClick={() => {
-              if (confirm("Erase everything and restore sample data?")) {
-                resetDB();
-                toast.message("Sample data restored.");
-              }
-            }}
-            className="w-full justify-center"
-          >
-            <RotateCcw className="h-4 w-4 shrink-0" />
-            <span>Reset Sample Data</span>
-          </Btn>
+          {confirmReset ? (
+            <div className="flex w-full items-center gap-2">
+              <Btn
+                type="button"
+                variant="danger"
+                onClick={handleResetSampleData}
+                className="flex-1 justify-center"
+              >
+                <AlertTriangle className="h-4 w-4 shrink-0" />
+                <span>Confirm Reset</span>
+              </Btn>
+              <Btn
+                type="button"
+                onClick={() => setConfirmReset(false)}
+                className="justify-center px-3"
+              >
+                Cancel
+              </Btn>
+            </div>
+          ) : (
+            <Btn
+              type="button"
+              variant="danger"
+              onClick={() => setConfirmReset(true)}
+              className="w-full justify-center"
+            >
+              <RotateCcw className="h-4 w-4 shrink-0" />
+              <span>Reset Sample Data</span>
+            </Btn>
+          )}
         </div>
       </Glass>
 

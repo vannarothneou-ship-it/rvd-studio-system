@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import type {
   DateClickArg,
@@ -76,6 +77,10 @@ import {
   PROJECT_STATUSES,
   WORK_PIPELINE_STAGES,
   addDays,
+  documentKind,
+  invoiceView,
+  isInvoice,
+  money,
   nextWorkStage,
   normalizeWorkStage,
   setDB,
@@ -102,6 +107,7 @@ export interface HolidayToggleState {
   thngaiSel: boolean;
   popular: boolean;
   reminders: boolean;
+  financeDue: boolean;
 }
 
 const HOLIDAY_TOGGLE_STORAGE_KEY = "rv-cal-holidays-v1";
@@ -113,6 +119,7 @@ function loadHolidayToggles(): HolidayToggleState {
       thngaiSel: true,
       popular: false,
       reminders: true,
+      financeDue: true,
     };
   }
   try {
@@ -123,6 +130,7 @@ function loadHolidayToggles(): HolidayToggleState {
         thngaiSel: true,
         popular: false,
         reminders: true,
+        financeDue: true,
       };
     }
     const parsed = JSON.parse(raw) as Partial<HolidayToggleState>;
@@ -131,6 +139,7 @@ function loadHolidayToggles(): HolidayToggleState {
       thngaiSel: parsed.thngaiSel ?? true,
       popular: parsed.popular ?? false,
       reminders: parsed.reminders ?? true,
+      financeDue: parsed.financeDue ?? true,
     };
   } catch {
     return {
@@ -138,6 +147,7 @@ function loadHolidayToggles(): HolidayToggleState {
       thngaiSel: true,
       popular: false,
       reminders: true,
+      financeDue: true,
     };
   }
 }
@@ -200,6 +210,7 @@ export function DashboardCalendarCard({
   db: DB;
   className?: string;
 }) {
+  const navigate = useNavigate();
   const todayStr = today();
   const isDesktopMd = useIsDesktopMd();
   const [sourceScope, setSourceScope] = useState<CalendarSourceScope>("all");
@@ -210,6 +221,7 @@ export function DashboardCalendarCard({
     thngaiSel: true,
     popular: false,
     reminders: true,
+    financeDue: true,
   });
   const [visibleYear, setVisibleYear] = useState<number>(() =>
     Number(todayStr.slice(0, 4)),
@@ -344,6 +356,67 @@ export function DashboardCalendarCard({
     return years.flatMap((y) => getRemindersForYear(remindersList, y));
   }, [remindersList, visibleYear, holidayToggles.reminders, sourceScope]);
 
+  const dueFinanceItems = useMemo(() => {
+    if (!holidayToggles.financeDue) return [];
+    const clientMap = new Map(db.clients.map((c) => [c.id, c.name]));
+    const convertedSourceIds = new Set(
+      db.invoices
+        .filter((inv) => isInvoice(inv) && inv.sourceId)
+        .map((inv) => inv.sourceId!),
+    );
+    const out: {
+      id: string;
+      invoiceId: string;
+      date: string;
+      kind: "invoice" | "follow-up";
+      overdue: boolean;
+      title: string;
+      subtitle: string;
+      amountLabel: string;
+    }[] = [];
+
+    for (const inv of db.invoices) {
+      const clientName = clientMap.get(inv.clientId) ?? "Client";
+      const clientShort = clientName.split(" ")[0] || "Client";
+      const docType = documentKind(inv);
+
+      if (isInvoice(inv)) {
+        const v = invoiceView(inv, db);
+        if (v.status === "Draft" || v.balance <= 0.01 || !inv.due) continue;
+        const overdue = v.status === "Overdue" || inv.due < todayStr;
+        const amt = money(v.balance, inv.currency);
+        out.push({
+          id: `inv:${inv.id}`,
+          invoiceId: inv.id,
+          date: inv.due,
+          kind: "invoice",
+          overdue,
+          title: `${overdue ? "Overdue" : "Due"} ${inv.no} · ${clientShort}`,
+          subtitle: `${clientName} · ${amt} due`,
+          amountLabel: amt,
+        });
+      } else if (
+        (docType === "Quotation" || docType === "Agreement") &&
+        inv.followUp &&
+        !convertedSourceIds.has(inv.id) &&
+        inv.response !== "Declined"
+      ) {
+        const v = invoiceView(inv, db);
+        out.push({
+          id: `inv:${inv.id}`,
+          invoiceId: inv.id,
+          date: inv.followUp,
+          kind: "follow-up",
+          overdue: inv.followUp <= todayStr,
+          title: `Follow-up ${inv.no} · ${clientShort}`,
+          subtitle: `${docType} · ${clientName}`,
+          amountLabel: money(v.total, inv.currency),
+        });
+      }
+    }
+    return out;
+  }, [db, holidayToggles.financeDue, todayStr]);
+
   const events = useMemo<EventInput[]>(() => {
     const out: EventInput[] = [];
 
@@ -436,6 +509,31 @@ export function DashboardCalendarCard({
       }
     }
 
+    if (sourceScope === "all" || sourceScope === "studio") {
+      for (const item of dueFinanceItems) {
+        out.push({
+          id: item.id,
+          title:
+            item.kind === "invoice"
+              ? `${item.title} (${item.amountLabel})`
+              : item.title,
+          start: item.date,
+          allDay: true,
+          editable: false,
+          startEditable: false,
+          durationEditable: false,
+          backgroundColor: item.overdue
+            ? "oklch(0.62 0.19 24 / 24%)"
+            : "oklch(0.74 0.14 82 / 22%)",
+          borderColor: item.overdue
+            ? "oklch(0.62 0.19 24 / 75%)"
+            : "oklch(0.74 0.14 82 / 70%)",
+          textColor: "var(--foreground)",
+          classNames: ["fc-event-studio"],
+        });
+      }
+    }
+
     if (sourceScope !== "reminders") {
       for (const sp of specialDays) {
         const cls =
@@ -465,6 +563,7 @@ export function DashboardCalendarCard({
     sourceScope,
     specialDays,
     reminderOccurrences,
+    dueFinanceItems,
   ]);
 
   const counts = useMemo(() => {
@@ -625,6 +724,10 @@ export function DashboardCalendarCard({
       if (proj) openEditProject(proj);
       return;
     }
+    if (id.startsWith("inv:")) {
+      navigate({ to: "/invoices/$id", params: { id: id.slice(4) } });
+      return;
+    }
     if (id.startsWith("rm:")) {
       const rmId = id.slice(3).split(":")[0];
       const rm = remindersList.find((r) => r.id === rmId);
@@ -634,7 +737,7 @@ export function DashboardCalendarCard({
 
   const handleEventDrop = (arg: EventDropArg) => {
     const id = arg.event.id;
-    if (id.startsWith("sp:") || !arg.event.start) {
+    if (id.startsWith("sp:") || id.startsWith("inv:") || !arg.event.start) {
       arg.revert();
       return;
     }
@@ -697,7 +800,12 @@ export function DashboardCalendarCard({
 
   const handleEventResize = (arg: EventResizeDoneArg) => {
     const id = arg.event.id;
-    if (id.startsWith("sp:") || id.startsWith("rm:") || !arg.event.start) {
+    if (
+      id.startsWith("sp:") ||
+      id.startsWith("rm:") ||
+      id.startsWith("inv:") ||
+      !arg.event.start
+    ) {
       arg.revert();
       return;
     }
@@ -894,6 +1002,7 @@ export function DashboardCalendarCard({
         work: number;
         studio: number;
         reminder: number;
+        invoice: number;
         kh: boolean;
         sel: boolean;
         pop: boolean;
@@ -906,6 +1015,7 @@ export function DashboardCalendarCard({
           work: 0,
           studio: 0,
           reminder: 0,
+          invoice: 0,
           kh: false,
           sel: false,
           pop: false,
@@ -946,6 +1056,12 @@ export function DashboardCalendarCard({
       }
     }
 
+    if (sourceScope === "all" || sourceScope === "studio") {
+      for (const item of dueFinanceItems) {
+        touch(item.date).invoice += 1;
+      }
+    }
+
     if (sourceScope === "all" || sourceScope === "reminders") {
       for (const occ of reminderOccurrences) {
         touch(occ.date).reminder += 1;
@@ -967,6 +1083,7 @@ export function DashboardCalendarCard({
     db.workTasks,
     db.projects,
     sourceScope,
+    dueFinanceItems,
     reminderOccurrences,
     specialDays,
   ]);
@@ -999,6 +1116,10 @@ export function DashboardCalendarCard({
             return Boolean(s && e && d >= s && d <= e);
           })
         : [];
+    const finance =
+      sourceScope === "all" || sourceScope === "studio"
+        ? dueFinanceItems.filter((item) => item.date === d)
+        : [];
     const reminders =
       sourceScope === "all" || sourceScope === "reminders"
         ? reminderOccurrences.filter((o) => o.date === d).map((o) => o.reminder)
@@ -1007,12 +1128,13 @@ export function DashboardCalendarCard({
       sourceScope !== "reminders"
         ? specialDays.filter((sp) => sp.date === d)
         : [];
-    return { work, studio, reminders, specials };
+    return { work, studio, finance, reminders, specials };
   }, [
     selectedMobileDate,
     sourceScope,
     db.workTasks,
     db.projects,
+    dueFinanceItems,
     reminderOccurrences,
     specialDays,
   ]);
@@ -1095,7 +1217,7 @@ export function DashboardCalendarCard({
                 Schedule
               </h2>
               <p className="truncate text-[0.7rem] text-muted-foreground">
-                Work · Projects · Reminders
+                Work · Projects · Invoices · Reminders
               </p>
             </div>
           </div>
@@ -1243,6 +1365,22 @@ export function DashboardCalendarCard({
               <Bell className="h-3 w-3 shrink-0" />
               <span>Reminders</span>
             </button>
+
+            <button
+              type="button"
+              onClick={() => toggleHolidayKind("financeDue")}
+              aria-pressed={holidayToggles.financeDue}
+              title="Invoice Due Dates & Quotation Follow-ups"
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[0.7rem] font-semibold transition-all active:scale-95",
+                holidayToggles.financeDue
+                  ? "border-amber-500/50 bg-amber-500/20 text-amber-300 light:text-amber-900"
+                  : "border-border bg-secondary text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Receipt className="h-3 w-3 shrink-0" />
+              <span>Invoices</span>
+            </button>
           </div>
 
           {upcomingSpecials.length > 0 && (
@@ -1304,11 +1442,11 @@ export function DashboardCalendarCard({
                       <span className="truncate font-semibold text-foreground">
                         {alert.reminder.title || "Reminder"}
                       </span>
-                      <span className="font-num rounded-full bg-emerald-500/25 px-2 py-0.5 text-[0.65rem] font-bold text-emerald-200 light:text-emerald-900">
+                      <span className="font-num rounded-md bg-emerald-500/25 px-2 py-0.5 text-[0.65rem] font-bold text-emerald-200 light:text-emerald-900">
                         {timingLabel}
                       </span>
                       {odoLabel && (
-                        <span className="font-num rounded-full border border-primary/40 bg-primary/15 px-2 py-0.5 text-[0.65rem] font-semibold text-primary">
+                        <span className="font-num rounded-md border border-primary/40 bg-primary/15 px-2 py-0.5 text-[0.65rem] font-semibold text-primary">
                           ODO {odoLabel}
                         </span>
                       )}
@@ -1324,7 +1462,7 @@ export function DashboardCalendarCard({
                   <button
                     type="button"
                     onClick={() => openEditReminder(alert.reminder)}
-                    className="rounded-full border border-border bg-card/80 px-2.5 py-1 text-[0.68rem] font-semibold text-foreground transition-colors hover:border-primary/60"
+                    className="min-h-[32px] rounded-lg border border-border bg-card/80 px-2.5 py-1 text-[0.68rem] font-semibold text-foreground transition-colors hover:border-primary/60"
                   >
                     {alert.reminder.category === "car-odo"
                       ? "Update ODO"
@@ -1336,7 +1474,7 @@ export function DashboardCalendarCard({
                       dismissReminderAlert(alert.reminder, alert.occurrenceDate)
                     }
                     aria-label={`Dismiss ${alert.reminder.title}`}
-                    className="grid h-7 w-7 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+                    className="grid h-8 w-8 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>
@@ -1367,7 +1505,7 @@ export function DashboardCalendarCard({
             type="button"
             onClick={() => setSelectedSpecial(null)}
             aria-label="Dismiss holiday notice"
-            className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-muted-foreground hover:bg-accent hover:text-foreground"
+            className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -1699,6 +1837,9 @@ export function DashboardCalendarCard({
                       {marks && marks.studio > 0 && (
                         <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
                       )}
+                      {marks && marks.invoice > 0 && (
+                        <span className="h-1.5 w-1.5 rounded-full bg-orange-400" />
+                      )}
                       {marks && marks.reminder > 0 && (
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                       )}
@@ -1729,6 +1870,7 @@ export function DashboardCalendarCard({
                 <p className="text-[0.68rem] text-muted-foreground">
                   {selectedAgenda.work.length +
                     selectedAgenda.studio.length +
+                    selectedAgenda.finance.length +
                     selectedAgenda.reminders.length +
                     selectedAgenda.specials.length}{" "}
                   item(s) on this date
@@ -1764,6 +1906,7 @@ export function DashboardCalendarCard({
 
             {selectedAgenda.specials.length === 0 &&
             selectedAgenda.reminders.length === 0 &&
+            selectedAgenda.finance.length === 0 &&
             selectedAgenda.work.length === 0 &&
             selectedAgenda.studio.length === 0 ? (
               <p className="py-3 text-center text-xs text-muted-foreground">
@@ -1771,6 +1914,42 @@ export function DashboardCalendarCard({
               </p>
             ) : (
               <div className="space-y-1.5">
+                {selectedAgenda.finance.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() =>
+                      navigate({
+                        to: "/invoices/$id",
+                        params: { id: item.invoiceId },
+                      })
+                    }
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors",
+                      item.overdue
+                        ? "border-destructive/45 bg-destructive/12 text-foreground"
+                        : "border-amber-500/40 bg-amber-500/12 text-foreground",
+                    )}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Receipt
+                        className={cn(
+                          "h-3.5 w-3.5 shrink-0",
+                          item.overdue ? "text-destructive" : "text-amber-400",
+                        )}
+                      />
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold">{item.title}</p>
+                        <p className="truncate text-[0.68rem] text-muted-foreground">
+                          {item.subtitle}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="font-num shrink-0 text-[0.68rem] font-bold text-foreground">
+                      {item.amountLabel}
+                    </span>
+                  </button>
+                ))}
                 {selectedAgenda.specials.map((sp) => (
                   <div
                     key={sp.id}

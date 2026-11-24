@@ -256,7 +256,7 @@ function Services() {
               params={{ id: "new" }}
               search={{ service: s.id, kind: "Quotation" }}
               onClick={(e) => e.stopPropagation()}
-              className="ios-tap inline-flex min-h-[34px] shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-full bg-primary px-3 py-1 text-xs font-medium text-primary-foreground shadow-xs hover:bg-[var(--primary-hover,var(--primary))]"
+              className="ios-tap inline-flex min-h-[34px] shrink-0 items-center justify-center gap-1 whitespace-nowrap rounded-lg bg-primary px-3 py-1 text-xs font-medium text-primary-foreground shadow-xs hover:bg-[var(--primary-hover,var(--primary))]"
             >
               + Quote
             </Link>
@@ -341,7 +341,7 @@ function Services() {
                     type="button"
                     onClick={() => setGroupByPillar((g) => !g)}
                     className={cn(
-                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                      "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
                       groupByPillar
                         ? "border-primary bg-primary/15 text-primary"
                         : "border-border text-muted-foreground hover:text-foreground",
@@ -358,7 +358,7 @@ function Services() {
                   type="button"
                   onClick={() => setPillar("All")}
                   className={cn(
-                    "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                    "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
                     pillar === "All"
                       ? "border-primary bg-primary text-primary-foreground shadow-sm"
                       : "border-border bg-muted/40 text-muted-foreground hover:border-primary/40 hover:text-foreground",
@@ -378,7 +378,7 @@ function Services() {
                       type="button"
                       onClick={() => setPillar(selected ? "All" : p)}
                       className={cn(
-                        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                        "inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors",
                         selected
                           ? "border-primary bg-primary text-primary-foreground shadow-sm"
                           : "border-border bg-muted/40 text-muted-foreground hover:border-primary/40 hover:text-foreground",
@@ -396,7 +396,7 @@ function Services() {
                   <button
                     type="button"
                     onClick={() => setActiveTag("All")}
-                    className="ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary/50 bg-primary/15 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/25"
+                    className="ml-auto inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-primary/50 bg-primary/15 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/25"
                   >
                     <Tag className="h-3 w-3" />
                     Tag: {activeTag}
@@ -707,7 +707,7 @@ function ServiceSideDrawer({
                   <button
                     type="button"
                     onClick={() => onApplyGridTag(panelTag)}
-                    className="shrink-0 whitespace-nowrap rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-[0.68rem] font-medium text-primary hover:bg-primary/20"
+                    className="shrink-0 whitespace-nowrap rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1 text-[0.68rem] font-medium text-primary hover:bg-primary/20"
                   >
                     Sync grid filter
                   </button>
@@ -720,7 +720,7 @@ function ServiceSideDrawer({
                   type="button"
                   onClick={() => setPanelTag("All")}
                   className={cn(
-                    "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.68rem] font-medium transition-colors",
+                    "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1 text-[0.68rem] font-medium transition-colors",
                     panelTag === "All"
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-border bg-background/60 text-muted-foreground hover:text-foreground",
@@ -736,7 +736,7 @@ function ServiceSideDrawer({
                       type="button"
                       onClick={() => setPanelTag(selected ? "All" : tag)}
                       className={cn(
-                        "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-2.5 py-1 text-[0.68rem] font-medium transition-colors",
+                        "inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1 text-[0.68rem] font-medium transition-colors",
                         selected
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border bg-background/60 text-muted-foreground hover:border-primary/40 hover:text-foreground",
@@ -928,7 +928,7 @@ function ServiceSideDrawer({
                   type="button"
                   onClick={() => removeTagFromDraft(tag)}
                   title={`Remove tag ${tag}`}
-                  className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-primary/40 bg-primary/15 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-destructive/15 hover:text-destructive"
+                  className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border border-primary/40 bg-primary/15 px-2.5 py-0.5 text-xs font-medium text-primary hover:bg-destructive/15 hover:text-destructive"
                 >
                   <Tag className="h-2.5 w-2.5" />
                   <span>{tag}</span>

@@ -565,7 +565,10 @@ function checkRateLimit(clientKey: string, now = Date.now()): number | null {
   return null;
 }
 
-function isAllowedOriginHeader(request: Request): boolean {
+function isAllowedOriginHeader(
+  request: Request,
+  envObj?: Record<string, unknown>,
+): boolean {
   const origin = request.headers.get("origin");
   const referer = request.headers.get("referer");
   const candidate = origin || referer;
@@ -576,6 +579,31 @@ function isAllowedOriginHeader(request: Request): boolean {
     if (host === "localhost" || host === "127.0.0.1") return true;
     if (host.endsWith(".vercel.app") || host.endsWith(".aistudio.google.com")) {
       return true;
+    }
+    const configuredUrls = [
+      typeof envObj?.["APP_URL"] === "string"
+        ? envObj["APP_URL"]
+        : process.env["APP_URL"],
+      typeof envObj?.["VERCEL_URL"] === "string"
+        ? envObj["VERCEL_URL"]
+        : process.env["VERCEL_URL"],
+      typeof envObj?.["VERCEL_PROJECT_PRODUCTION_URL"] === "string"
+        ? envObj["VERCEL_PROJECT_PRODUCTION_URL"]
+        : process.env["VERCEL_PROJECT_PRODUCTION_URL"],
+    ];
+    for (const rawUrl of configuredUrls) {
+      const trimmed = rawUrl?.trim();
+      if (!trimmed) continue;
+      try {
+        const normalized = /^https?:\/\//i.test(trimmed)
+          ? trimmed
+          : `https://${trimmed}`;
+        if (new URL(normalized).hostname.toLowerCase() === host) {
+          return true;
+        }
+      } catch {
+        /* ignore invalid env URL */
+      }
     }
     const reqHost = (request.headers.get("host") || "")
       .split(":")[0]
@@ -655,14 +683,14 @@ export async function handleScanReceiptRequest(
     return jsonReply({ error: "Method not allowed." }, 405);
   }
 
-  if (!isAllowedOriginHeader(request)) {
-    return jsonReply({ error: "Origin not permitted." }, 403);
-  }
-
   const envObj =
     typeof env === "object" && env !== null
       ? (env as Record<string, unknown>)
       : undefined;
+
+  if (!isAllowedOriginHeader(request, envObj)) {
+    return jsonReply({ error: "Origin not permitted." }, 403);
+  }
 
   const expectedToken =
     typeof envObj?.["SCAN_API_TOKEN"] === "string"

@@ -123,7 +123,7 @@ export function MonthPicker({
   return (
     <div
       className={cn(
-        "inline-flex items-center rounded-full border border-border bg-muted/85 p-0.5 backdrop-blur-md",
+        "inline-flex items-center rounded-xl border border-border bg-muted/85 p-0.5 backdrop-blur-md",
         className,
       )}
     >
@@ -131,7 +131,7 @@ export function MonthPicker({
         type="button"
         onClick={() => stepMonth(-1)}
         aria-label="Previous month"
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
         <ChevronLeft className="h-3.5 w-3.5" />
       </button>
@@ -141,7 +141,7 @@ export function MonthPicker({
         type="button"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className="font-num inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
+        className="font-num inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 text-xs font-semibold text-foreground transition-colors hover:bg-accent"
       >
         <CalendarDays className="h-3.5 w-3.5 shrink-0 text-primary" />
         <span>{label}</span>
@@ -151,7 +151,7 @@ export function MonthPicker({
         type="button"
         onClick={() => stepMonth(1)}
         aria-label="Next month"
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       >
         <ChevronRight className="h-3.5 w-3.5" />
       </button>
@@ -176,7 +176,7 @@ export function MonthPicker({
                 type="button"
                 onClick={() => setPanelYear((y) => y - 1)}
                 aria-label="Previous year"
-                className="grid h-7 w-7 place-items-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="grid h-7 w-7 place-items-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
@@ -187,7 +187,7 @@ export function MonthPicker({
                 type="button"
                 onClick={() => setPanelYear((y) => y + 1)}
                 aria-label="Next year"
-                className="grid h-7 w-7 place-items-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                className="grid h-7 w-7 place-items-center rounded-lg border border-border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>

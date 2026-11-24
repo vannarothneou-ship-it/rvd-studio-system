@@ -33,8 +33,8 @@ import {
   categoryIcon,
   incomeSourceIcon,
   paymentCardIcon,
-  type CategoryStatItem,
-} from "@/components/rv/FinanceVisuals";
+} from "@/components/rv/FinanceIcons";
+import type { CategoryStatItem } from "@/components/rv/FinanceVisuals";
 import {
   cardKind,
   cardSpendSeries,
@@ -84,7 +84,7 @@ export function ChartModeCycleButton({
       aria-label={`Chart style: ${current.label}. Tap to switch to ${nextMode}`}
       title={`Style: ${current.label} (tap to switch)`}
       className={cn(
-        "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border bg-muted/75 text-primary transition-all duration-150 hover:border-primary/50 hover:bg-primary hover:text-primary-foreground active:scale-90",
+        "inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-secondary text-primary transition-all duration-150 hover:border-primary/50 hover:bg-primary hover:text-primary-foreground active:scale-95",
         className,
       )}
     >
@@ -232,7 +232,7 @@ export function SparklineWithDates({
               const p = payload[0]?.payload as SparkPoint | undefined;
               if (!p) return null;
               return (
-                <div className="rounded-xl border border-[var(--glass-border)] bg-popover px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-2xl backdrop-saturate-150">
+                <div className="rounded-xl border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-lg">
                   <p className="font-num text-[0.68rem] text-muted-foreground">
                     {p.fullDate || p.label}
                   </p>
@@ -337,7 +337,7 @@ export function TrendChartCanvas({
             ? (row.inCount ?? 0) + (row.outCount ?? 0)
             : undefined);
         return (
-          <div className="min-w-44 rounded-xl border border-[var(--glass-border)] bg-popover px-3 py-2.5 text-xs text-popover-foreground shadow-xl backdrop-blur-2xl backdrop-saturate-150">
+          <div className="min-w-44 rounded-xl border border-border bg-popover px-3 py-2.5 text-xs text-popover-foreground shadow-lg">
             <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-1.5">
               <span className="font-medium text-foreground">
                 {row.fullDate || row.label}
@@ -855,14 +855,14 @@ export function BreakdownPieCard({
                 ? "Grouped by source"
                 : "Grouped by category"}
           </span>
-          <div className="inline-flex items-center gap-1 rounded-full border border-border/75 bg-muted/40 p-0.5">
+          <div className="inline-flex items-center gap-1 rounded-lg border border-border/80 bg-secondary/70 p-0.5">
             <button
               type="button"
               onClick={() => setGroupBy("category")}
               className={cn(
-                "rounded-full px-2 py-0.5 text-[0.68rem] font-medium transition-colors",
+                "min-h-[30px] rounded-md px-2.5 py-1 text-[0.7rem] font-medium transition-colors",
                 effectiveGroup === "category"
-                  ? "bg-background text-foreground shadow-xs"
+                  ? "bg-card text-foreground shadow-xs"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -872,9 +872,9 @@ export function BreakdownPieCard({
               type="button"
               onClick={() => setGroupBy("method")}
               className={cn(
-                "rounded-full px-2 py-0.5 text-[0.68rem] font-medium transition-colors",
+                "min-h-[30px] rounded-md px-2.5 py-1 text-[0.7rem] font-medium transition-colors",
                 effectiveGroup === "method"
-                  ? "bg-background text-foreground shadow-xs"
+                  ? "bg-card text-foreground shadow-xs"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -948,7 +948,7 @@ export function BreakdownPieCard({
                       const pct =
                         total > 0 ? Math.round((s.value / total) * 100) : 0;
                       return (
-                        <div className="rounded-xl border border-[var(--glass-border)] bg-popover px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-2xl backdrop-saturate-150">
+                        <div className="rounded-xl border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-lg">
                           <p className="font-medium text-foreground">
                             {s.name}
                           </p>
@@ -1110,7 +1110,7 @@ export function PeriodBarPulseCard({
                 if (!row) return null;
                 const val = numField(row, valueKey);
                 return (
-                  <div className="rounded-xl border border-[var(--glass-border)] bg-popover px-3 py-2 text-xs text-popover-foreground shadow-xl backdrop-blur-2xl backdrop-saturate-150">
+                  <div className="rounded-xl border border-border bg-popover px-3 py-2 text-xs text-popover-foreground shadow-lg">
                     <p className="font-num text-[0.68rem] text-muted-foreground">
                       {row.fullDate || row.label}
                     </p>
@@ -1301,7 +1301,7 @@ export function CardSpendingChartCard({
           (typeof agg.points)[number] | undefined;
         if (!row) return null;
         return (
-          <div className="min-w-48 rounded-xl border border-[var(--glass-border)] bg-popover px-3 py-2.5 text-xs text-popover-foreground shadow-xl backdrop-blur-2xl backdrop-saturate-150">
+          <div className="min-w-48 rounded-xl border border-border bg-popover px-3 py-2.5 text-xs text-popover-foreground shadow-lg">
             <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-1.5">
               <span className="font-medium text-foreground">
                 {row.fullDate}
@@ -1414,16 +1414,16 @@ export function CardSpendingChartCard({
             type="button"
             onClick={() => toggleCardFilter("debit")}
             className={cn(
-              "rounded-2xl border p-3.5 text-left transition-all",
+              "rounded-xl border p-3 text-left transition-all",
               cardFilter === "debit"
                 ? "border-primary bg-primary/12 ring-1 ring-primary/40"
                 : cardFilter === "credit"
-                  ? "border-border/50 bg-muted/20 opacity-55 hover:opacity-90"
-                  : "border-border/75 bg-muted/35 hover:border-primary/45",
+                  ? "border-border/50 bg-secondary/40 opacity-55 hover:opacity-90"
+                  : "border-border bg-secondary/60 hover:border-primary/45",
             )}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-1.5 text-[0.68rem] font-medium uppercase tracking-wider text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5 text-[0.7rem] font-medium text-muted-foreground">
                 <Landmark className="h-3.5 w-3.5 text-primary" />
                 Debit
               </span>
@@ -1447,16 +1447,16 @@ export function CardSpendingChartCard({
             type="button"
             onClick={() => toggleCardFilter("credit")}
             className={cn(
-              "rounded-2xl border p-3.5 text-left transition-all",
+              "rounded-xl border p-3 text-left transition-all",
               cardFilter === "credit"
-                ? "border-[var(--chart-3)] bg-muted/60 ring-1 ring-[var(--chart-3)]/40"
+                ? "border-[var(--chart-3)] bg-secondary/80 ring-1 ring-[var(--chart-3)]/40"
                 : cardFilter === "debit"
-                  ? "border-border/50 bg-muted/20 opacity-55 hover:opacity-90"
-                  : "border-border/75 bg-muted/35 hover:border-primary/45",
+                  ? "border-border/50 bg-secondary/40 opacity-55 hover:opacity-90"
+                  : "border-border bg-secondary/60 hover:border-primary/45",
             )}
           >
             <div className="flex items-center justify-between gap-2">
-              <span className="inline-flex items-center gap-1.5 text-[0.68rem] font-medium uppercase tracking-wider text-muted-foreground">
+              <span className="inline-flex items-center gap-1.5 text-[0.7rem] font-medium text-muted-foreground">
                 <CreditCard className="h-3.5 w-3.5 text-[var(--chart-3)]" />
                 Credit
               </span>
@@ -1476,7 +1476,7 @@ export function CardSpendingChartCard({
             </p>
           </button>
 
-          <div className="col-span-2 rounded-2xl border border-border/75 bg-muted/35 p-3.5 sm:col-span-1">
+          <div className="col-span-2 rounded-xl border border-border bg-secondary/40 p-3 sm:col-span-1">
             <div className="flex items-center justify-between gap-2">
               <span className="label-mono">
                 {cardFilter === "both" ? "Total & pace" : `${cardFilter} total`}

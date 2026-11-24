@@ -106,6 +106,8 @@ export interface CentralIntelligenceSnapshot {
   latestCarOdoKm: number | null;
   learnedRuleCount: number;
   categoryPace: CategoryPaceItem[];
+  studioMonthTotalUSD: number;
+  studioTopCategories: { category: string; spentUSD: number }[];
   spendAnomalies: SpendAnomalyItem[];
   goalEtas: GoalEtaItem[];
   insights: CentralInsight[];
@@ -279,6 +281,8 @@ export function computeCentralIntelligence(
 
   const personalMonthByCat = new Map<string, number>();
   const personal3MoByCat = new Map<string, number>();
+  const studioMonthByCat = new Map<string, number>();
+  let studioMonthTotalUSD = 0;
 
   for (const e of db.expenses) {
     const usd = recordToUSD(e, rate);
@@ -286,6 +290,13 @@ export function computeCentralIntelligence(
     const ym = e.date.slice(0, 7);
     if (acc === "Studio") {
       studioOutAll += usd;
+      if (ym === month) {
+        studioMonthTotalUSD += usd;
+        studioMonthByCat.set(
+          e.category,
+          (studioMonthByCat.get(e.category) ?? 0) + usd,
+        );
+      }
     } else {
       personalOutAll += usd;
       if (ym === month) {
@@ -304,6 +315,10 @@ export function computeCentralIntelligence(
     if (trailing3Months.has(ym)) trailing3Burn += usd;
     if (ym === month) thisMonthBurn += usd;
   }
+
+  const studioTopCategories = Array.from(studioMonthByCat.entries())
+    .map(([category, spentUSD]) => ({ category, spentUSD }))
+    .sort((a, b) => b.spentUSD - a.spentUSD);
 
   const studioBalanceUSD = studioInAll - studioOutAll;
   const personalBalanceUSD = personalInAll - personalOutAll;
@@ -681,6 +696,8 @@ export function computeCentralIntelligence(
     latestCarOdoKm,
     learnedRuleCount: (db.learnedReceiptRules ?? []).length,
     categoryPace,
+    studioMonthTotalUSD,
+    studioTopCategories,
     spendAnomalies,
     goalEtas,
     insights: insights.slice(0, 6),
@@ -1415,9 +1432,39 @@ export function askCentralDB(
     };
   }
 
-  // 6. Work tasks & Studio projects
+  // 5b. Studio spending / costs breakdown
   if (
-    /\b(?:work|tasks?|projects?|deliverables?|deadlines?|schedule|dbg|ocic|connexion)\b/i.test(
+    /\b(?:studio\s+(?:spend|spending|cost|costs|expense|expenses)|software|printing|vendors?|freelancers?)\b/i.test(
+      q,
+    )
+  ) {
+    const topStudio = snapshot.studioTopCategories.slice(0, 3);
+    if (topStudio.length === 0) {
+      return {
+        answer: `No Studio expenses logged yet for ${month}. Combined Studio liquid balance is $${snapshot.studioBalanceUSD.toFixed(2)}.`,
+        facts: [
+          {
+            label: "Studio Bal",
+            value: `$${snapshot.studioBalanceUSD.toFixed(0)}`,
+          },
+          { label: "Studio Spend", value: "$0.00" },
+        ],
+        routeHint: { label: "Studio Finance", to: "/finance" },
+      };
+    }
+    return {
+      answer: `Studio spending in ${month} totals $${snapshot.studioMonthTotalUSD.toFixed(2)}, led by ${topStudio.map((c) => `${c.category} ($${c.spentUSD.toFixed(2)})`).join(", ")}.`,
+      facts: topStudio.map((c) => ({
+        label: c.category,
+        value: `$${c.spentUSD.toFixed(2)}`,
+      })),
+      routeHint: { label: "Studio Finance", to: "/finance" },
+    };
+  }
+
+  // 6. Work tasks, Studio projects & upcoming schedule
+  if (
+    /\b(?:work|tasks?|projects?|deliverables?|deadlines?|schedule|upcoming|due\s+soon|this\s+week|dbg|ocic|connexion)\b/i.test(
       q,
     )
   ) {
@@ -1427,14 +1474,23 @@ export function askCentralDB(
         p.status === "Quoted" ||
         p.status === "In production",
     ).length;
+    const dueInvoices = db.invoices.filter((inv) => {
+      if (!isInvoice(inv) || !inv.due) return false;
+      const v = invoiceView(inv, db);
+      return (
+        v.status !== "Draft" &&
+        v.balance > 0.01 &&
+        inv.due <= addDays(snapshot.refDate, 7)
+      );
+    }).length;
     return {
-      answer: `You currently have ${snapshot.activeWorkCount} active work tasks (${snapshot.dueSoonWorkCount} due within 7 days) and ${activeStudio} active studio client projects.`,
+      answer: `You currently have ${snapshot.activeWorkCount} active work tasks (${snapshot.dueSoonWorkCount} due within 7 days), ${activeStudio} active studio projects, and ${dueInvoices} unpaid invoice${dueInvoices === 1 ? "" : "s"} due or overdue within 7 days.`,
       facts: [
         { label: "Active Work", value: String(snapshot.activeWorkCount) },
-        { label: "Due ≤ 7d", value: String(snapshot.dueSoonWorkCount) },
-        { label: "Studio Active", value: String(activeStudio) },
+        { label: "Work ≤ 7d", value: String(snapshot.dueSoonWorkCount) },
+        { label: "Inv Due ≤ 7d", value: String(dueInvoices) },
       ],
-      routeHint: { label: "Work & Calendar", to: "/work" },
+      routeHint: { label: "Today & Schedule", to: "/" },
     };
   }
 

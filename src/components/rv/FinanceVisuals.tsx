@@ -1,52 +1,18 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   ArrowDownLeft,
   ArrowLeft,
   ArrowUpRight,
-  Baby,
-  Briefcase,
-  Building2,
   Calendar,
-  Car,
   CheckCircle2,
-  Coffee,
-  Coins,
-  CreditCard,
   Eye,
   EyeOff,
-  Fuel,
-  Gift,
-  Hammer,
-  HeartPulse,
-  Landmark,
-  Laptop,
-  Megaphone,
-  Monitor,
-  Package,
   Pencil,
-  PiggyBank,
-  Plane,
   Plus,
-  Printer,
-  ShoppingBag,
-  ShoppingCart,
-  Smartphone,
-  Sparkles,
-  Stethoscope,
   Target,
   Trash2,
-  TrendingUp,
-  Type,
-  Users,
-  Utensils,
-  UtensilsCrossed,
-  Wallet,
-  Wifi,
-  Wrench,
   X,
-  Zap,
-  type LucideIcon,
 } from "lucide-react";
 import {
   Bar,
@@ -93,162 +59,23 @@ import {
   SlidingTabs,
   Portal,
 } from "@/components/rv/ui";
+import {
+  AnimatedNumber,
+  categoryIcon,
+  expenseItemIcon,
+  incomeSourceIcon,
+  monthPacePercent,
+  paymentCardIcon,
+} from "@/components/rv/FinanceIcons";
 
-/* ---------- Category & Item Icon Mapping ---------- */
-
-const CATEGORY_ICON_MAP: Record<string, LucideIcon> = {
-  Food: Utensils,
-  "Food and groceries": Utensils,
-  Transportation: Car,
-  Transport: Car,
-  Kid: Baby,
-  Family: Baby,
-  "Personal Spending": ShoppingBag,
-  Shopping: ShoppingBag,
-  Utilities: Zap,
-  "Medical & Healthcare": HeartPulse,
-  Health: HeartPulse,
-  "Saving & Investing": PiggyBank,
-  "Prius 2012": Wrench,
-  "Software and subscriptions": Laptop,
-  "Fonts and licenses": Type,
-  "Printing and production": Printer,
-  "Fabrication and vendors": Hammer,
-  Freelancers: Users,
-  Marketing: Megaphone,
-  Equipment: Monitor,
-  "Office and utilities": Building2,
-  Other: Package,
+export {
+  AnimatedNumber,
+  categoryIcon,
+  expenseItemIcon,
+  incomeSourceIcon,
+  monthPacePercent,
+  paymentCardIcon,
 };
-
-export function categoryIcon(category: string): LucideIcon {
-  return CATEGORY_ICON_MAP[category] ?? Briefcase;
-}
-
-const INCOME_ICON_MAP: Record<string, LucideIcon> = {
-  Salary: Briefcase,
-  "Studio Draw": Building2,
-  Freelance: Laptop,
-  Bonus: Sparkles,
-  Investment: TrendingUp,
-  "Gift & Refund": Gift,
-  Other: Coins,
-};
-
-export function incomeSourceIcon(source: string): LucideIcon {
-  return INCOME_ICON_MAP[source] ?? Coins;
-}
-
-export function paymentCardIcon(method: string): LucideIcon {
-  const m = method.trim().toLowerCase();
-  if (m.includes("credit")) return CreditCard;
-  if (
-    m.includes("debit") ||
-    m.includes("aba") ||
-    m.includes("acleda") ||
-    m.includes("canadia")
-  )
-    return Landmark;
-  if (m.includes("khqr") || m.includes("wing")) return Smartphone;
-  if (m.includes("cash")) return Wallet;
-  return CreditCard;
-}
-
-export function expenseItemIcon(
-  e: Pick<Expense, "category" | "description" | "vendor">,
-): LucideIcon {
-  const text = `${e.description} ${e.vendor}`.toLowerCase();
-  if (/coffee|cafe|latte|espresso|matcha|tea/.test(text)) return Coffee;
-  if (/gas|fuel|totalenergies|ptt|caltex|petrol/.test(text)) return Fuel;
-  if (/flight|airport|airline|plane|trip/.test(text)) return Plane;
-  if (/tuktuk|tuk tuk|passapp|grab|taxi|bus|ride/.test(text)) return Car;
-  if (/grocer|aeon|supermarket|lucky|market|mart/.test(text))
-    return ShoppingCart;
-  if (/milk|diaper|formula|baby|kid|toddler|stroller|toy/.test(text))
-    return Baby;
-  if (
-    /breakfast|lunch|dinner|pizza|burger|congee|rice|noodle|meal|ramen/.test(
-      text,
-    )
-  )
-    return UtensilsCrossed;
-  if (/internet|wifi|metfone|cellcard|smart|sinet|ezecom/.test(text))
-    return Wifi;
-  if (/edc|electric|water|ppwsa|power|utility|bill/.test(text)) return Zap;
-  if (
-    /hospital|clinic|dentist|doctor|pharmacy|medicine|checkup|vitamin/.test(
-      text,
-    )
-  )
-    return Stethoscope;
-  if (/gold|invest|saving|deposit|bank/.test(text)) return Coins;
-  if (/prius|oil|tire|brake|battery|mechanic|service|car|wash/.test(text))
-    return Wrench;
-  if (/adobe|figma|framer|software|cloud|domain|hosting/.test(text))
-    return Laptop;
-  if (/print|proof|box|packaging|paper/.test(text)) return Printer;
-  return categoryIcon(e.category);
-}
-
-/* ---------- Animated Number Counter ---------- */
-
-export function AnimatedNumber({
-  value,
-  format = (n) => money(n),
-  duration = 180,
-  className,
-}: {
-  value: number;
-  format?: (n: number) => string;
-  duration?: number;
-  className?: string;
-}) {
-  const [display, setDisplay] = useState(value);
-  const prevRef = useRef(value);
-
-  useEffect(() => {
-    const startVal = prevRef.current;
-    prevRef.current = value;
-    if (
-      typeof window === "undefined" ||
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches
-    ) {
-      setDisplay(value);
-      return;
-    }
-    const diff = value - startVal;
-    if (Math.abs(diff) < 0.005) {
-      setDisplay(value);
-      return;
-    }
-    let raf = 0;
-    const t0 = performance.now();
-    const step = (now: number) => {
-      const p = Math.min(1, (now - t0) / duration);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setDisplay(startVal + diff * eased);
-      if (p < 1) raf = requestAnimationFrame(step);
-      else setDisplay(value);
-    };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [value, duration]);
-
-  return <span className={className}>{format(display)}</span>;
-}
-
-/* ---------- Month Pace Helper ---------- */
-
-export function monthPacePercent(month: string): number {
-  const cur = today();
-  if (!month || month === cur.slice(0, 7)) {
-    const [y, m, d] = cur.split("-").map(Number);
-    if (!y || !m || !d) return 50;
-    const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
-    return Math.min(100, Math.max(5, Math.round((d / daysInMonth) * 100)));
-  }
-  return month < cur.slice(0, 7) ? 100 : 15;
-}
 
 /* ---------- Liquid-Fill Category Jar ---------- */
 
@@ -886,7 +713,7 @@ export function CategoryInspectorDrawer({
           />
 
           {/* Centered Hero Jar */}
-          <div className="flex flex-col items-center rounded-xl border border-border bg-muted/40 py-4">
+          <div className="flex flex-col items-center border-b border-border/70 pb-4 pt-2">
             <LiquidJar
               category={category}
               spent={timeline.totalUSD}
@@ -916,7 +743,7 @@ export function CategoryInspectorDrawer({
           </div>
 
           {/* Interactive Category Timeline Trend Chart */}
-          <div className="rounded-xl border border-border bg-muted/40 p-3.5">
+          <div className="border-b border-border/70 pb-4">
             <div className="mb-2 flex items-center justify-between gap-2">
               <span className="label-mono">{timeline.scopeLabel} trend</span>
               <span className="font-num text-[0.7rem] text-muted-foreground">
@@ -1012,7 +839,7 @@ export function CategoryInspectorDrawer({
           </div>
 
           {/* Enhanced Period / Category Comparison */}
-          <div className="rounded-xl border border-border bg-muted/40 p-3.5 text-sm">
+          <div className="border-b border-border/70 pb-4 text-sm">
             <div className="mb-2.5 flex flex-wrap items-center justify-between gap-2">
               <span className="label-mono">Compare spend</span>
               <SlidingTabs
@@ -1348,7 +1175,7 @@ export function GoalRingCard({
   return (
     <div
       style={{ animationDelay: `${delay}ms` }}
-      className="rise flex flex-col justify-between rounded-2xl border border-border/75 bg-muted/30 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/50"
+      className="rise flex flex-col justify-between rounded-xl border border-border bg-secondary/40 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/50"
     >
       <div className="flex items-start justify-between gap-2">
         <button
@@ -1359,7 +1186,7 @@ export function GoalRingCard({
           <p className="truncate text-sm font-semibold">
             {goal.name || "Untitled goal"}
           </p>
-          <p className="font-num mt-0.5 truncate text-[0.65rem] text-muted-foreground">
+          <p className="font-num mt-0.5 truncate text-[0.68rem] text-muted-foreground">
             {planAmt > 0
               ? `${compactMoney(planAmt)}${CADENCE_SHORT[cadence]}`
               : accountLabel
@@ -1369,13 +1196,13 @@ export function GoalRingCard({
                   : CADENCE_LABEL[cadence]}
           </p>
         </button>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1.5">
           <span
             className={cn(
-              "rounded-full border px-2 py-0.5 font-num text-[0.68rem] font-semibold",
+              "rounded-md border px-2 py-0.5 font-num text-[0.68rem] font-semibold",
               done
                 ? "border-positive/40 bg-positive/15 text-positive"
-                : "border-border bg-background/60 text-muted-foreground",
+                : "border-border bg-card text-muted-foreground",
             )}
           >
             {pct}%
@@ -1384,9 +1211,9 @@ export function GoalRingCard({
             type="button"
             onClick={onEdit}
             aria-label={`Edit ${goal.name || "goal"}`}
-            className="grid h-7 w-7 place-items-center rounded-full border border-border/80 bg-background/60 text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
+            className="grid h-8 w-8 place-items-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-primary/50 hover:text-primary"
           >
-            <Pencil className="h-3 w-3" />
+            <Pencil className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
@@ -1447,7 +1274,7 @@ export function GoalRingCard({
               key={amt}
               type="button"
               onClick={() => onQuickAdd(amt)}
-              className="rounded-full border border-border px-2.5 py-1 text-[0.68rem] font-medium transition-colors hover:border-primary hover:bg-accent active:scale-95"
+              className="min-h-[32px] rounded-lg border border-border bg-card px-2.5 py-1 text-[0.72rem] font-medium transition-colors hover:border-primary hover:bg-accent active:scale-95"
             >
               +${amt}
             </button>
@@ -1456,7 +1283,7 @@ export function GoalRingCard({
             type="button"
             onClick={onEdit}
             aria-label="Open planner & custom deposit"
-            className="grid h-7 w-7 place-items-center rounded-full border border-primary/40 bg-primary/12 text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
+            className="grid h-8 w-8 place-items-center rounded-lg border border-primary/40 bg-primary/12 text-primary transition-colors hover:bg-primary hover:text-primary-foreground active:scale-95"
           >
             <Plus className="h-3.5 w-3.5" />
           </button>
@@ -1633,7 +1460,7 @@ export function GoalPlannerDrawer({
                   </span>
                 </p>
               </div>
-              <span className="font-num rounded-full border border-primary/40 bg-background/70 px-3 py-1 text-sm font-bold text-primary">
+              <span className="font-num rounded-md border border-primary/40 bg-card px-2.5 py-1 text-sm font-bold text-primary">
                 {pct}%
               </span>
             </div>
@@ -1791,7 +1618,7 @@ export function GoalPlannerDrawer({
                       key={v}
                       type="button"
                       onClick={() => setEntryAmount(String(v))}
-                      className="rounded-full border border-border bg-background/50 px-2.5 py-1 font-num text-xs font-medium hover:border-primary"
+                      className="min-h-[34px] rounded-lg border border-border bg-card px-2.5 py-1 font-num text-xs font-medium hover:border-primary"
                     >
                       ${v}
                     </button>
@@ -1843,9 +1670,9 @@ export function GoalPlannerDrawer({
                             type="button"
                             onClick={() => handleRemoveContribution(c)}
                             aria-label="Remove entry"
-                            className="rounded-full p-1 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                            className="rounded-lg p-1.5 text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
                           >
-                            <Trash2 className="h-3 w-3" />
+                            <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
                       </li>

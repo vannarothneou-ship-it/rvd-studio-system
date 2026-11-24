@@ -44,7 +44,7 @@ function PrintPage() {
         <Link
           to="/invoices/$id"
           params={{ id }}
-          className="rounded-full border border-border px-4 py-2 text-sm"
+          className="ios-tap inline-flex min-h-[44px] items-center justify-center rounded-xl border border-border bg-secondary px-4 py-2 text-sm font-medium text-secondary-foreground transition-colors hover:bg-accent sm:min-h-[38px]"
         >
           ← Back
         </Link>
