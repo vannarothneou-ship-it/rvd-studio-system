@@ -64,6 +64,7 @@ import {
   setDB,
   stampFxSnapshot,
   studioFinancialSummary,
+  today,
   workspaceBalances,
   type Expense,
   type Invoice,
@@ -1190,6 +1191,28 @@ describe("Phase 1 FX immutability, financial separation, migration & persistence
           currency: "KHR",
           receipt: "",
         },
+        {
+          id: "e-invalid-date",
+          date: "2026-02-30",
+          projectId: "",
+          category: "Food",
+          vendor: "Debit",
+          description: "Invalid date import",
+          amount: 1,
+          currency: "USD",
+          receipt: "",
+        },
+        {
+          id: "e-leap-date",
+          date: "2024-02-29",
+          projectId: "",
+          category: "Food",
+          vendor: "Debit",
+          description: "Valid leap day",
+          amount: 1,
+          currency: "USD",
+          receipt: "",
+        },
       ],
       settings: {
         khrRate: -100,
@@ -1205,6 +1228,8 @@ describe("Phase 1 FX immutability, financial separation, migration & persistence
     expect(migrated.studioIncome).toEqual([]);
     expect(migrated.expenses[0]!.exchangeRate).toBe(4100);
     expect(migrated.expenses[0]!.usdAmount).toBe(2);
+    expect(migrated.expenses[1]!.date).toBe(today());
+    expect(migrated.expenses[2]!.date).toBe("2024-02-29");
   });
 
   it("reports persistence failure cleanly via getPersistStatus instead of silently dropping errors", () => {
