@@ -487,7 +487,7 @@ function ShellInner({ children }: { children: ReactNode }) {
         </div>
       </header>
 
-      {/* Mobile Floating Frosted Glass Bottom Dock (hides on scroll up, reappears on scroll down) */}
+      {/* Persistent mobile floating navigation dock */}
       <nav
         aria-label="Mobile navigation"
         className={cn(
