@@ -733,9 +733,7 @@ function sanitizeCurrency(c: unknown): Currency {
 function sanitizeIsoDate(d: unknown, fallback = today()): string {
   if (typeof d !== "string") return fallback;
 
-  const match = d.trim().match(
-    /^(\d{4})-(\d{2})-(\d{2})(?:$|T)/,
-  );
+  const match = d.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:$|T)/);
   if (!match) return fallback;
 
   const year = Number(match[1]);
