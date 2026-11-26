@@ -32,6 +32,8 @@ import {
   ReceiptScannerProvider,
   useReceiptScanner,
 } from "@/components/rv/ReceiptScannerContext";
+import { BackToTop } from "@/components/rv/BackToTop";
+import { scrollToTop } from "@/lib/scroll";
 
 const LazyCommandPalette = lazy(() =>
   import("@/components/rv/CommandPalette").then((m) => ({
@@ -270,6 +272,14 @@ function ShellInner({ children }: { children: ReactNode }) {
   const active = (to: string) =>
     to === "/studio" ? path === "/studio" : path.startsWith(to);
 
+  const handleBottomTabClick =
+    (to: string) => (e: React.MouseEvent<HTMLAnchorElement>) => {
+      if (path === to) {
+        e.preventDefault();
+        scrollToTop();
+      }
+    };
+
   const pageLabel = isDashboard
     ? "Dashboard"
     : isStudio
@@ -443,6 +453,7 @@ function ShellInner({ children }: { children: ReactNode }) {
           <Link
             to="/"
             aria-label="Dashboard"
+            onClick={handleBottomTabClick("/")}
             className={cn(
               "ios-tap relative flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl transition-colors",
               isDashboard
@@ -459,6 +470,7 @@ function ShellInner({ children }: { children: ReactNode }) {
           <Link
             to="/studio"
             aria-label="Studio"
+            onClick={handleBottomTabClick("/studio")}
             className={cn(
               "ios-tap relative flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl transition-colors",
               isStudio
@@ -486,6 +498,7 @@ function ShellInner({ children }: { children: ReactNode }) {
           <Link
             to="/personal"
             aria-label="Personal"
+            onClick={handleBottomTabClick("/personal")}
             className={cn(
               "ios-tap relative flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl transition-colors",
               isPersonal
@@ -502,6 +515,7 @@ function ShellInner({ children }: { children: ReactNode }) {
           <Link
             to="/work"
             aria-label="Work"
+            onClick={handleBottomTabClick("/work")}
             className={cn(
               "ios-tap relative flex min-h-[44px] flex-col items-center justify-center gap-0.5 rounded-xl transition-colors",
               isWork
@@ -690,6 +704,7 @@ function ShellInner({ children }: { children: ReactNode }) {
         )}
         {children}
       </main>
+      <BackToTop />
       <OfflineIndicator />
       {paletteMounted && (
         <Suspense fallback={null}>

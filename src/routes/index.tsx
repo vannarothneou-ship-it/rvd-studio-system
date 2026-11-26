@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   Activity,
@@ -39,14 +39,11 @@ import {
 import { nextCode, upsert } from "@/components/rv/Crud";
 import {
   AnimatedNumber,
-  CategoryInspectorDrawer,
   expenseItemIcon,
   incomeSourceIcon,
-} from "@/components/rv/FinanceVisuals";
-import { MoneyFlowSankeyCard } from "@/components/rv/MoneyFlowSankey";
+} from "@/components/rv/FinanceIcons";
 import { CentralAiBrief } from "@/components/rv/CentralAiBrief";
 import { TodayFocusCard } from "@/components/rv/TodayFocusCard";
-import { DashboardCalendarCard } from "@/components/rv/DashboardCalendar";
 import {
   CHART_LENS_OPTIONS,
   ChartModeCycleButton,
@@ -54,6 +51,24 @@ import {
   type ChartLens,
   type ChartMode,
 } from "@/components/rv/Charts";
+
+const LazyMoneyFlowSankeyCard = lazy(() =>
+  import("@/components/rv/MoneyFlowSankey").then((m) => ({
+    default: m.MoneyFlowSankeyCard,
+  })),
+);
+
+const LazyDashboardCalendarCard = lazy(() =>
+  import("@/components/rv/DashboardCalendar").then((m) => ({
+    default: m.DashboardCalendarCard,
+  })),
+);
+
+const LazyCategoryInspectorDrawer = lazy(() =>
+  import("@/components/rv/FinanceVisuals").then((m) => ({
+    default: m.CategoryInspectorDrawer,
+  })),
+);
 import { DesignMediaUploader } from "@/components/rv/DesignMediaTools";
 import { workProjectMeta } from "@/components/rv/workProjectColors";
 import {
@@ -1187,19 +1202,27 @@ function CommandDashboard() {
             title: "Money Flow River",
             defaultSpan: 12,
             render: () => (
-              <MoneyFlowSankeyCard
-                db={db}
-                accountScope="all"
-                anchorMonth={month}
-                hideBalances={hideBalances}
-                onSelectCategory={(account, category) =>
-                  setInspectedCategory({ account, category })
+              <Suspense
+                fallback={
+                  <Glass className="h-[320px] animate-pulse bg-muted/25">
+                    <div className="h-full w-full" />
+                  </Glass>
                 }
-                onQuickLog={(kind) =>
-                  kind === "income" ? openNewIncome() : openNewExpense()
-                }
-                layoutIdPrefix="dash-money-flow"
-              />
+              >
+                <LazyMoneyFlowSankeyCard
+                  db={db}
+                  accountScope="all"
+                  anchorMonth={month}
+                  hideBalances={hideBalances}
+                  onSelectCategory={(account, category) =>
+                    setInspectedCategory({ account, category })
+                  }
+                  onQuickLog={(kind) =>
+                    kind === "income" ? openNewIncome() : openNewExpense()
+                  }
+                  layoutIdPrefix="dash-money-flow"
+                />
+              </Suspense>
             ),
           },
           {
@@ -1385,7 +1408,17 @@ function CommandDashboard() {
             id: "calendar",
             title: "Schedule & Holidays Calendar",
             defaultSpan: 12,
-            render: () => <DashboardCalendarCard db={db} />,
+            render: () => (
+              <Suspense
+                fallback={
+                  <Glass className="h-[360px] animate-pulse bg-muted/25">
+                    <div className="h-full w-full" />
+                  </Glass>
+                }
+              >
+                <LazyDashboardCalendarCard db={db} />
+              </Suspense>
+            ),
           },
           ...(showcaseWithMedia.length > 0
             ? [
@@ -1463,32 +1496,36 @@ function CommandDashboard() {
       })()}
 
       {/* Category Inspector Drawer with Interactive Timeline */}
-      <CategoryInspectorDrawer
-        db={db}
-        account={inspectedCategory?.account ?? "Personal"}
-        category={inspectedCategory?.category ?? null}
-        month={month}
-        onClose={() => setInspectedCategory(null)}
-        onAddExpense={(acc, cat) => {
-          setInspectedCategory(null);
-          setExpenseDraft({
-            id: uid(),
-            date: today(),
-            projectId: "",
-            category: cat,
-            vendor: "Debit",
-            description: "",
-            amount: 0,
-            currency: "USD",
-            receipt: "",
-            account: acc,
-          });
-        }}
-        onEditExpense={(exp) => {
-          setInspectedCategory(null);
-          setExpenseDraft(exp);
-        }}
-      />
+      {inspectedCategory ? (
+        <Suspense fallback={null}>
+          <LazyCategoryInspectorDrawer
+            db={db}
+            account={inspectedCategory.account}
+            category={inspectedCategory.category}
+            month={month}
+            onClose={() => setInspectedCategory(null)}
+            onAddExpense={(acc, cat) => {
+              setInspectedCategory(null);
+              setExpenseDraft({
+                id: uid(),
+                date: today(),
+                projectId: "",
+                category: cat,
+                vendor: "Debit",
+                description: "",
+                amount: 0,
+                currency: "USD",
+                receipt: "",
+                account: acc,
+              });
+            }}
+            onEditExpense={(exp) => {
+              setInspectedCategory(null);
+              setExpenseDraft(exp);
+            }}
+          />
+        </Suspense>
+      ) : null}
 
       {/* Fast-Tap Personal Expense Drawer */}
       <QuickExpenseDrawer

@@ -109,7 +109,7 @@ export function MonthlyGroupHeader({
     showIncome && showExpense && incomeUSD > 0 && expenseUSD > 0;
 
   return (
-    <div className="flex flex-wrap items-center justify-between gap-2 border-y border-border/70 bg-muted/35 px-3 py-2">
+    <div className="sticky top-[calc(3.15rem+env(safe-area-inset-top))] z-10 flex flex-wrap items-center justify-between gap-2 border-y border-border/70 bg-[var(--glass-strong)] px-3 py-2 backdrop-blur-md sm:top-[3.1rem]">
       <div className="flex min-w-0 items-center gap-2">
         {onSelectMonth && month !== "unknown" ? (
           <button

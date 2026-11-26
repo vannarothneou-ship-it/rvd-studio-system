@@ -1,4 +1,8 @@
 import "@testing-library/jest-dom/vitest";
+import * as rothvanSeed from "@/lib/rothvan-seed";
+import { registerSeedModule } from "@/lib/store";
+
+registerSeedModule(rothvanSeed);
 
 Object.defineProperty(window, "scrollTo", {
   writable: true,

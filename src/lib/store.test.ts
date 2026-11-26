@@ -56,6 +56,7 @@ import {
   personalIncomeTotal,
   personalSeries,
   recordPayment,
+  registerSeedModule,
   resetDB,
   revenueByPillar,
   saveCaseStudy,
@@ -1330,5 +1331,87 @@ describe("Phase 1 FX immutability, financial separation, migration & persistence
       owed: 200,
       projects: 0,
     });
+  });
+
+  it("loads complete existing saved data identically without requiring the lazy seed module", async () => {
+    const seedMod = await import("./rothvan-seed");
+    const savedPayload = {
+      schemaVersion: 4,
+      clients: [
+        {
+          id: "saved-c1",
+          code: "RVD-99",
+          name: "Saved Client Co",
+          type: "SME",
+          industry: "Retail",
+          contact: "Sokha",
+          email: "sokha@saved.kh",
+          telegram: "@sokha",
+          phone: "012000111",
+          source: "Referral",
+          status: "Active",
+          notes: "Persisted user note",
+        },
+      ],
+      services: [],
+      projects: [],
+      invoices: [],
+      payments: [],
+      expenses: [
+        {
+          id: "saved-exp-1",
+          date: "2026-10-14",
+          projectId: "",
+          category: "Food",
+          vendor: "Debit",
+          description: "Kuy teav",
+          amount: 12000,
+          currency: "KHR",
+          exchangeRate: 4000,
+          usdAmount: 3,
+          receipt: "",
+          account: "Personal",
+        },
+      ],
+      personalIncome: [
+        {
+          id: "saved-inc-1",
+          date: "2026-10-01",
+          source: "Salary",
+          method: "Debit",
+          description: "Monthly pay",
+          amount: 1800,
+          currency: "USD",
+          exchangeRate: 4000,
+          usdAmount: 1800,
+        },
+      ],
+      studioIncome: [],
+      workTasks: [],
+      reminders: [],
+      learnedReceiptRules: [],
+      goals: [],
+      settings: {
+        businessName: "RothVan Design",
+        ownerName: "Roth",
+        khrRate: 4100,
+      },
+      categoryLimits: { "Personal:Food": 250 },
+      caseStudies: {},
+    };
+
+    registerSeedModule(null);
+    try {
+      const migrated = migrateAndValidateDB(savedPayload);
+      expect(migrated.clients).toHaveLength(1);
+      expect(migrated.clients[0]?.name).toBe("Saved Client Co");
+      expect(migrated.expenses[0]?.exchangeRate).toBe(4000);
+      expect(migrated.expenses[0]?.usdAmount).toBe(3);
+      expect(migrated.personalIncome?.[0]?.amount).toBe(1800);
+      expect(migrated.settings.khrRate).toBe(4100);
+      expect(migrated.categoryLimits?.["Personal:Food"]).toBe(250);
+    } finally {
+      registerSeedModule(seedMod);
+    }
   });
 });

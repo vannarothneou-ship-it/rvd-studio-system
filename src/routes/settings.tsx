@@ -34,7 +34,7 @@ import {
   hasPreRestoreSnapshot,
   migrateAndValidateDB,
   money,
-  resetDB,
+  resetDBAsync,
   restorePreRestoreSnapshot,
   retryPersistDB,
   safeKhrRate,
@@ -329,11 +329,11 @@ function Page() {
     }
   };
 
-  const handleResetSampleData = () => {
+  const handleResetSampleData = async () => {
     const snapshotSaved = savePreRestoreSnapshot();
     const canUndo = snapshotSaved || hasPreRestoreSnapshot();
     setCanUndoRestore(canUndo);
-    resetDB();
+    await resetDBAsync();
     setConfirmReset(false);
     void refreshHealth();
     toast.message("Sample data restored.", {

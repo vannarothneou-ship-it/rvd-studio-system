@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import {
   Activity,
   ArrowDownLeft,
@@ -55,8 +55,13 @@ import {
   MonthlyGroupHeader,
   MonthlyLedgerToolbar,
 } from "@/components/rv/MonthlyLedgerControls";
-import { MoneyFlowSankeyCard } from "@/components/rv/MoneyFlowSankey";
 import { CentralAiBrief } from "@/components/rv/CentralAiBrief";
+
+const LazyMoneyFlowSankeyCard = lazy(() =>
+  import("@/components/rv/MoneyFlowSankey").then((m) => ({
+    default: m.MoneyFlowSankeyCard,
+  })),
+);
 import {
   QuickExpenseDrawer,
   QuickIncomeDrawer,
@@ -1114,16 +1119,24 @@ function PersonalPage() {
         title: "Personal money flow river",
         defaultSpan: 12,
         render: () => (
-          <MoneyFlowSankeyCard
-            db={db}
-            accountScope="Personal"
-            anchorMonth={month}
-            onSelectCategory={(_acc, cat) => setInspectedCategory(cat)}
-            onQuickLog={(kind) =>
-              kind === "income" ? openNewIncome() : openNewExpense()
+          <Suspense
+            fallback={
+              <Glass className="h-[320px] animate-pulse bg-muted/25">
+                <div className="h-full w-full" />
+              </Glass>
             }
-            layoutIdPrefix="pers-money-flow"
-          />
+          >
+            <LazyMoneyFlowSankeyCard
+              db={db}
+              accountScope="Personal"
+              anchorMonth={month}
+              onSelectCategory={(_acc, cat) => setInspectedCategory(cat)}
+              onQuickLog={(kind) =>
+                kind === "income" ? openNewIncome() : openNewExpense()
+              }
+              layoutIdPrefix="pers-money-flow"
+            />
+          </Suspense>
         ),
       },
       {

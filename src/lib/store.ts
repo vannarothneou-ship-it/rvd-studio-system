@@ -24,15 +24,7 @@ export const CLIENT_SOURCES = [
   "Returning client",
   "Other",
 ];
-import {
-  buildSampleExpenses,
-  rothvanClients,
-  rothvanGoals,
-  rothvanInvoices,
-  rothvanPayments,
-  rothvanProjects,
-  rothvanServices,
-} from "./rothvan-seed";
+type RothvanSeedModule = typeof import("./rothvan-seed");
 
 export const PILLARS = [
   "Branding Design",
@@ -644,7 +636,28 @@ const defaultSettings: Settings = {
     "Selected commercial branding, packaging, campaign visuals, and spatial design delivered across full-time teams and independent studio engagements.",
 };
 
-function seed(): DB {
+function emptyDB(): DB {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    clients: [],
+    services: [],
+    projects: [],
+    invoices: [],
+    payments: [],
+    expenses: [],
+    personalIncome: [],
+    studioIncome: [],
+    workTasks: [],
+    reminders: [],
+    learnedReceiptRules: [],
+    goals: [],
+    settings: { ...defaultSettings },
+    categoryLimits: {},
+    caseStudies: {},
+  };
+}
+
+function buildSeedDB(mod: RothvanSeedModule): DB {
   const m = (n: number, day = 10) => {
     const now = new Date();
     const d = new Date(
@@ -654,26 +667,52 @@ function seed(): DB {
   };
   return {
     schemaVersion: SCHEMA_VERSION,
-    clients: rothvanClients.map((c) => ({ ...c })),
-    services: rothvanServices.map((s) => ({ ...s })),
-    projects: rothvanProjects.map((p) => ({ ...p })),
-    invoices: rothvanInvoices.map((i) => ({
+    clients: mod.rothvanClients.map((c) => ({ ...c })),
+    services: mod.rothvanServices.map((s) => ({ ...s })),
+    projects: mod.rothvanProjects.map((p) => ({ ...p })),
+    invoices: mod.rothvanInvoices.map((i) => ({
       ...i,
       items: i.items.map((it) => ({ ...it })),
       images: i.images.map((im) => ({ ...im })),
     })),
-    payments: rothvanPayments.map((p) => ({ ...p })),
-    expenses: buildSampleExpenses(m),
+    payments: mod.rothvanPayments.map((p) => ({ ...p })),
+    expenses: mod.buildSampleExpenses(m),
     personalIncome: [],
     studioIncome: [],
     workTasks: [],
     reminders: [],
     learnedReceiptRules: [],
-    goals: rothvanGoals.map((g) => ({ ...g })),
+    goals: mod.rothvanGoals.map((g) => ({ ...g })),
     settings: { ...defaultSettings },
     categoryLimits: {},
     caseStudies: {},
   };
+}
+
+let cachedSeedModule: RothvanSeedModule | null = null;
+let seedModulePromise: Promise<RothvanSeedModule> | null = null;
+
+export function registerSeedModule(mod: RothvanSeedModule | null) {
+  cachedSeedModule = mod;
+}
+
+export async function loadSeedModule(): Promise<RothvanSeedModule> {
+  if (cachedSeedModule) return cachedSeedModule;
+  if (!seedModulePromise) {
+    seedModulePromise = import("./rothvan-seed")
+      .then((mod) => {
+        cachedSeedModule = mod;
+        return mod;
+      })
+      .finally(() => {
+        seedModulePromise = null;
+      });
+  }
+  return seedModulePromise;
+}
+
+function seed(): DB {
+  return cachedSeedModule ? buildSeedDB(cachedSeedModule) : emptyDB();
 }
 
 export const KEY = "rothvan-studio-v3";
@@ -688,8 +727,9 @@ export interface PersistStatus {
   quotaExceeded: boolean;
 }
 
-let state: DB = seed();
+let state: DB = emptyDB();
 let loaded = false;
+let mutatedBeforeSeed = false;
 const listeners = new Set<() => void>();
 const persistListeners = new Set<() => void>();
 let persistStatus: PersistStatus = {
@@ -769,12 +809,26 @@ function sanitizeIsoDate(d: unknown, fallback = today()): string {
   return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
-export function migrateAndValidateDB(raw: unknown): DB {
+const CORE_SEED_ARRAYS = [
+  "clients",
+  "services",
+  "projects",
+  "invoices",
+  "payments",
+  "expenses",
+  "goals",
+] as const;
+
+function needsSeedFallback(p: Record<string, unknown>): boolean {
+  return CORE_SEED_ARRAYS.some((key) => !Array.isArray(p[key]));
+}
+
+export function migrateAndValidateDB(raw: unknown, fallbackSeed?: DB): DB {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error("Invalid RothVan database payload.");
   }
   const p = raw as Record<string, unknown>;
-  const seeded = seed();
+  const seeded = needsSeedFallback(p) ? (fallbackSeed ?? seed()) : emptyDB();
 
   const rawSettings =
     p["settings"] &&
@@ -955,6 +1009,38 @@ function load() {
     if (raw) {
       const parsed: unknown = JSON.parse(raw);
       state = migrateAndValidateDB(parsed);
+      if (
+        parsed &&
+        typeof parsed === "object" &&
+        !Array.isArray(parsed) &&
+        needsSeedFallback(parsed as Record<string, unknown>) &&
+        !cachedSeedModule
+      ) {
+        void loadSeedModule()
+          .then((mod) => {
+            if (mutatedBeforeSeed) return;
+            state = migrateAndValidateDB(parsed, buildSeedDB(mod));
+            listeners.forEach((l) => l());
+          })
+          .catch((err) => {
+            console.warn("RothVan seed fallback warning:", err);
+          });
+      }
+      return;
+    }
+
+    if (cachedSeedModule) {
+      state = buildSeedDB(cachedSeedModule);
+    } else {
+      void loadSeedModule()
+        .then((mod) => {
+          if (mutatedBeforeSeed) return;
+          state = buildSeedDB(mod);
+          listeners.forEach((l) => l());
+        })
+        .catch((err) => {
+          console.warn("RothVan initial seed warning:", err);
+        });
     }
   } catch (err) {
     updatePersistStatus({
@@ -1085,13 +1171,24 @@ export function getDB() {
 }
 export function setDB(fn: (d: DB) => DB) {
   load();
+  mutatedBeforeSeed = true;
   state = fn(state);
   listeners.forEach((l) => l());
   schedulePersist();
 }
-export function resetDB() {
-  setDB(() => seed());
+export async function resetDBAsync(): Promise<void> {
+  const mod = cachedSeedModule ?? (await loadSeedModule());
+  setDB(() => buildSeedDB(mod));
   flushDB();
+}
+export function resetDB() {
+  const mod = cachedSeedModule;
+  if (mod) {
+    setDB(() => buildSeedDB(mod));
+    flushDB();
+    return;
+  }
+  void resetDBAsync();
 }
 export function useDB<T>(sel: (d: DB) => T): T {
   return useSyncExternalStore(
